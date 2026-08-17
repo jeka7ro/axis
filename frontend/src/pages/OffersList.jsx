@@ -109,10 +109,6 @@ const OffersList = () => {
 
   const handleOpenContractModal = (e, offer) => {
     e?.stopPropagation();
-    if (offer.status === 'Draft') {
-      alert('Oferta trebuie aprobată înainte de a genera contractul.');
-      return;
-    }
     const matchingVehicles = vehicles.filter(v => v.make === offer.vehicle_make && v.model === offer.vehicle_model);
     if (matchingVehicles.length >= 1) {
       setSelectedVehicleId(matchingVehicles[0].id.toString());

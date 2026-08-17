@@ -99,8 +99,6 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
     offer = db.query(Offer).filter(Offer.id == offer_id).first()
     if not offer:
         raise HTTPException(status_code=404, detail="Offer not found")
-    if offer.status != OfferStatus.APPROVED:
-        raise HTTPException(status_code=400, detail="Offer must be approved to generate contract")
     
     from ..models.client import Client
     vehicle = db.query(Vehicle).filter(Vehicle.id == request.vehicle_id).first()
@@ -167,6 +165,13 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
             except Exception as e:
                 print(f"Supabase upload failed, falling back to local: {e}")
     else:
+        doc = Document()
+        doc.add_heading(f'Contract Auto - {contract_num}', 0)
+        doc.add_paragraph(f'Client: {offer.client.name}')
+        doc.add_paragraph(f'Vehicul: {vehicle.make} {vehicle.model}')
+        doc.add_paragraph(f'Pret: {offer.vehicle_price} {offer.currency if hasattr(offer, "currency") else "EUR"}')
+        output_path = f"documents/{contract_num}.docx"
+        doc.save(output_path)
         document_url = f"/documents/{contract_num}.docx"
     
     new_contract = Contract(
