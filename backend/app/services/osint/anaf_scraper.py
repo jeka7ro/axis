@@ -1,3 +1,4 @@
+from datetime import datetime
 import httpx
 import json
 
@@ -11,8 +12,8 @@ class AnafScraper:
         Since ANAF API is public, we can query it directly using httpx.
         """
         try:
-            # Structura requestului pentru ANAF v8
-            payload = [{"cui": int(cui), "data": "2026-08-13"}]
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            payload = [{"cui": int(cui), "data": today_str}]
             
             async with httpx.AsyncClient() as client:
                 response = await client.post(self.base_url, json=payload, timeout=10.0)
@@ -27,32 +28,19 @@ class AnafScraper:
                             "nume": company_info.get("denumire", ""),
                             "cui": cui,
                             "adresa": company_info.get("adresa", ""),
+                            "reg_com": company_info.get("nrRegCom", ""),
                             "tva_activ": tva_info.get("scpTVA", False),
                             "datorii_estimate": self._estimate_debts(company_info),
                             "status": "Activa" if "INREGISTRAT" in company_info.get("stare_inregistrare", "") else "Radiata"
                         }
             
-            # Fallback for demo purposes if API fails or blocks
-            return self._fallback_mock(cui)
+            # Daca ANAF nu a gasit CUI-ul sau a fost o eroare, intoarcem gol ca sa nu apara date false
+            return {}
             
         except Exception as e:
             print(f"Eroare ANAF Scraper: {e}")
-            return self._fallback_mock(cui)
+            return {}
             
     def _estimate_debts(self, raw_data: dict) -> float:
-        # In reality, ANAF has a separate endpoint for debts. We simulate this based on public insolvency flags if any.
+        # ANAF doesn't expose debts in this endpoint. We return 0.0 for now.
         return 0.0
-
-    def _fallback_mock(self, cui: str) -> dict:
-        """Fallback doar pentru continuitatea OSINT în cazul în care ANAF e offline"""
-        print("Fallback ANAF folosit pentru CUI: ", cui)
-        is_bad = cui == "9876543" # Mock Dino Construct
-        
-        return {
-            "nume": "Companie din ANAF" if not is_bad else "Dino Home Construct SRL",
-            "cui": cui,
-            "adresa": "Bucuresti",
-            "tva_activ": True,
-            "datorii_estimate": 250000.0 if is_bad else 0.0,
-            "status": "Activa"
-        }
