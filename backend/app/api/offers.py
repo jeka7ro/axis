@@ -101,8 +101,9 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
         raise HTTPException(status_code=404, detail="Offer not found")
     
     vehicle = None
-    if request.vehicle_id:
-        vehicle = db.query(Vehicle).filter(Vehicle.id == request.vehicle_id).first()
+    vehicle_id_to_use = request.vehicle_id or offer.vehicle_id
+    if vehicle_id_to_use:
+        vehicle = db.query(Vehicle).filter(Vehicle.id == vehicle_id_to_use).first()
         if not vehicle:
             raise HTTPException(status_code=404, detail="Vehicle not found")
         
@@ -175,7 +176,7 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
     
     new_contract = Contract(
         offer_id=offer.id,
-        vehicle_id=request.vehicle_id if request.vehicle_id else None,
+        vehicle_id=vehicle_id_to_use,
         contract_number=contract_num,
         status=ContractStatus.GENERATED,
         document_url=document_url

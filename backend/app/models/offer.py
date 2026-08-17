@@ -23,6 +23,7 @@ class Offer(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     client_id = Column(Integer, ForeignKey("axis_clients.id"), nullable=False)
+    vehicle_id = Column(Integer, ForeignKey("axis_vehicles.id"), nullable=True)
     vehicle_make = Column(String, nullable=False)
     vehicle_model = Column(String, nullable=False)
     vehicle_price = Column(Float, nullable=False)
@@ -40,6 +41,7 @@ class Offer(Base):
     approved_by_id = Column(Integer, ForeignKey("axis_users.id"), nullable=True)
 
     client = relationship("Client")
+    vehicle = relationship("Vehicle")
     contract = relationship("Contract", back_populates="offer", uselist=False)
 
 class Contract(Base):

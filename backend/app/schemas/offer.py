@@ -7,6 +7,7 @@ from ..models.offer import OfferStatus
 
 class OfferBase(BaseModel):
     client_id: int
+    vehicle_id: Optional[int] = None
     vehicle_make: str
     vehicle_model: str
     vehicle_price: float

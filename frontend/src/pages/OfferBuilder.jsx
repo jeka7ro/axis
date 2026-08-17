@@ -24,6 +24,7 @@ const OfferBuilder = () => {
   
   const [formData, setFormData] = useState({
     client_id: '',
+    vehicle_id: null,
     currency: currency || 'EUR',
     vehicle_make: '',
     vehicle_model: '',
@@ -458,7 +459,7 @@ const OfferBuilder = () => {
                 3. Ai Mașina în Parc? Alege din Flotă (Auto-Completare Preț)
               </label>
               <SearchableSelect 
-                value="" // nu tinem valoarea, e doar pentru auto-completare
+                value={formData.vehicle_id || ""}
                 placeholder="-- Caută sau alege o mașină (Opțional) --"
                 options={vehicles
                   .filter(v => (!formData.vehicle_make || v.make === formData.vehicle_make) && (!formData.vehicle_model || v.model === formData.vehicle_model))
@@ -470,6 +471,7 @@ const OfferBuilder = () => {
                   if (v) {
                     setFormData({
                       ...formData,
+                      vehicle_id: v.id,
                       vehicle_make: v.make,
                       vehicle_model: v.model,
                       vehicle_price: Math.round((v.purchase_price || 50000) * 100) / 100 
