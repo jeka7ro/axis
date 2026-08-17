@@ -383,7 +383,7 @@ const OffersList = () => {
             
             <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-blue-50/50 dark:bg-blue-900/10">
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-                Asociază o Mașină din Flotă (Obligatoriu)
+                Asociază o Mașină din Flotă (Opțional)
               </label>
               <select
                 value={selectedVehicleId}
@@ -444,8 +444,12 @@ const OffersList = () => {
                     })()}
                   </div>
                 ) : (
-                  <div className="text-red-600 dark:text-red-400 text-sm font-semibold">
-                    [ ATENȚIE: Selectați o mașină din flotă pentru a completa datele tehnice ale obiectului contractului ]
+                  <div className="text-gray-600 dark:text-gray-400 text-sm">
+                    <p><strong>Marcă și Model:</strong> {selectedOfferForContract.vehicle_make} {selectedOfferForContract.vehicle_model}</p>
+                    <p><strong>Număr de Înmatriculare:</strong> ___________</p>
+                    <p><strong>Serie Șasiu (VIN):</strong> ___________</p>
+                    <p><strong>Valoare Declarată (Ofertă):</strong> {formatCurrency(selectedOfferForContract.vehicle_price)}</p>
+                    <p className="text-amber-600 dark:text-amber-400 mt-2 text-xs italic">* Datele tehnice specifice vor fi completate manual sau la asocierea cu un vehicul din flotă.</p>
                   </div>
                 )}
               </div>
@@ -498,8 +502,7 @@ const OffersList = () => {
                   setSelectedOfferForContract(null);
                   setSelectedVehicleId('');
                 }}
-                disabled={!selectedVehicleId}
-                className="px-8 py-2.5 bg-primary text-white font-medium rounded-full hover:bg-primary/90 shadow-sm transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-8 py-2.5 bg-primary text-white font-medium rounded-full hover:bg-primary/90 shadow-sm transition-all flex items-center gap-2"
               >
                 <CheckSquare size={18} />
                 Confirmă și Generează Contract

@@ -35,7 +35,7 @@ class OfferResponse(OfferBase):
         from_attributes = True
 
 class ContractCreateRequest(BaseModel):
-    vehicle_id: int
+    vehicle_id: Optional[int] = None
 
 class ContractResponse(BaseModel):
     id: int

@@ -100,9 +100,11 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
     if not offer:
         raise HTTPException(status_code=404, detail="Offer not found")
     
-    from ..models.client import Client
-    vehicle = db.query(Vehicle).filter(Vehicle.id == request.vehicle_id).first()
-    client = db.query(Client).filter(Client.id == offer.client_id).first()
+    vehicle = None
+    if request.vehicle_id:
+        vehicle = db.query(Vehicle).filter(Vehicle.id == request.vehicle_id).first()
+        if not vehicle:
+            raise HTTPException(status_code=404, detail="Vehicle not found")
         
     contract_num = f"AXIS-{datetime.utcnow().year}-{uuid.uuid4().hex[:6].upper()}"
     document_url = f"/documents/{contract_num}.docx"
@@ -113,19 +115,16 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
     if os.path.exists(template_path):
         doc = Document(template_path)
         replacements = {
-            "{{nume_client}}": client.name if client else "",
-            "{{cui_cnp}}": client.cui_cnp if client else "",
-            "{{adresa}}": client.address if client else "",
-            "{{reprezentant}}": client.representative_name if client else "",
-            "{{ci_serie}}": client.id_card_series if client else "",
-            "{{ci_numar}}": client.id_card_number if client else "",
-            "{{marca}}": vehicle.make if vehicle else offer.vehicle_make,
-            "{{model}}": vehicle.model if vehicle else offer.vehicle_model,
-            "{{vin_masina}}": vehicle.vin if vehicle else "",
-            "{{nr_inmatriculare}}": vehicle.license_plate if vehicle else "",
-            "{{valoare}}": str(offer.vehicle_price),
-            "{{rata_lunara}}": f"{offer.monthly_rate:.2f}",
-            "{{perioada}}": str(offer.period_months),
+            "{{client_name}}": offer.client.name,
+            "{{client_cui}}": offer.client.cui_cnp,
+            "{{client_address}}": offer.client.address or "",
+            "{{vehicle_make}}": vehicle.make if vehicle else offer.vehicle_make,
+            "{{vehicle_model}}": vehicle.model if vehicle else offer.vehicle_model,
+            "{{vehicle_vin}}": vehicle.vin if vehicle else "___________",
+            "{{vehicle_plate}}": vehicle.license_plate if vehicle else "___________",
+            "{{vehicle_price}}": str(offer.vehicle_price),
+            "{{monthly_rate}}": str(offer.monthly_rate),
+            "{{period_months}}": str(offer.period_months),
             "{{nr_contract}}": contract_num
         }
         
@@ -168,7 +167,7 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
         doc = Document()
         doc.add_heading(f'Contract Auto - {contract_num}', 0)
         doc.add_paragraph(f'Client: {offer.client.name}')
-        doc.add_paragraph(f'Vehicul: {vehicle.make} {vehicle.model}')
+        doc.add_paragraph(f'Vehicul: {vehicle.make if vehicle else offer.vehicle_make} {vehicle.model if vehicle else offer.vehicle_model}')
         doc.add_paragraph(f'Pret: {offer.vehicle_price} {offer.currency if hasattr(offer, "currency") else "EUR"}')
         output_path = f"documents/{contract_num}.docx"
         doc.save(output_path)
@@ -176,7 +175,7 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
     
     new_contract = Contract(
         offer_id=offer.id,
-        vehicle_id=request.vehicle_id,
+        vehicle_id=request.vehicle_id if request.vehicle_id else None,
         contract_number=contract_num,
         status=ContractStatus.GENERATED,
         document_url=document_url
