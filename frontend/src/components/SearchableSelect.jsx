@@ -20,7 +20,7 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Selectează
     opt.label.toLowerCase().includes(search.toLowerCase())
   );
 
-  const selectedOption = options.find(opt => opt.value === value);
+  const selectedOption = options.find(opt => String(opt.value) === String(value));
   const displayLabel = selectedOption ? selectedOption.label : (value || placeholder);
 
   return (
@@ -58,7 +58,7 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Selectează
                 <div
                   key={opt.value}
                   className={`flex items-center justify-between px-3 py-2 text-sm rounded-sm cursor-pointer ${
-                    value === opt.value 
+                    String(value) === String(opt.value) 
                       ? 'bg-primary/10 text-primary font-medium' 
                       : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
                   }`}
@@ -69,7 +69,7 @@ const SearchableSelect = ({ options, value, onChange, placeholder = "Selectează
                   }}
                 >
                   <span className="truncate">{opt.label}</span>
-                  {value === opt.value && <Check size={14} />}
+                  {String(value) === String(opt.value) && <Check size={14} />}
                 </div>
               ))
             )}

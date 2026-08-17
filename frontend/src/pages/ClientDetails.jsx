@@ -185,11 +185,11 @@ const ClientDetails = () => {
                   </div>
                 )}
 
-                {/* Caracatița OSINT Section */}
+                {/* Rețea Asociați OSINT Section */}
                 {latestEval.raw_financial_data && JSON.parse(latestEval.raw_financial_data) && JSON.parse(latestEval.raw_financial_data).personnel && (
                   <div className="mt-8">
                     <h4 className="font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-                      <BrainCircuit size={18} className="text-primary" /> Caracatița OSINT (Rețea Asociați)
+                      <BrainCircuit size={18} className="text-primary" /> Analiză OSINT (Rețea Asociați)
                     </h4>
                     
                     {/* OSINT Flags */}

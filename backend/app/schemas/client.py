@@ -26,6 +26,8 @@ class ClientBase(BaseModel):
     reg_com: Optional[str] = None
     address: Optional[str] = None
     representative_name: Optional[str] = None
+    representative_cnp: Optional[str] = None
+    representative_address: Optional[str] = None
     contact_email: Optional[EmailStr] = None
     contact_phone: Optional[str] = None
     id_card_series: Optional[str] = None

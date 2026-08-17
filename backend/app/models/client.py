@@ -24,6 +24,8 @@ class Client(Base):
     reg_com = Column(String, nullable=True) # J...
     address = Column(String, nullable=True)
     representative_name = Column(String, nullable=True)
+    representative_cnp = Column(String, nullable=True)
+    representative_address = Column(String, nullable=True)
     contact_email = Column(String, nullable=True)
     contact_phone = Column(String, nullable=True)
     id_card_series = Column(String, nullable=True)

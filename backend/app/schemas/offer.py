@@ -47,7 +47,6 @@ class ContractResponse(BaseModel):
     document_url: Optional[str]
     created_at: datetime
 
-    offer: Optional['OfferResponse'] = None
     vehicle: Optional[VehicleResponse] = None
 
     class Config:

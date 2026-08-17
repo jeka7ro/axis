@@ -40,6 +40,14 @@ export const approveOffer = async (id) => {
   return response.json();
 };
 
+export const deleteOffer = async (id) => {
+  const response = await fetch(`${API_URL}/offers/${id}`, {
+    method: 'DELETE'
+  });
+  if (!response.ok) throw new Error('Failed to delete offer');
+  return response.json();
+};
+
 export const generateContract = async (id, vehicleId) => {
   const response = await fetch(`${API_URL}/offers/${id}/generate-contract`, {
     method: 'POST',

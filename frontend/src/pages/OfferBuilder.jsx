@@ -3,7 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { fetchClients, createClient, updateClient, fetchVehicles, fetchVehicleBrands } from '../services/api';
 import { createOffer, updateOffer, fetchOffer, uploadTemplate } from '../services/apiOffers';
 import useAuthStore from '../store/authStore';
-import Tesseract from 'tesseract.js';
+import { extractTextFromFile, parseRomanianIDCard } from '../utils/pdfOcr';
 import { ChevronLeft } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
 
@@ -83,98 +83,12 @@ const OfferBuilder = () => {
     if (!file) return;
     setOcrLoading(true);
     try {
-      const result = await Tesseract.recognize(file, 'ron');
-      const text = result.data.text;
+      const text = await extractTextFromFile(file);
       
-      // Extragere CNP (13 cifre - Validare Structură Matematică România)
-      let cnp = '';
-      const textCleaned = text.replace(/O/gi, '0').replace(/l/gi, '1').replace(/I/gi, '1').replace(/\s+/g, '');
-      const cnpMatch = textCleaned.match(/([1-8]\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{6})/);
-      if (cnpMatch) {
-         cnp = cnpMatch[1];
-      }
-      
-      let nume = '';
-      const mrzMatchName = text.match(/IDROU([A-Z<]+)<<([A-Z<]+)/);
-      if (mrzMatchName) {
-        nume = (mrzMatchName[1].replace(/</g, ' ') + ' ' + mrzMatchName[2].replace(/</g, ' ')).trim();
-      } else {
-        const lines = text.split('\n').map(l => l.trim());
-        const numeIdx = lines.findIndex(l => l.includes('NUME') || l.includes('SURNAME'));
-        if (numeIdx !== -1 && lines[numeIdx + 1]) {
-           nume = lines[numeIdx + 1].replace(/[^A-Z\s-]/g, '');
-        }
-      }
-      
-      let address = '';
-      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-      const domIdx = lines.findIndex(l => l.toUpperCase().includes('DOMICILIU') || l.toUpperCase().includes('ADDRESS'));
-      if (domIdx !== -1) {
-        let addrLines = [];
-        for (let i = domIdx + 1; i < lines.length; i++) {
-          if (lines[i].toUpperCase().includes('EMIS') || lines[i].toUpperCase().includes('ISSUED')) break;
-          if (lines[i].length > 3) {
-            addrLines.push(lines[i]);
-          }
-        }
-        address = addrLines.join(', ');
-      }
-      
-      let series = '';
-      let number = '';
-      const seriesMatch = text.match(/SERI[A-Z\s:]*([A-Z]{2})\s*NR[A-Z\s\.:]*([0-9]{6})/i);
-      if (seriesMatch) {
-        series = seriesMatch[1];
-        number = seriesMatch[2];
-      } else {
-        const altMatch = text.match(/\b([A-Z]{2})\s*([0-9]{6})\b/);
-        if (altMatch) {
-          series = altMatch[1];
-          number = altMatch[2];
-        }
-      }
-
-      let validFrom = '';
-      let validUntil = '';
-      const validityMatch = text.match(/(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})\s*-\s*(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})/);
-      if (validityMatch) {
-        validFrom = validityMatch[1];
-        validUntil = validityMatch[2];
-      }
-
-      let issuedBy = '';
-      const issuedIdx = lines.findIndex(l => l.toUpperCase().includes('EMIS') || l.toUpperCase().includes('ISSUED'));
-      if (issuedIdx !== -1 && lines[issuedIdx + 1]) {
-        issuedBy = lines[issuedIdx + 1];
-        if (issuedBy.toUpperCase().includes('CNP') || issuedBy.length < 3) {
-           const sameLineMatch = lines[issuedIdx].match(/(?:EMIS[A\s]*DE|ISSUED\s*BY)\s*(.+)/i);
-           if (sameLineMatch && sameLineMatch[1].trim().length > 3) {
-             issuedBy = sameLineMatch[1].trim();
-           } else {
-             issuedBy = '';
-           }
-        }
-      }
-      
-      // --- SUPRASCRIERE CU DATE DIN MRZ (Acuratețe Maximă) ---
-      // Exemplu MRZ Linia 2: RK192171<3ROU1801102430126...
-      const textNoSpaces = text.replace(/\s+/g, '');
-      const mrzLine2Match = textNoSpaces.match(/([A-Z]{2})([0-9]{6})[<\dK\(\)]R[O0]U/i);
-      if (mrzLine2Match) {
-        series = mrzLine2Match[1].toUpperCase();
-        number = mrzLine2Match[2];
-      }
-      
+      const idData = parseRomanianIDCard(text);
       setNewClientData(prev => ({ 
         ...prev, 
-        name: nume, 
-        cui_cnp: cnp, 
-        address: address,
-        id_card_series: series,
-        id_card_number: number,
-        id_card_issued_by: issuedBy,
-        id_card_valid_from: validFrom,
-        id_card_valid_until: validUntil
+        ...idData
       }));
     } catch (err) {
       console.error(err);
@@ -303,26 +217,37 @@ const OfferBuilder = () => {
               </div>
 
               {!isNewClientMode ? (
-                <SearchableSelect
-                  value={formData.client_id}
-                  placeholder="Selectează Clientul Evaluat"
-                  options={clients.map(c => ({ value: c.id, label: `${c.name} (${c.cui_cnp})` }))}
-                  onChange={(val) => {
-                    const clientId = val;
-                    const prefCurr = localStorage.getItem(`pref_curr_${clientId}`);
-                    setFormData({
-                      ...formData, 
-                      client_id: clientId,
-                      currency: prefCurr || formData.currency
-                    });
-                  }}
-                />
+                <div>
+                  <SearchableSelect
+                    value={formData.client_id}
+                    placeholder="Selectează Clientul Evaluat"
+                    options={clients.map(c => ({ value: c.id, label: `${c.name} (${c.cui_cnp})` }))}
+                    onChange={(val) => {
+                      const clientId = val;
+                      const prefCurr = localStorage.getItem(`pref_curr_${clientId}`);
+                      setFormData({
+                        ...formData, 
+                        client_id: clientId,
+                        currency: prefCurr || formData.currency
+                      });
+                    }}
+                  />
+                  
+                  {formData.client_id && clients.find(c => String(c.id) === String(formData.client_id))?.type === 'PJ' && (
+                    <div className="mt-3 p-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg text-sm border border-blue-100 dark:border-blue-800/30">
+                      <span className="text-gray-500 dark:text-gray-400">Reprezentant Legal curent: </span>
+                      <span className="font-medium text-gray-900 dark:text-white">
+                        {clients.find(c => String(c.id) === String(formData.client_id))?.representative_name || <span className="text-red-500 italic">Nesetat (Editează clientul în lista de Clienți pentru a adăuga reprezentantul)</span>}
+                      </span>
+                    </div>
+                  )}
+                </div>
               ) : (
                 <div className="space-y-4">
                   <div className="flex items-center space-x-4">
                      <label className="cursor-pointer py-2 px-4 bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 text-sm font-medium transition-colors dark:text-white">
-                       {ocrLoading ? "Se scanează..." : "Încarcă Poză Buletin (OCR)"}
-                       <input type="file" accept="image/*" className="hidden" onChange={handleOCR} disabled={ocrLoading} />
+                       {ocrLoading ? "Se scanează..." : "Încarcă Poză/PDF Buletin (OCR)"}
+                       <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleOCR} disabled={ocrLoading} />
                      </label>
                      {ocrLoading && <span className="text-xs text-primary animate-pulse font-medium">Procesare OCR... (poate dura câteva secunde)</span>}
                   </div>
@@ -381,7 +306,22 @@ const OfferBuilder = () => {
                                 <div 
                                   key={c.id} 
                                   className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${selectedCompanyId === c.id.toString() ? 'bg-blue-50 dark:bg-blue-900/30 font-medium' : ''}`}
-                                  onClick={() => { setSelectedCompanyId(c.id.toString()); setShowCompanyDropdown(false); setCompanySearchQuery(''); }}
+                                  onClick={() => { 
+                                    setSelectedCompanyId(c.id.toString()); 
+                                    setShowCompanyDropdown(false); 
+                                    setCompanySearchQuery(''); 
+                                    setNewClientData(prev => ({
+                                      ...prev,
+                                      name: c.representative_name || '',
+                                      cui_cnp: c.representative_cnp || '',
+                                      address: c.representative_address || '',
+                                      id_card_series: c.id_card_series || '',
+                                      id_card_number: c.id_card_number || '',
+                                      id_card_issued_by: c.id_card_issued_by || '',
+                                      id_card_valid_from: c.id_card_valid_from || '',
+                                      id_card_valid_until: c.id_card_valid_until || ''
+                                    }));
+                                  }}
                                 >
                                   {c.name} <span className="text-gray-500 text-xs">({c.cui_cnp})</span>
                                 </div>

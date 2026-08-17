@@ -111,6 +111,19 @@ def update_offer(offer_id: int, request: OfferCreate, db: Session = Depends(get_
     db.refresh(offer)
     return offer
 
+@router.delete("/{offer_id}")
+def delete_offer(offer_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    offer = db.query(Offer).filter(Offer.id == offer_id).first()
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found")
+        
+    if offer.contract:
+        db.delete(offer.contract)
+    
+    db.delete(offer)
+    db.commit()
+    return {"message": "Offer deleted successfully"}
+
 @router.post("/{offer_id}/approve", response_model=OfferResponse)
 def approve_offer(offer_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
     offer = db.query(Offer).filter(Offer.id == offer_id).first()

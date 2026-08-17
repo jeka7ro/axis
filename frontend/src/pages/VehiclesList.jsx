@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Trash2, ChevronLeft, ChevronRight, Edit2 } from 'lucide-react';
+import { Trash2, ChevronLeft, ChevronRight, Edit2, Search, Download } from 'lucide-react';
 import { fetchVehicles, createVehicle, deleteVehicle, updateVehicle, fetchVehicleBrands } from '../services/api';
 
 const VehiclesList = () => {
@@ -9,6 +9,7 @@ const VehiclesList = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
   const [formData, setFormData] = useState({
     make: '',
     model: '',
@@ -124,11 +125,23 @@ const VehiclesList = () => {
     }
   };
 
-  // Pagination logic
-  const totalItems = vehicles.length;
+  // Pagination and Filtering logic
+  const filteredVehicles = vehicles.filter(v => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      (v.make && v.make.toLowerCase().includes(q)) ||
+      (v.model && v.model.toLowerCase().includes(q)) ||
+      (v.license_plate && v.license_plate.toLowerCase().includes(q)) ||
+      (v.vin && v.vin.toLowerCase().includes(q)) ||
+      (v.status && v.status.toLowerCase().includes(q))
+    );
+  });
+
+  const totalItems = filteredVehicles.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedVehicles = vehicles.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedVehicles = filteredVehicles.slice(startIndex, startIndex + itemsPerPage);
 
   const handleSelectAll = (e) => {
     if (e.target.checked) setSelectedIds(paginatedVehicles.map(v => v.id));
@@ -141,21 +154,72 @@ const VehiclesList = () => {
 
   const isAllSelected = paginatedVehicles.length > 0 && selectedIds.length === paginatedVehicles.length;
 
+  const exportToExcel = () => {
+    const headers = ['Nr. Crt.', 'Marca', 'Model', 'An', 'Nr. Inmatriculare', 'VIN', 'Status', 'Kilometraj', 'Combustibil', 'Transmisie', 'Pret/Zi (EUR)', 'Pret/Luna (EUR)'];
+    const rows = filteredVehicles.map((v, i) => [
+      i + 1,
+      v.make,
+      v.model,
+      v.year,
+      v.license_plate,
+      v.vin,
+      v.status,
+      v.mileage,
+      v.engine_type,
+      v.transmission,
+      v.rental_price_short_term,
+      v.rental_price_long_term
+    ]);
+    const csvContent = [headers.join(','), ...rows.map(r => r.map(cell => `"${cell || ''}"`).join(','))].join('\n');
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `flota_axis_${new Date().toISOString().split('T')[0]}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Flotă Proprie (Autoturisme)</h2>
-        <button 
-          onClick={() => { resetForm(); setIsModalOpen(true); }}
-          className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors font-medium"
-        >
-          + Adaugă Mașină
-        </button>
+        <div className="flex items-center gap-4">
+          <button 
+            onClick={exportToExcel}
+            className="flex items-center gap-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-colors font-medium"
+          >
+            <Download size={18} />
+            Export to Excel
+          </button>
+          <button 
+            onClick={() => { resetForm(); setIsModalOpen(true); }}
+            className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary/90 transition-colors font-medium"
+          >
+            + Adaugă Mașină
+          </button>
+        </div>
       </div>
 
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col">
-        {/* Bulk Actions Area */}
-        <div className={`p-4 border-b border-gray-200 dark:border-gray-700 flex items-center transition-all bg-gray-50/50 dark:bg-gray-800/50 min-h-[64px] ${selectedIds.length > 0 ? 'justify-between' : 'justify-end'}`}>
+        {/* Bulk Actions & Search Area */}
+        <div className={`p-4 border-b border-gray-200 dark:border-gray-700 flex items-center transition-all bg-gray-50/50 dark:bg-gray-800/50 min-h-[64px] justify-between`}>
+          <div className="relative flex-1 max-w-md">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+            <input 
+              type="text" 
+              placeholder="Caută după marcă, model, nr. înmat, VIN..." 
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="w-full pl-12 pr-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-primary focus:border-primary dark:text-white shadow-sm"
+            />
+          </div>
+          
           {selectedIds.length > 0 && (
             <div className="flex items-center gap-3 animate-in fade-in duration-200">
               <span className="text-sm font-medium text-gray-500 bg-white dark:bg-gray-700 px-3 py-1 rounded-full border border-gray-200 dark:border-gray-600">

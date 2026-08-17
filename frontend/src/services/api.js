@@ -75,7 +75,10 @@ export const createClient = async (data) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  if (!response.ok) throw new Error('Failed to create client');
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    throw new Error(errorData?.detail || 'Failed to create client');
+  }
   return response.json();
 };
 
@@ -85,7 +88,10 @@ export const updateClient = async (id, data) => {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data)
   });
-  if (!response.ok) throw new Error('Failed to update client');
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => null);
+    throw new Error(errorData?.detail || 'Failed to update client');
+  }
   return response.json();
 };
 

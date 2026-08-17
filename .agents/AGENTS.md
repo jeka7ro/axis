@@ -22,3 +22,6 @@ Ori de câte ori se creează, modifică sau refactorizează un tabel de date în
      - Un selector pentru elemente pe pagină (ex: `Afișează [ 25 v ]`).
      - Numărul total de rezultate (`Total: 47`).
      - Controale de paginare (`Pagină 1 din 2  <  >`).
+
+## Reguli de Git / Versionare
+**ESTE STRICT INTERZIS** ca agentul să ruleze comanda `git push` fără aprobarea **EXPLICITĂ** și prealabilă a utilizatorului. Orice sincronizare cu serverul remote se va face doar după ce utilizatorul confirmă că este de acord cu acest pas.

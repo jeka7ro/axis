@@ -1,14 +1,16 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Plus, Check, FileSignature, FileText, ChevronLeft, ChevronRight, CheckSquare, Trash, Eye, Edit2, PenTool } from 'lucide-react';
-import { fetchOffers, approveOffer, generateContract, sendESign, uploadTemplate } from '../services/apiOffers';
+import { fetchOffers, approveOffer, generateContract, sendESign, uploadTemplate, deleteOffer } from '../services/apiOffers';
 import { fetchVehicles } from '../services/api';
 import useAuthStore from '../store/authStore';
 
 const OffersList = () => {
+  const navigate = useNavigate();
   const { user, currency, setCurrency } = useAuthStore();
   const [offers, setOffers] = useState([]);
   const [selectedOfferForContract, setSelectedOfferForContract] = useState(null);
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, isBulk: false });
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
 
@@ -93,6 +95,32 @@ const OffersList = () => {
     }
   };
 
+  const handleDelete = (id) => {
+    setDeleteConfirm({ isOpen: true, id, isBulk: false });
+  };
+
+  const handleBulkDelete = () => {
+    setDeleteConfirm({ isOpen: true, id: null, isBulk: true });
+  };
+
+  const confirmDeleteAction = async () => {
+    try {
+      if (deleteConfirm.isBulk) {
+        for (const id of selectedIds) {
+          await deleteOffer(id);
+        }
+        setSelectedIds([]);
+      } else if (deleteConfirm.id) {
+        await deleteOffer(deleteConfirm.id);
+      }
+      loadOffers();
+      setDeleteConfirm({ isOpen: false, id: null, isBulk: false });
+    } catch (error) {
+      console.error(error);
+      alert("Eroare la ștergere.");
+    }
+  };
+
   const handleSelectAll = (e) => {
     if (e.target.checked) {
       setSelectedIds(paginatedOffers.map(o => o.id));
@@ -174,7 +202,7 @@ const OffersList = () => {
                   <CheckSquare size={16} /> Bulk Aprobare
                 </button>
               )}
-              <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-full hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800/50 transition-colors">
+              <button onClick={handleBulkDelete} className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-full hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800/50 transition-colors">
                 <Trash size={16} /> Bulk Delete
               </button>
             </div>
@@ -234,11 +262,11 @@ const OffersList = () => {
                       </div>
                     </td>
                     <td className="px-6 py-4">
-                      <span className={`px-3 py-1 rounded-full text-xs font-medium border
+                      <span className={`px-3 py-1 rounded-full text-xs font-medium border whitespace-nowrap inline-flex items-center justify-center
                         ${offer.status === 'Draft' ? 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-600' : 
                           offer.status === 'Aprobat' ? 'bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-900/50' : 
                           'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-400 dark:border-blue-900/50'}`}>
-                        {offer.status}
+                        {offer.status === 'Transformat în Contract' ? 'Contract' : offer.status}
                       </span>
                     </td>
                     <td className="px-6 py-4 flex items-center justify-end gap-2">
@@ -317,6 +345,17 @@ const OffersList = () => {
                           <PenTool size={18} strokeWidth={1.5} />
                         </div>
                       )}
+                      
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(offer.id);
+                        }}
+                        className="p-2 flex items-center justify-center text-red-500 hover:text-red-700 border border-red-200 dark:border-red-900/50 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 transition-all"
+                        title="Șterge Ofertă"
+                      >
+                        <Trash size={16} strokeWidth={1.5} />
+                      </button>
                     </td>
                   </tr>
                 ))
@@ -488,6 +527,39 @@ const OffersList = () => {
               >
                 <CheckSquare size={18} />
                 Confirmă și Generează Contract
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700/50 rounded-full flex items-center justify-center text-gray-900 dark:text-gray-200">
+                <Trash size={32} strokeWidth={1.5} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Confirmare Ștergere</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {deleteConfirm.isBulk 
+                  ? `Ești sigur că vrei să ștergi cele ${selectedIds.length} oferte selectate? Această acțiune este ireversibilă.` 
+                  : 'Ești sigur că vrei să ștergi această ofertă? Această acțiune este ireversibilă.'}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 mt-8">
+              <button 
+                onClick={() => setDeleteConfirm({ isOpen: false, id: null, isBulk: false })}
+                className="flex-1 py-2.5 px-4 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Anulează
+              </button>
+              <button 
+                onClick={confirmDeleteAction}
+                className="flex-1 py-2.5 px-4 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 transition-colors shadow-sm"
+              >
+                Da, Șterge
               </button>
             </div>
           </div>

@@ -1,15 +1,18 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Building2, User, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CheckSquare, Trash, AlertCircle } from 'lucide-react';
+import { Plus, Search, Building2, User, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CheckSquare, Trash, AlertCircle, FileText, Check, CreditCard, ScanLine } from 'lucide-react';
 import { fetchClients, createClient, updateClient, deleteClient, lookupClientByCui } from '../services/api';
+import { extractTextFromFile, parseRomanianIDCard } from '../utils/pdfOcr';
 
 const ClientsList = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [newClient, setNewClient] = useState({ type: 'PJ', name: '', cui_cnp: '' });
+  const [newClient, setNewClient] = useState({ type: 'PJ', name: '', cui_cnp: '', representative_cnp: '', representative_address: '' });
   const [formError, setFormError] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [ocrLoading, setOcrLoading] = useState(false);
   
   // Table state
   const [selectedIds, setSelectedIds] = useState([]);
@@ -43,10 +46,10 @@ const ClientsList = () => {
       }
       setIsModalOpen(false);
       setIsEditing(false);
-      setNewClient({ type: 'PJ', name: '', cui_cnp: '' });
+      setNewClient({ type: 'PJ', name: '', cui_cnp: '', representative_cnp: '', representative_address: '' });
       loadClients();
     } catch (error) {
-      setFormError("Eroare la salvare. Verificați datele introduse.");
+      setFormError(error.message || "Eroare la salvare. Verificați datele introduse.");
       console.error(error);
     }
   };
@@ -86,6 +89,126 @@ const ClientsList = () => {
     }
   };
 
+  const handleOCR = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setOcrLoading(true);
+    try {
+      const text = await extractTextFromFile(file);
+      
+      const idData = parseRomanianIDCard(text);
+      setNewClient(prev => {
+        if (prev.type === 'PJ') {
+          return {
+            ...prev,
+            representative_name: idData.name,
+            representative_cnp: idData.cui_cnp,
+            representative_address: idData.address,
+            id_card_series: idData.id_card_series,
+            id_card_number: idData.id_card_number,
+            id_card_issued_by: idData.id_card_issued_by,
+            id_card_valid_from: idData.id_card_valid_from,
+            id_card_valid_until: idData.id_card_valid_until
+          };
+        } else {
+          return {
+            ...prev,
+            name: idData.name,
+            cui_cnp: idData.cui_cnp,
+            address: idData.address,
+            id_card_series: idData.id_card_series,
+            id_card_number: idData.id_card_number,
+            id_card_issued_by: idData.id_card_issued_by,
+            id_card_valid_from: idData.id_card_valid_from,
+            id_card_valid_until: idData.id_card_valid_until
+          };
+        }
+      });
+    } catch (err) {
+      console.error(err);
+      alert('Eroare la scanarea buletinului');
+    } finally {
+      setOcrLoading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleCUIOCR = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setOcrLoading(true);
+    try {
+      const text = await extractTextFromFile(file);
+      const lines = text.split('\n').map(l => l.trim()).filter(l => l.length > 0);
+      
+      let cui = '';
+      let regCom = '';
+      let firma = '';
+      let address = '';
+      
+      const cleanCuiText = text.replace(/O/gi, '0').replace(/l/gi, '1').replace(/I/gi, '1');
+      const cuiMatch = cleanCuiText.match(/\b(RO)?\s*([0-9]{6,10})\b/);
+      if (cuiMatch) {
+        cui = (cuiMatch[1] || '') + cuiMatch[2];
+      }
+      
+      const regComMatch = text.match(/[JFCL]\s*\d{1,2}\s*\/\s*\d+\s*\/\s*\d{4}/i);
+      if (regComMatch) {
+        regCom = regComMatch[0].replace(/\s+/g, '');
+      }
+      
+      const firmaIdx = lines.findIndex(l => l.toUpperCase().includes('FIRMA') || l.toUpperCase().includes('DENUMIRE'));
+      if (firmaIdx !== -1 && lines[firmaIdx + 1]) {
+        firma = lines[firmaIdx + 1];
+        if (firma.toUpperCase().includes('SEDIUL') || firma.length < 3) {
+          const sameLineMatch = lines[firmaIdx].match(/(?:FIRMA|DENUMIRE)\s*(.+)/i);
+          if (sameLineMatch) firma = sameLineMatch[1].trim();
+        }
+      }
+      
+      // Dacă a pus CUI-ul la firmă (din greșeală de OCR)
+      if (firma && /^[0-9]+$/.test(firma.replace(/\s+/g, ''))) {
+         if (!cui) cui = firma.replace(/\s+/g, '');
+         firma = '';
+      }
+      
+      const sediuIdx = lines.findIndex(l => l.toUpperCase().includes('SEDIUL SOCIAL') || l.toUpperCase().includes('SEDIUL'));
+      if (sediuIdx !== -1 && lines[sediuIdx + 1]) {
+        address = lines[sediuIdx + 1];
+        if (lines[sediuIdx + 2] && !lines[sediuIdx + 2].toUpperCase().includes('NUMAR') && !lines[sediuIdx + 2].toUpperCase().includes('COD')) {
+           address += ', ' + lines[sediuIdx + 2];
+        }
+      }
+
+      if (cui) {
+        try {
+          const anafData = await lookupClientByCui(cui);
+          if (anafData) {
+             firma = anafData.name || firma;
+             address = anafData.address || address;
+             regCom = anafData.reg_com || regCom;
+          }
+        } catch (anafErr) {
+          console.warn("ANAF lookup failed post-OCR", anafErr);
+        }
+      }
+
+      setNewClient(prev => ({
+        ...prev,
+        name: firma,
+        cui_cnp: cui,
+        reg_com: regCom,
+        address: address,
+      }));
+    } catch (err) {
+      console.error(err);
+      alert('Eroare la scanarea CUI-ului');
+    } finally {
+      setOcrLoading(false);
+      e.target.value = '';
+    }
+  };
+
   const handleSelectAll = (e) => {
     if (e.target.checked) {
       setSelectedIds(paginatedClients.map(c => c.id));
@@ -100,11 +223,23 @@ const ClientsList = () => {
     );
   };
 
-  // Pagination logic
-  const totalItems = clients.length;
+  // Pagination and Filtering logic
+  const filteredClients = clients.filter(client => {
+    if (!searchQuery) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      (client.name && client.name.toLowerCase().includes(q)) ||
+      (client.cui_cnp && client.cui_cnp.toLowerCase().includes(q)) ||
+      (client.address && client.address.toLowerCase().includes(q)) ||
+      (client.reg_com && client.reg_com.toLowerCase().includes(q)) ||
+      (client.representative_name && client.representative_name.toLowerCase().includes(q))
+    );
+  });
+
+  const totalItems = filteredClients.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
   const startIndex = (currentPage - 1) * itemsPerPage;
-  const paginatedClients = clients.slice(startIndex, startIndex + itemsPerPage);
+  const paginatedClients = filteredClients.slice(startIndex, startIndex + itemsPerPage);
 
   const isAllSelected = paginatedClients.length > 0 && selectedIds.length === paginatedClients.length;
 
@@ -134,7 +269,12 @@ const ClientsList = () => {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
               type="text" 
-              placeholder="Caută după nume sau CUI..." 
+              placeholder="Caută după nume, CUI, adresă..." 
+              value={searchQuery}
+              onChange={(e) => {
+                setSearchQuery(e.target.value);
+                setCurrentPage(1); // Reset to first page on search
+              }}
               className="w-full pl-12 pr-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-primary focus:border-primary dark:text-white shadow-sm"
             />
           </div>
@@ -324,17 +464,44 @@ const ClientsList = () => {
                 )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Tip Client</label>
-                <select 
-                  value={newClient.type} 
-                  onChange={e => setNewClient({...newClient, type: e.target.value})}
-                  className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                >
-                  <option value="PJ">Persoană Juridică (Firma)</option>
-                  <option value="PF">Persoană Fizică</option>
-                </select>
+                <div className="flex gap-4 items-center">
+                  <select 
+                    value={newClient.type} 
+                    onChange={e => setNewClient({...newClient, type: e.target.value})}
+                    className="block flex-1 px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                  >
+                    <option value="PJ">Persoană Juridică (Firma)</option>
+                    <option value="PF">Persoană Fizică</option>
+                  </select>
+                  
+                  <div className="flex items-center space-x-2 ml-auto">
+                    {newClient.type === 'PJ' && (
+                      <label className="cursor-pointer py-2 px-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/50 text-sm font-medium transition-colors text-blue-700 dark:text-blue-300 flex items-center gap-2 shadow-sm whitespace-nowrap">
+                        {ocrLoading ? <span className="animate-pulse">Se scanează...</span> : (
+                          <>
+                            <FileText size={16} />
+                            <span>CUI</span>
+                          </>
+                        )}
+                        <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleCUIOCR} disabled={ocrLoading} />
+                      </label>
+                    )}
+                    <label className="cursor-pointer py-2 px-3 bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-600 text-sm font-medium transition-colors dark:text-white flex items-center gap-2 shadow-sm whitespace-nowrap">
+                      {ocrLoading ? <span className="animate-pulse">Se scanează...</span> : (
+                        <>
+                          <CreditCard size={16} />
+                          <span>Buletin</span>
+                        </>
+                      )}
+                      <input type="file" accept="image/*,application/pdf" className="hidden" onChange={handleOCR} disabled={ocrLoading} />
+                    </label>
+                  </div>
+                </div>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">CUI / CNP</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">
+                  {newClient.type === 'PJ' ? 'CUI' : 'CNP'}
+                </label>
                 <input 
                   type="text" 
                   required
@@ -360,25 +527,73 @@ const ClientsList = () => {
 
               {newClient.type === 'PJ' && (
                 <>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Nr. Reg. Com.</label>
-                    <input 
-                      type="text" 
-                      value={newClient.reg_com || ''}
-                      onChange={e => setNewClient({...newClient, reg_com: e.target.value})}
-                      placeholder="Ex: J40/1234/2020"
-                      className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Nr. Reg. Com.</label>
+                      <input 
+                        type="text" 
+                        value={newClient.reg_com || ''}
+                        onChange={e => setNewClient({...newClient, reg_com: e.target.value})}
+                        placeholder="Ex: J40/1234/2020"
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Reprezentant Legal</label>
+                      <input 
+                        type="text" 
+                        value={newClient.representative_name || ''}
+                        onChange={e => setNewClient({...newClient, representative_name: e.target.value})}
+                        placeholder="Nume Reprezentant (sau folosește OCR)"
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Reprezentant Legal</label>
-                    <input 
-                      type="text" 
-                      value={newClient.representative_name || ''}
-                      onChange={e => setNewClient({...newClient, representative_name: e.target.value})}
-                      placeholder="Nume Reprezentant"
-                      className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="col-span-2 text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 border-t pt-2 dark:border-gray-700 uppercase">Date Buletin Reprezentant (Opțional)</div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">CNP Reprezentant</label>
+                      <input 
+                        type="text" 
+                        value={newClient.representative_cnp || ''}
+                        onChange={e => setNewClient({...newClient, representative_cnp: e.target.value})}
+                        placeholder="Ex: 1810806..."
+                        maxLength={13}
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Serie</label>
+                      <input 
+                        type="text" 
+                        value={newClient.id_card_series || ''}
+                        onChange={e => setNewClient({...newClient, id_card_series: e.target.value.toUpperCase()})}
+                        placeholder="Ex: RX"
+                        maxLength={2}
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all uppercase"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Număr</label>
+                      <input 
+                        type="text" 
+                        value={newClient.id_card_number || ''}
+                        onChange={e => setNewClient({...newClient, id_card_number: e.target.value})}
+                        placeholder="Ex: 123456"
+                        maxLength={6}
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Adresă Domiciliu (Reprezentant)</label>
+                      <input 
+                        type="text" 
+                        value={newClient.representative_address || ''}
+                        onChange={e => setNewClient({...newClient, representative_address: e.target.value})}
+                        placeholder="Adresa din buletin"
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
                   </div>
                 </>
               )}
@@ -432,18 +647,20 @@ const ClientsList = () => {
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Valabil de la</label>
                     <input 
-                      type="date" 
+                      type="text" 
                       value={newClient.id_card_valid_from || ''}
                       onChange={e => setNewClient({...newClient, id_card_valid_from: e.target.value})}
+                      placeholder="DD.MM.YYYY"
                       className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                     />
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Valabil până la</label>
                     <input 
-                      type="date" 
+                      type="text" 
                       value={newClient.id_card_valid_until || ''}
                       onChange={e => setNewClient({...newClient, id_card_valid_until: e.target.value})}
+                      placeholder="DD.MM.YYYY"
                       className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                     />
                   </div>

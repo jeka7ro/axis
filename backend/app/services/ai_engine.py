@@ -18,7 +18,7 @@ class AIEngineService:
         # 2. Generare Răspuns (Simularea LLM-ului care procesează promptul OSINT)
         if score > 80:
             risk_level = "Scăzut"
-            summary = f"Clientul {name} prezintă un profil financiar solid. Fără alerte în rețeaua de administratori (Caracatița OSINT OK)."
+            summary = f"Clientul {name} prezintă un profil financiar solid. Fără alerte în rețeaua de administratori (Analiza OSINT OK)."
         elif score > 50:
             risk_level = "Mediu"
             summary = f"Clientul {name} are un grad de risc moderat. Atenție la indicatorii extrași: {', '.join(osint_flags[:1]) if osint_flags else 'N/A'}"
