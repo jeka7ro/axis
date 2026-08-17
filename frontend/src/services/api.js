@@ -89,6 +89,14 @@ export const updateClient = async (id, data) => {
   return response.json();
 };
 
+export const deleteClient = async (id) => {
+  const response = await fetch(`${API_URL}/clients/${id}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) throw new Error('Failed to delete client');
+  return response.json();
+};
+
 export const evaluateClient = async (id) => {
   const response = await fetch(`${API_URL}/clients/${id}/evaluate`, {
     method: 'POST',

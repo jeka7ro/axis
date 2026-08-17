@@ -1,12 +1,13 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { Plus, Search, Building2, User, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CheckSquare, Trash, AlertCircle } from 'lucide-react';
-import { fetchClients, createClient, lookupClientByCui } from '../services/api';
+import { fetchClients, createClient, updateClient, deleteClient, lookupClientByCui } from '../services/api';
 
 const ClientsList = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
   const [newClient, setNewClient] = useState({ type: 'PJ', name: '', cui_cnp: '' });
   const [formError, setFormError] = useState("");
   
@@ -35,13 +36,36 @@ const ClientsList = () => {
     e.preventDefault();
     setFormError("");
     try {
-      await createClient(newClient);
+      if (isEditing && newClient.id) {
+        await updateClient(newClient.id, newClient);
+      } else {
+        await createClient(newClient);
+      }
       setIsModalOpen(false);
+      setIsEditing(false);
       setNewClient({ type: 'PJ', name: '', cui_cnp: '' });
       loadClients();
     } catch (error) {
-      setFormError("Eroare la adăugare. CUI duplicat sau backend indisponibil.");
+      setFormError("Eroare la salvare. Verificați datele introduse.");
       console.error(error);
+    }
+  };
+
+  const handleEditClick = (client) => {
+    setNewClient(client);
+    setIsEditing(true);
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteClick = async (id) => {
+    if (window.confirm("Ești sigur că vrei să ștergi acest client?")) {
+      try {
+        await deleteClient(id);
+        loadClients();
+      } catch (error) {
+        console.error("Eroare la ștergere:", error);
+        alert("Eroare la ștergerea clientului.");
+      }
     }
   };
 
@@ -216,12 +240,14 @@ const ClientsList = () => {
                         <Eye size={18} strokeWidth={1.5} />
                       </Link>
                       <button 
+                        onClick={() => handleEditClick(client)}
                         className="p-2 flex items-center justify-center text-gray-500 hover:text-blue-500 border border-gray-300 dark:border-gray-600 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
                         title="Editare"
                       >
                         <Edit2 size={18} strokeWidth={1.5} />
                       </button>
                       <button 
+                        onClick={() => handleDeleteClick(client.id)}
                         className="p-2 flex items-center justify-center text-gray-500 hover:text-red-500 border border-gray-300 dark:border-gray-600 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-all"
                         title="Ștergere"
                       >
@@ -282,8 +308,8 @@ const ClientsList = () => {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl max-w-xl w-full border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shrink-0">
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Adaugă Client Nou</h3>
-              <button onClick={() => setIsModalOpen(false)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">{isEditing ? 'Editare Client' : 'Adaugă Client Nou'}</h3>
+              <button onClick={() => { setIsModalOpen(false); setIsEditing(false); setNewClient({ type: 'PJ', name: '', cui_cnp: '' }); }} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
                 ✕
               </button>
             </div>
@@ -426,7 +452,7 @@ const ClientsList = () => {
               </form>
             </div>
             <div className="p-6 border-t border-gray-200 dark:border-gray-700 flex justify-end gap-3 shrink-0 bg-gray-50 dark:bg-gray-800/50 rounded-b-3xl">
-              <button type="button" onClick={() => setIsModalOpen(false)} className="px-6 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
+              <button type="button" onClick={() => { setIsModalOpen(false); setIsEditing(false); setNewClient({ type: 'PJ', name: '', cui_cnp: '' }); }} className="px-6 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors">
                 Anulare
               </button>
               <button type="submit" form="add-client-form" className="px-6 py-2.5 text-sm font-medium text-white bg-primary rounded-full hover:bg-primary/90 transition-colors shadow-sm">

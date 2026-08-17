@@ -57,6 +57,16 @@ def get_clients(skip: int = 0, limit: int = 100, db: Session = Depends(get_db), 
             
     return clients
 
+@router.delete("/{client_id}")
+def delete_client(client_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    
+    db.delete(client)
+    db.commit()
+    return {"message": "Client deleted successfully"}
+
 from ..services.osint.anaf_scraper import AnafScraper
 from ..services.osint.registry_scraper import RegistryScraper
 from ..services.osint.cross_checker import CrossChecker
