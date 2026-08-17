@@ -385,23 +385,33 @@ const OffersList = () => {
               <label className="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
                 Asociază o Mașină din Flotă (Opțional)
               </label>
-              <select
-                value={selectedVehicleId}
-                onChange={(e) => setSelectedVehicleId(e.target.value)}
-                className="w-full px-4 py-2 border rounded-xl dark:bg-gray-700 border-gray-300 dark:border-gray-600 dark:text-white focus:ring-primary focus:border-primary"
-              >
-                <option value="">-- Alegeți mașina disponibilă --</option>
-                {vehicles.map(v => (
-                  <option key={v.id} value={v.id}>
-                    {v.make} {v.model} - {v.license_plate} (VIN: {v.vin}) [{v.status}]
-                  </option>
-                ))}
-              </select>
-              {selectedVehicleId && vehicles.find(v => v.id.toString() === selectedVehicleId.toString())?.make !== selectedOfferForContract.vehicle_make && (
-                 <p className="mt-2 text-sm text-amber-600 dark:text-amber-400">
-                    Atenție: Mașina selectată diferă de cea din ofertă ({selectedOfferForContract.vehicle_make} {selectedOfferForContract.vehicle_model}).
-                 </p>
-              )}
+              {(() => {
+                const matchingVehiclesList = vehicles.filter(v => v.make === selectedOfferForContract.vehicle_make && v.model === selectedOfferForContract.vehicle_model);
+                
+                if (matchingVehiclesList.length === 0) {
+                  return (
+                    <div className="p-3 bg-white dark:bg-gray-800 rounded-lg border border-amber-200 dark:border-amber-900/50 text-sm text-gray-600 dark:text-gray-400">
+                      Nu a fost găsită nicio mașină <strong>{selectedOfferForContract.vehicle_make} {selectedOfferForContract.vehicle_model}</strong> disponibilă fizic în garaj. Poți genera contractul fără a o asocia (va lăsa seria de șasiu goală).
+                    </div>
+                  );
+                }
+
+                return (
+                  <select
+                    value={selectedVehicleId}
+                    onChange={(e) => setSelectedVehicleId(e.target.value)}
+                    className="w-full px-4 py-2 border rounded-xl dark:bg-gray-700 border-gray-300 dark:border-gray-600 dark:text-white focus:ring-primary focus:border-primary"
+                  >
+                    <option value="">-- Selectează mașina pentru a extrage automat VIN-ul --</option>
+                    {matchingVehiclesList.map(v => (
+                      <option key={v.id} value={v.id}>
+                        {v.make} {v.model} - {v.license_plate} (VIN: {v.vin}) [{v.status}]
+                      </option>
+                    ))}
+                  </select>
+                );
+              })()}
+              {/* Am scos alerta de mismatch deoarece afisam doar masinile care se potrivesc */}
             </div>
 
             <div className="p-8 overflow-y-auto font-serif text-gray-800 dark:text-gray-200 leading-relaxed space-y-6">
