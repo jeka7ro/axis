@@ -15,15 +15,23 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
-// Component to handle map resize when toggling full screen
-function MapResizer({ isFullScreen }) {
+// Component to handle map resize and programmatic panning
+function MapController({ isFullScreen, targetCenter }) {
   const map = useMap();
+  
   useEffect(() => {
     const timeout = setTimeout(() => {
       map.invalidateSize();
     }, 100); // Wait for CSS transition to finish
     return () => clearTimeout(timeout);
   }, [isFullScreen, map]);
+
+  useEffect(() => {
+    if (targetCenter) {
+      map.flyTo(targetCenter, 15, { duration: 1.5 });
+    }
+  }, [targetCenter, map]);
+  
   return null;
 }
 
@@ -33,6 +41,7 @@ const GPSMonitoring = () => {
   const [loading, setLoading] = useState(true);
   const [isFullScreen, setIsFullScreen] = useState(false);
   const [expandedAlerts, setExpandedAlerts] = useState([]);
+  const [targetCenter, setTargetCenter] = useState(null);
 
   // Table State
   const [selectedIds, setSelectedIds] = useState([]);
@@ -182,7 +191,7 @@ const GPSMonitoring = () => {
                 style={{ borderRadius: '0 0 1.5rem 1.5rem' }}
                 scrollWheelZoom={isFullScreen}
               >
-                <MapResizer isFullScreen={isFullScreen} />
+                <MapController isFullScreen={isFullScreen} targetCenter={targetCenter} />
                 <TileLayer
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -248,6 +257,7 @@ const GPSMonitoring = () => {
                 <th scope="col" className="px-6 py-4">Status Motor</th>
                 <th scope="col" className="px-6 py-4">Viteză (km/h)</th>
                 <th scope="col" className="px-6 py-4">Locație Curentă</th>
+                <th scope="col" className="px-6 py-4 text-right">Coordonate</th>
               </tr>
             </thead>
             <tbody>
@@ -281,6 +291,19 @@ const GPSMonitoring = () => {
                     </td>
                     <td className="px-6 py-4">{loc.speed_kmh}</td>
                     <td className="px-6 py-4 text-gray-600 dark:text-gray-400">{loc.location_name || 'Necunoscută'}</td>
+                    <td className="px-6 py-4 text-right">
+                      <button 
+                        onClick={() => {
+                          setTargetCenter([loc.latitude, loc.longitude]);
+                          window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }}
+                        className="text-xs font-mono text-blue-600 dark:text-blue-400 hover:underline flex items-center justify-end gap-1 ml-auto"
+                        title="Conduceți pe hartă"
+                      >
+                        <MapPin size={12} />
+                        {loc.latitude.toFixed(5)}, {loc.longitude.toFixed(5)}
+                      </button>
+                    </td>
                   </tr>
                 ))
               )}
