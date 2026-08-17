@@ -6,6 +6,22 @@ export const fetchOffers = async () => {
   return response.json();
 };
 
+export const fetchOffer = async (id) => {
+  const response = await fetch(`${API_URL}/offers/${id}`);
+  if (!response.ok) throw new Error('Failed to fetch offer');
+  return response.json();
+};
+
+export const updateOffer = async (id, data) => {
+  const response = await fetch(`${API_URL}/offers/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data)
+  });
+  if (!response.ok) throw new Error('Failed to update offer');
+  return response.json();
+};
+
 export const createOffer = async (data) => {
   const response = await fetch(`${API_URL}/offers/`, {
     method: 'POST',

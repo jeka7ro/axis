@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import { fetchClients, createClient, updateClient, fetchVehicles, fetchVehicleBrands } from '../services/api';
-import { createOffer, uploadTemplate } from '../services/apiOffers';
+import { createOffer, updateOffer, fetchOffer, uploadTemplate } from '../services/apiOffers';
 import useAuthStore from '../store/authStore';
 import Tesseract from 'tesseract.js';
 import { ChevronLeft } from 'lucide-react';
@@ -9,6 +9,8 @@ import SearchableSelect from '../components/SearchableSelect';
 
 const OfferBuilder = () => {
   const navigate = useNavigate();
+  const { id } = useParams();
+  const isEditMode = Boolean(id);
   const { currency } = useAuthStore();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -48,7 +50,33 @@ const OfferBuilder = () => {
     fetchClients().then(setClients).catch(console.error);
     fetchVehicles().then(setVehicles).catch(console.error);
     fetchVehicleBrands().then(setBrands).catch(console.error);
-  }, []);
+    
+    if (isEditMode) {
+      setLoading(true);
+      fetchOffer(id)
+        .then(offer => {
+          setFormData({
+            client_id: offer.client_id.toString(),
+            vehicle_id: offer.vehicle_id || null,
+            currency: offer.currency || 'EUR',
+            vehicle_make: offer.vehicle_make,
+            vehicle_model: offer.vehicle_model,
+            vehicle_price: offer.vehicle_price,
+            advance_percent: offer.advance_percent,
+            period_months: offer.period_months,
+            residual_value_percent: offer.residual_value_percent,
+            interest_rate: offer.interest_rate,
+            template_type: offer.template_type || 'Standard'
+          });
+        })
+        .catch(err => {
+          console.error(err);
+          alert("Eroare la încărcarea ofertei");
+          navigate('/offers');
+        })
+        .finally(() => setLoading(false));
+    }
+  }, [id, isEditMode, navigate]);
 
   const handleOCR = async (e) => {
     const file = e.target.files[0];
@@ -226,7 +254,11 @@ const OfferBuilder = () => {
     }
     setLoading(true);
     try {
-      await createOffer({...formData, client_id: parseInt(formData.client_id)});
+      if (isEditMode) {
+        await updateOffer(id, {...formData, client_id: parseInt(formData.client_id)});
+      } else {
+        await createOffer({...formData, client_id: parseInt(formData.client_id)});
+      }
       navigate('/offers');
     } catch (error) {
       console.error(error);
@@ -246,7 +278,9 @@ const OfferBuilder = () => {
         >
           <ChevronLeft size={20} />
         </button>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Constructor Ofertă Nouă</h2>
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+          {isEditMode ? 'Editare Ofertă' : 'Constructor Ofertă Nouă'}
+        </h2>
       </div>
       
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -553,7 +587,7 @@ const OfferBuilder = () => {
             </div>
 
             <button type="submit" disabled={loading} className="w-full py-2 px-4 bg-primary text-white rounded-md hover:bg-primary/90 font-medium">
-              {loading ? "Se salvează..." : "Generează Oferta Draft"}
+              {loading ? "Se salvează..." : (isEditMode ? "Salvează Modificările" : "Generează Oferta Draft")}
             </button>
           </form>
         </div>

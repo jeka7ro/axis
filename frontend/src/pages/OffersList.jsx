@@ -264,7 +264,10 @@ const OffersList = () => {
                       )}
                       
                       <button 
-                        onClick={(e) => { e.stopPropagation(); console.log('Editare click'); }}
+                        onClick={(e) => { 
+                          e.stopPropagation(); 
+                          navigate(`/offers/edit/${offer.id}`);
+                        }}
                         className="p-2 flex items-center justify-center text-gray-500 hover:text-gray-900 border border-gray-300 dark:border-gray-600 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-all"
                         title="Editează Ofertă"
                       >

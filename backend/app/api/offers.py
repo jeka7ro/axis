@@ -72,7 +72,44 @@ from sqlalchemy.orm import joinedload
 
 @router.get("/", response_model=List[OfferResponse])
 def get_offers(db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
-    return db.query(Offer).options(joinedload(Offer.contract)).order_by(Offer.created_at.desc()).all()
+    offers = db.query(Offer).options(joinedload(Offer.contract)).order_by(Offer.created_at.desc()).all()
+    return offers
+
+@router.get("/{offer_id}", response_model=OfferResponse)
+def get_offer(offer_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    offer = db.query(Offer).options(joinedload(Offer.contract)).filter(Offer.id == offer_id).first()
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found")
+    return offer
+
+@router.put("/{offer_id}", response_model=OfferResponse)
+def update_offer(offer_id: int, request: OfferCreate, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    offer = db.query(Offer).filter(Offer.id == offer_id).first()
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found")
+    
+    if offer.status != OfferStatus.DRAFT:
+        raise HTTPException(status_code=400, detail="Doar ofertele Draft pot fi editate.")
+        
+    offer.client_id = request.client_id
+    offer.vehicle_id = getattr(request, 'vehicle_id', None)
+    offer.vehicle_make = request.vehicle_make
+    offer.vehicle_model = request.vehicle_model
+    offer.vehicle_price = request.vehicle_price
+    offer.advance_percent = request.advance_percent
+    offer.period_months = request.period_months
+    offer.residual_value_percent = request.residual_value_percent
+    offer.interest_rate = request.interest_rate
+    
+    advance = (offer.vehicle_price * offer.advance_percent) / 100
+    residual = (offer.vehicle_price * offer.residual_value_percent) / 100
+    financed = offer.vehicle_price - advance - residual
+    total_interest = financed * (offer.interest_rate / 100) * (offer.period_months / 12)
+    offer.monthly_rate = (financed + total_interest) / offer.period_months
+
+    db.commit()
+    db.refresh(offer)
+    return offer
 
 @router.post("/{offer_id}/approve", response_model=OfferResponse)
 def approve_offer(offer_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):

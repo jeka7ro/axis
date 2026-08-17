@@ -28,6 +28,7 @@ function App() {
           <Route path="clients/:id" element={<ClientDetails />} />
           <Route path="offers" element={<OffersList />} />
           <Route path="offers/new" element={<OfferBuilder />} />
+          <Route path="offers/edit/:id" element={<OfferBuilder />} />
           <Route path="campaigns" element={<CampaignsList />} />
           <Route path="gps" element={<GPSMonitoring />} />
           <Route path="alerts" element={<AlertsList />} />
