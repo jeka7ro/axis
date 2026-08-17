@@ -252,6 +252,10 @@ const OfferBuilder = () => {
       alert("Te rugăm să salvezi clientul nou mai întâi, sau să selectezi unul existent.");
       return;
     }
+    if (!formData.client_id) {
+      alert("Te rugăm să selectezi un client pentru această ofertă.");
+      return;
+    }
     setLoading(true);
     try {
       if (isEditMode) {
