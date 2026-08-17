@@ -1,0 +1,48 @@
+# Node
+node_modules/
+dist/
+build/
+.npm/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+venv/
+.venv/
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+
+# SQLite Databases
+*.sqlite3
+*.db
+!test.db
+!axis_dev.db
+
+# OS Files
+.DS_Store
+Thumbs.db
+
+# Documents / Ephemeral storage
+backend/documents/
