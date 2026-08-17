@@ -184,5 +184,5 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
     return new_contract
 
 @router.get("/contracts", response_model=List[ContractResponse])
-def get_contracts(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+def get_contracts(db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
     return db.query(Contract).order_by(Contract.created_at.desc()).all()
