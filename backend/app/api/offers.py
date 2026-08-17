@@ -17,11 +17,14 @@ from ..schemas.offer import OfferCreate, OfferResponse, ContractResponse, Contra
 from ..api.auth import get_current_user
 
 # --- AUTH BYPASS FOR LOCAL DEV (So the UI doesn't break due to missing JWT) ---
-class MockUser:
-    id = 1
-
-def mock_get_current_user():
-    return MockUser()
+def mock_get_current_user(db: Session = Depends(get_db)):
+    user = db.query(User).first()
+    if not user:
+        user = User(email="admin@axis.ro", hashed_password="mock", full_name="Mock Admin", role="Super Admin")
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+    return user
 # -----------------------------------------------------------------------------
 
 router = APIRouter(prefix="/api/offers", tags=["Offers & Contracts"])

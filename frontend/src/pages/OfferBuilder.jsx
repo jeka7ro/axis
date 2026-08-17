@@ -229,7 +229,7 @@ const OfferBuilder = () => {
       navigate('/offers');
     } catch (error) {
       console.error(error);
-      navigate('/offers');
+      alert("A apărut o eroare la salvarea ofertei. Verifică datele și încearcă din nou.");
     } finally {
       setLoading(false);
     }
