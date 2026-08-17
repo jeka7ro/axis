@@ -28,3 +28,6 @@ class GPSAlertResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+class BulkAlertRequest(BaseModel):
+    ids: List[int]

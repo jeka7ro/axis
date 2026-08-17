@@ -66,7 +66,11 @@ async def lookup_client_by_cui(cui: str, current_user = Depends(mock_get_current
     """Fetches company name from ANAF for auto-fill in the UI"""
     scraper = AnafScraper()
     data = await scraper.fetch_company_data(cui)
-    return {"name": data.get("nume", "")}
+    return {
+        "name": data.get("nume", ""),
+        "address": data.get("adresa", ""),
+        "reg_com": data.get("reg_com", "")
+    }
 
 @router.get("/{client_id}", response_model=ClientDetailResponse)
 def get_client(client_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):

@@ -8,7 +8,7 @@ from ..database import get_db
 from ..models.gps import GPSData, GPSAlert
 from ..models.vehicle import Vehicle
 from ..models.client import Client
-from ..schemas.gps import GPSDataResponse, GPSAlertResponse
+from ..schemas.gps import GPSDataResponse, GPSAlertResponse, BulkAlertRequest
 from ..api.auth import get_current_user
 from ..models.user import User
 
@@ -159,3 +159,15 @@ def get_live_locations(db: Session = Depends(get_db), current_user = Depends(moc
 @router.get("/alerts", response_model=List[GPSAlertResponse])
 def get_gps_alerts(db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
     return db.query(GPSAlert).order_by(GPSAlert.created_at.desc()).all()
+
+@router.put("/alerts/bulk-read")
+def bulk_read_alerts(request: BulkAlertRequest, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    db.query(GPSAlert).filter(GPSAlert.id.in_(request.ids)).update({GPSAlert.is_read: True}, synchronize_session=False)
+    db.commit()
+    return {"message": "Alerts marked as read"}
+
+@router.delete("/alerts/bulk-delete")
+def bulk_delete_alerts(request: BulkAlertRequest, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    db.query(GPSAlert).filter(GPSAlert.id.in_(request.ids)).delete(synchronize_session=False)
+    db.commit()
+    return {"message": "Alerts deleted"}

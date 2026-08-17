@@ -12,6 +12,7 @@ import ScenariosConfig from './pages/ScenariosConfig';
 import BlackList from './pages/BlackList';
 import VehiclesList from './pages/VehiclesList';
 import Nomenclatures from './pages/Nomenclatures';
+import AlertsList from './pages/AlertsList';
 
 function App() {
   return (
@@ -29,6 +30,7 @@ function App() {
           <Route path="offers/new" element={<OfferBuilder />} />
           <Route path="campaigns" element={<CampaignsList />} />
           <Route path="gps" element={<GPSMonitoring />} />
+          <Route path="alerts" element={<AlertsList />} />
           <Route path="vehicles" element={<VehiclesList />} />
           <Route path="scenarios" element={<ScenariosConfig />} />
           <Route path="blacklist" element={<BlackList />} />

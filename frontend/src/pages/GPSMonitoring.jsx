@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
-import { AlertTriangle, MapPin, Activity, CheckCircle, Navigation, Search, CheckSquare, Trash, Edit2, Trash2, ChevronLeft, ChevronRight, Car, Maximize, Minimize } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet';
+import { AlertTriangle, MapPin, Activity, CheckCircle, Navigation, Search, CheckSquare, Trash, Edit2, Trash2, ChevronLeft, ChevronRight, ChevronDown, ChevronUp, Car, Maximize, Minimize } from 'lucide-react';
 import { fetchLiveLocations, fetchGPSAlerts } from '../services/apiGps';
 
 // Fix leafet default icon issue in React
@@ -15,11 +15,24 @@ let DefaultIcon = L.icon({
 });
 L.Marker.prototype.options.icon = DefaultIcon;
 
+// Component to handle map resize when toggling full screen
+function MapResizer({ isFullScreen }) {
+  const map = useMap();
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      map.invalidateSize();
+    }, 100); // Wait for CSS transition to finish
+    return () => clearTimeout(timeout);
+  }, [isFullScreen, map]);
+  return null;
+}
+
 const GPSMonitoring = () => {
   const [locations, setLocations] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isFullScreen, setIsFullScreen] = useState(false);
+  const [expandedAlerts, setExpandedAlerts] = useState([]);
 
   // Table State
   const [selectedIds, setSelectedIds] = useState([]);
@@ -44,6 +57,10 @@ const GPSMonitoring = () => {
     const interval = setInterval(loadData, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  const toggleAlert = (id) => {
+    setExpandedAlerts(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
 
   // Table Logic
   const handleSelectAll = (e) => {
@@ -97,15 +114,28 @@ const GPSMonitoring = () => {
               </div>
             ) : (
               alerts.map(alert => (
-                <div key={alert.id} className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 p-4 rounded-xl">
-                  <div className="flex items-start gap-3">
-                    <AlertTriangle className="text-red-500 mt-0.5 shrink-0" size={18} />
-                    <div>
-                      <div className="flex justify-between items-start">
+                <div key={alert.id} className="bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-xl overflow-hidden">
+                  {/* Accordion Header */}
+                  <div 
+                    onClick={() => toggleAlert(alert.id)}
+                    className="flex items-center justify-between p-4 cursor-pointer hover:bg-red-100/50 dark:hover:bg-red-900/20 transition-colors"
+                  >
+                    <div className="flex items-center gap-3">
+                      <AlertTriangle className="text-red-500 shrink-0" size={18} />
+                      <div>
                         <h4 className="font-bold text-red-800 dark:text-red-400 text-sm">{alert.vehicle_plate}</h4>
                         <span className="text-[10px] text-red-500 font-medium">{new Date(alert.created_at).toLocaleTimeString('ro-RO')}</span>
                       </div>
-                      <p className="text-sm text-red-700 dark:text-red-300 mt-1">{alert.message}</p>
+                    </div>
+                    <button className="text-red-500 hover:text-red-700 dark:hover:text-red-300">
+                      {expandedAlerts.includes(alert.id) ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                    </button>
+                  </div>
+                  
+                  {/* Accordion Body */}
+                  {expandedAlerts.includes(alert.id) && (
+                    <div className="px-4 pb-4 border-t border-red-100 dark:border-red-900/30 pt-3">
+                      <p className="text-sm text-red-700 dark:text-red-300">{alert.message}</p>
                       
                       {alert.ai_recommendation && (
                         <div className="mt-3 p-3 bg-white dark:bg-gray-800 rounded-lg border border-red-100 dark:border-red-800/50 shadow-sm">
@@ -116,7 +146,7 @@ const GPSMonitoring = () => {
                         </div>
                       )}
                     </div>
-                  </div>
+                  )}
                 </div>
               ))
             )}
@@ -150,7 +180,9 @@ const GPSMonitoring = () => {
                 zoom={6} 
                 className="w-full h-full z-0"
                 style={{ borderRadius: '0 0 1.5rem 1.5rem' }}
+                scrollWheelZoom={isFullScreen}
               >
+                <MapResizer isFullScreen={isFullScreen} />
                 <TileLayer
                   attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
                   url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

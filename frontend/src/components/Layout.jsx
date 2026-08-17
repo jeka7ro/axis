@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Navigate, Link } from 'react-router-dom';
-import { LayoutDashboard, Users, FileText, Car, Settings, LogOut, Sun, Moon, Shield, Megaphone, ShieldAlert, Cpu, MapPin } from 'lucide-react';
+import { LayoutDashboard, Users, FileText, Car, Settings, LogOut, Sun, Moon, Shield, Megaphone, ShieldAlert, Cpu, MapPin, Bell } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 
 const Layout = () => {
@@ -94,6 +94,14 @@ const Layout = () => {
                 <Link to="/gps" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
                   <MapPin size={20} />
                   <span>Monitorizare Flotă (MS)</span>
+                </Link>
+              </li>
+            )}
+            {user?.role !== 'Dealer Sales' && (
+              <li>
+                <Link to="/alerts" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+                  <Bell size={20} className="text-primary" />
+                  <span>Istoric Alerte</span>
                 </Link>
               </li>
             )}

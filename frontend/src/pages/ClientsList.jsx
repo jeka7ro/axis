@@ -49,11 +49,16 @@ const ClientsList = () => {
     if (!newClient.cui_cnp || newClient.cui_cnp.length < 5 || newClient.type === 'PF') return;
     try {
       const data = await lookupClientByCui(newClient.cui_cnp);
-      if (data && data.name) {
-        setNewClient(prev => ({ ...prev, name: data.name }));
+      if (data) {
+        setNewClient(prev => ({ 
+          ...prev, 
+          name: data.name || prev.name,
+          address: data.address || prev.address,
+          reg_com: data.reg_com || prev.reg_com
+        }));
       }
     } catch (error) {
-      console.warn("Could not fetch company name automatically from ANAF.", error);
+      console.warn("Could not fetch company data automatically from ANAF.", error);
     }
   };
 
