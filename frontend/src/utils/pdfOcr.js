@@ -32,7 +32,7 @@ async function fileToCanvas(file) {
       ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
       resolve(canvas);
     };
-    img.onerror = reject;
+    img.onerror = () => reject(new Error('Formatul imaginii nu este recunoscut (posibil HEIC de pe iPhone). Te rugăm să încarci un fișier JPG, PNG sau PDF.'));
     img.src = URL.createObjectURL(file);
   });
 }

@@ -129,7 +129,7 @@ const ClientsList = () => {
       });
     } catch (err) {
       console.error(err);
-      alert('Eroare la scanarea buletinului');
+      alert('Eroare la scanarea buletinului: ' + (err.message || err));
     } finally {
       setOcrLoading(false);
       e.target.value = '';
@@ -205,7 +205,7 @@ const ClientsList = () => {
       }));
     } catch (err) {
       console.error(err);
-      alert('Eroare la scanarea CUI-ului');
+      alert('Eroare la scanarea buletinului: ' + (err.message || err));
     } finally {
       setOcrLoading(false);
       e.target.value = '';
