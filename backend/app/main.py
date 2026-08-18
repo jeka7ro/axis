@@ -8,6 +8,21 @@ import os
 # Create database tables
 Base.metadata.create_all(bind=engine)
 
+# Auto-migrate missing columns for existing databases (e.g. Railway Postgres)
+from sqlalchemy import text
+try:
+    with engine.begin() as conn:
+        try:
+            conn.execute(text("ALTER TABLE client ADD COLUMN representative_cnp VARCHAR;"))
+        except Exception:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE client ADD COLUMN representative_address VARCHAR;"))
+        except Exception:
+            pass
+except Exception as e:
+    print(f"Auto-migration skipped: {e}")
+
 app = FastAPI(
     title="Axis AI Platform API",
     description="Backend API for Axis Fleet and Leasing Management",
