@@ -127,7 +127,7 @@ export function parseRomanianIDCard(text) {
   
   let nume = '';
   const textLines = text.split('\n').map(l => l.trim());
-  const numeIdx = textLines.findIndex(l => l.toUpperCase().includes('NUME/NOM') || l.toUpperCase().includes('LAST NAME'));
+  const numeIdx = textLines.findIndex(l => l.toUpperCase().includes('NUME') || l.toUpperCase().includes('NOM') || l.toUpperCase().includes('LAST NAME'));
   if (numeIdx !== -1 && textLines[numeIdx + 1]) {
      nume = textLines[numeIdx + 1].replace(/[^a-zA-ZĂÂÎȘȚăâîșț\s-]/g, '').trim();
      const prenumeIdx = textLines.findIndex(l => l.toUpperCase().includes('PRENUME') || l.toUpperCase().includes('FIRST NAME'));
@@ -137,8 +137,9 @@ export function parseRomanianIDCard(text) {
   }
 
   if (!nume || nume.length < 3) {
-    const textNoSpacesMRZ = text.replace(/\s+/g, '');
-    const mrzMatchName = textNoSpacesMRZ.match(/(?:ID|1D)ROU([A-Z<]{25})/i);
+    const textNoSpacesMRZ = text.replace(/\s+/g, '').replace(/0/g, 'O'); // Replace 0 with O for MRZ alpha line
+    // Look for IDROU or 1DROU or something similar followed by 25 letters/chevrons
+    const mrzMatchName = textNoSpacesMRZ.match(/(?:ID|1D|I0|10)R[O0U]+([A-Z<]{15,30})/i);
     if (mrzMatchName) {
       const namePart = mrzMatchName[1];
       const parts = namePart.split('<<');
@@ -195,13 +196,21 @@ export function parseRomanianIDCard(text) {
     validFrom = validityMatch[1].replace(/-/g, '.');
     validUntil = validityMatch[2].replace(/-/g, '.');
   } else {
-    // Sometimes it splits lines
-    const dateRegex = /(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})/g;
-    const datesFound = [...text.matchAll(dateRegex)].map(m => m[1]);
-    if (datesFound.length >= 2) {
-      // Find the last two dates
-      validFrom = datesFound[datesFound.length - 2].replace(/-/g, '.');
-      validUntil = datesFound[datesFound.length - 1].replace(/-/g, '.');
+    // Try on text without spaces
+    const textNoSpacesDates = text.replace(/\s+/g, '');
+    const validMatchNoSpace = textNoSpacesDates.match(/(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})[\-\–\—]?(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})/);
+    if (validMatchNoSpace) {
+      validFrom = validMatchNoSpace[1].replace(/-/g, '.');
+      validUntil = validMatchNoSpace[2].replace(/-/g, '.');
+    } else {
+      // Sometimes it splits lines
+      const dateRegex = /(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})/g;
+      const datesFound = [...text.matchAll(dateRegex)].map(m => m[1]);
+      if (datesFound.length >= 2) {
+        // Find the last two dates
+        validFrom = datesFound[datesFound.length - 2].replace(/-/g, '.');
+        validUntil = datesFound[datesFound.length - 1].replace(/-/g, '.');
+      }
     }
   }
 
