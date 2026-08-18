@@ -143,8 +143,8 @@ export function parseRomanianIDCard(text) {
   }
 
   // 2. Fallback to label-based if MRZ failed or produced tiny string
+  const textLines = text.split('\n').map(l => l.trim());
   if (!nume || nume.length < 3) {
-    const textLines = text.split('\n').map(l => l.trim());
     const numeIdx = textLines.findIndex(l => l.toUpperCase().includes('NUME') || l.toUpperCase().includes('NOM') || l.toUpperCase().includes('LAST NAME'));
     if (numeIdx !== -1 && textLines[numeIdx + 1]) {
        nume = textLines[numeIdx + 1].replace(/[^a-zA-ZĂÂÎȘȚăâîșț\s-]/g, '').trim();
