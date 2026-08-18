@@ -216,20 +216,32 @@ export function parseRomanianIDCard(text) {
 
   let issuedBy = '';
   const issuedIdx = textLines.findIndex(l => l.toUpperCase().includes('EMIS') || l.toUpperCase().includes('ISSUED'));
-  if (issuedIdx !== -1 && textLines[issuedIdx + 1]) {
-    issuedBy = textLines[issuedIdx + 1];
+  if (issuedIdx !== -1) {
+    const sameLineMatch = textLines[issuedIdx].match(/(?:EMIS[A\s]*DE|ISSUED\s*BY|ED\s*pier).{0,5}(SPCLEP|SPCEP|DIREC[TȚ]IA|POLI[TȚ]IA|SEC[TȚ]IA.*)/i);
+    if (sameLineMatch && sameLineMatch[1].trim().length > 3) {
+      issuedBy = sameLineMatch[1].trim();
+    } else if (textLines[issuedIdx + 1]) {
+      issuedBy = textLines[issuedIdx + 1];
+    }
+    
     if (issuedBy.toUpperCase().includes('CNP') || issuedBy.length < 3) {
-       const sameLineMatch = textLines[issuedIdx].match(/(?:EMIS[A\s]*DE|ISSUED\s*BY)\s*(.+)/i);
-       if (sameLineMatch && sameLineMatch[1].trim().length > 3) {
-         issuedBy = sameLineMatch[1].trim();
-       } else {
-         issuedBy = '';
-       }
+       issuedBy = '';
     }
   }
   
   const dateStripRegex = /\d{2}[\.\-]\d{2}[\.\-]\d{2,4}\s*-\s*\d{2}[\.\-]\d{2}[\.\-]\d{2,4}/;
-  issuedBy = issuedBy.replace(dateStripRegex, '').replace(/\b(?:20|19)\d{2}\b.*/, '').trim();
+  issuedBy = issuedBy.replace(dateStripRegex, '')
+                     .replace(/\b(?:20|19)\d{2}\b.*/, '')
+                     .replace(/(?:ED pier|ISSUED BY|EMISA DE|EMIS DE)/gi, '')
+                     .replace(/\d{2,}.*/, '') // strip any leftover trailing numbers (dates) and noise
+                     .replace(/GOE/gi, '')
+                     .trim();
+                     
+  // If it contains SPCLEP or similar, only keep from that word onwards
+  const issuerPrefix = issuedBy.match(/(SPCLEP|SPCEP|DIREC[TȚ]IA|POLI[TȚ]IA|SEC[TȚ]IA)/i);
+  if (issuerPrefix) {
+    issuedBy = issuedBy.substring(issuerPrefix.index);
+  }
   
   const textNoSpaces = text.replace(/\s+/g, '');
   const mrzLine2Match = textNoSpaces.match(/([A-Z]{2})([0-9O]{6})[<\dK\(\)]+R[O0]U/i);
@@ -238,7 +250,8 @@ export function parseRomanianIDCard(text) {
     number = mrzLine2Match[2].replace(/O/gi, '0');
   }
 
-  const mrzDateMatch = textNoSpaces.match(/([0-9]{6})[0-9][MF<]([0-9]{6})/i);
+  const textNoSpacesDatesMRZ = text.replace(/\s+/g, '').replace(/O/gi, '0').replace(/l/gi, '1').replace(/I/gi, '1');
+  const mrzDateMatch = textNoSpacesDatesMRZ.match(/([0-9]{6})[0-9][a-zA-Z<]([0-9]{6})/i);
   if (mrzDateMatch && !validUntil) {
     const expStr = mrzDateMatch[2];
     const yy = parseInt(expStr.substring(0, 2), 10);
@@ -246,6 +259,11 @@ export function parseRomanianIDCard(text) {
     const dd = expStr.substring(4, 6);
     const year = yy < 50 ? `20${yy < 10 ? '0' + yy : yy}` : `19${yy}`;
     validUntil = `${dd}.${mm}.${year}`;
+    
+    if (!validFrom) {
+      // Typically Romanian IDs are valid for 10 years
+      validFrom = `${dd}.${mm}.${year - 10}`;
+    }
   }
 
   return {
