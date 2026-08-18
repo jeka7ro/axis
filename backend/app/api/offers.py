@@ -161,7 +161,12 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
     document_url = f"/documents/{contract_num}.docx"
     document_path = f"documents/{contract_num}.docx"
     
-    template_path = "templates/contract_template.docx"
+    template_mapping = {
+        'standard': 'templates/contract_template.docx',
+        'fidejusor': 'templates/contract_template_fidejusor.docx',
+        'leasing': 'templates/contract_template_leasing.docx'
+    }
+    template_path = template_mapping.get(request.template_type, 'templates/contract_template.docx')
     
     if os.path.exists(template_path):
         doc = Document(template_path)

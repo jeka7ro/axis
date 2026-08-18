@@ -13,6 +13,7 @@ const OffersList = () => {
   const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, isBulk: false });
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
+  const [selectedTemplateType, setSelectedTemplateType] = useState('standard');
 
   const formatCurrency = (amount) => {
     if (amount === undefined || amount === null) return '0';
@@ -77,11 +78,16 @@ const OffersList = () => {
 
   const handleGenerateContract = async (id) => {
     try {
-      await generateContract(id, selectedVehicleId);
+      const data = await generateContract(id, selectedVehicleId, selectedTemplateType);
+      alert('Contract generat cu succes!');
+      // descarcă direct documentul
+      if (data.document_url) {
+        window.open(`${import.meta.env.VITE_API_URL.replace('/api', '')}${data.document_url}`, '_blank');
+      }
       loadOffers();
     } catch (error) {
       console.error(error);
-      setOffers(offers.map(o => o.id === id ? {...o, status: 'Transformat în Contract'} : o));
+      alert("Eroare la generarea contractului.");
     }
   };
 
@@ -511,23 +517,36 @@ const OffersList = () => {
             
             <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center">
               <button 
-                onClick={() => { setSelectedOfferForContract(null); setSelectedVehicleId(''); }}
+                onClick={() => { setSelectedOfferForContract(null); setSelectedVehicleId(''); setSelectedTemplateType('standard'); }}
                 className="px-6 py-2.5 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-all"
               >
                 Anulează
               </button>
               
-              <button 
-                onClick={() => {
-                  handleGenerateContract(selectedOfferForContract.id);
-                  setSelectedOfferForContract(null);
-                  setSelectedVehicleId('');
-                }}
-                className="px-8 py-2.5 bg-primary text-white font-medium rounded-full hover:bg-primary/90 shadow-sm transition-all flex items-center gap-2"
-              >
-                <CheckSquare size={18} />
-                Confirmă și Generează Contract
-              </button>
+              <div className="flex items-center gap-4">
+                <select
+                  value={selectedTemplateType}
+                  onChange={(e) => setSelectedTemplateType(e.target.value)}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:ring-primary focus:border-primary"
+                >
+                  <option value="standard">Contract Standard</option>
+                  <option value="fidejusor">Contract cu Fidejusor</option>
+                  <option value="leasing">Contract de Leasing</option>
+                </select>
+                
+                <button 
+                  onClick={() => {
+                    handleGenerateContract(selectedOfferForContract.id);
+                    setSelectedOfferForContract(null);
+                    setSelectedVehicleId('');
+                    setSelectedTemplateType('standard');
+                  }}
+                  className="px-8 py-2.5 bg-primary text-white font-medium rounded-full hover:bg-primary/90 shadow-sm transition-all flex items-center gap-2"
+                >
+                  <CheckSquare size={18} />
+                  Confirmă și Generează
+                </button>
+              </div>
             </div>
           </div>
         </div>

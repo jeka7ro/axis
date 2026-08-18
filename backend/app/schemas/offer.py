@@ -37,6 +37,7 @@ class OfferResponse(OfferBase):
 
 class ContractCreateRequest(BaseModel):
     vehicle_id: Optional[int] = None
+    template_type: Optional[str] = 'standard'
 
 class ContractResponse(BaseModel):
     id: int
