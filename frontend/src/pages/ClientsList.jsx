@@ -605,6 +605,36 @@ const ClientsList = () => {
                         className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                       />
                     </div>
+                    <div className="col-span-2">
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Emis de</label>
+                      <input 
+                        type="text" 
+                        value={newClient.id_card_issued_by || ''}
+                        onChange={e => setNewClient({...newClient, id_card_issued_by: e.target.value})}
+                        placeholder="Ex: SPCLEP Bucuresti Sec 1"
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Valabil de la</label>
+                      <input 
+                        type="text" 
+                        value={newClient.id_card_valid_from || ''}
+                        onChange={e => setNewClient({...newClient, id_card_valid_from: e.target.value})}
+                        placeholder="DD.MM.YYYY"
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Valabil până la</label>
+                      <input 
+                        type="text" 
+                        value={newClient.id_card_valid_until || ''}
+                        onChange={e => setNewClient({...newClient, id_card_valid_until: e.target.value})}
+                        placeholder="DD.MM.YYYY"
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
                   </div>
                 </>
               ) : (

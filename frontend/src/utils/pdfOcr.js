@@ -158,11 +158,11 @@ export function parseRomanianIDCard(text) {
     let addrLines = [];
     for (let i = domIdx + 1; i < textLines.length; i++) {
       if (textLines[i].toUpperCase().includes('EMIS') || textLines[i].toUpperCase().includes('ISSUED')) break;
-      if (textLines[i].length > 3) {
-        addrLines.push(textLines[i]);
-      }
+      if (textLines[i].toUpperCase().includes('SEX') || textLines[i].toUpperCase().includes('CNP')) break;
+      if (textLines[i].length > 3) addrLines.push(textLines[i].trim());
     }
-    address = addrLines.join(', ')
+    // Clean up address by removing weird lonely "nr " endings and joining properly
+    address = addrLines.join(', ').replace(/\s+nr\s*,/gi, ' nr. ').replace(/\s+nr\s*$/gi, '').replace(/\s+/g, ' ')
       .replace(/\b(?:NSE|E Ss|evp|eup)\b/gi, '') 
       .replace(/\b[789]\d{2}\b/g, '') 
       .replace(/[«»<>\|_:]/g, '') 
