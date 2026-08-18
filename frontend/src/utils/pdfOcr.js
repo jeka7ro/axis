@@ -52,7 +52,7 @@ function preprocessCanvas(canvas) {
     const gray = 0.299 * r + 0.587 * g + 0.114 * b;
     
     // High contrast threshold (magic number 140 usually works well for ID cards)
-    const val = gray; // Eliminat thresholding-ul agresiv pentru a pastra calitatea foto
+    const val = gray > 140 ? 255 : 0;
     
     data[i] = data[i+1] = data[i+2] = val;
   }
