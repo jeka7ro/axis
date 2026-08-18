@@ -498,36 +498,23 @@ const ClientsList = () => {
                   </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">
-                  {newClient.type === 'PJ' ? 'CUI' : 'CNP'}
-                </label>
-                <input 
-                  type="text" 
-                  required
-                  value={newClient.cui_cnp}
-                  onChange={e => setNewClient({...newClient, cui_cnp: e.target.value})}
-                  onBlur={handleCuiBlur}
-                  className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">
-                  {newClient.type === 'PJ' ? 'Denumire Companie' : 'Nume Complet'} <span className="text-red-500">*</span>
-                </label>
-                <input 
-                  type="text" 
-                  required
-                  placeholder={newClient.type === 'PJ' ? "Se completează automat din ANAF" : "Nume și prenume"}
-                  value={newClient.name}
-                  onChange={e => setNewClient({...newClient, name: e.target.value})}
-                  className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder-gray-400"
-                />
-              </div>
-
-              {newClient.type === 'PJ' && (
+              {newClient.type === 'PJ' ? (
                 <>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="col-span-2 text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 border-b pb-2 dark:border-gray-700 uppercase">
+                    Date Companie
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">CUI</label>
+                      <input 
+                        type="text" 
+                        required
+                        value={newClient.cui_cnp}
+                        onChange={e => setNewClient({...newClient, cui_cnp: e.target.value})}
+                        onBlur={handleCuiBlur}
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Nr. Reg. Com.</label>
                       <input 
@@ -538,19 +525,43 @@ const ClientsList = () => {
                         className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                       />
                     </div>
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Reprezentant Legal</label>
-                      <input 
-                        type="text" 
-                        value={newClient.representative_name || ''}
-                        onChange={e => setNewClient({...newClient, representative_name: e.target.value})}
-                        placeholder="Nume Reprezentant (sau folosește OCR)"
-                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                      />
-                    </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="col-span-2 text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 border-t pt-2 dark:border-gray-700 uppercase">Date Buletin Reprezentant (Opțional)</div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Denumire Companie <span className="text-red-500">*</span></label>
+                    <input 
+                      type="text" 
+                      required
+                      placeholder="Se completează automat din ANAF"
+                      value={newClient.name}
+                      onChange={e => setNewClient({...newClient, name: e.target.value})}
+                      className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder-gray-400"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Adresă / Sediu Social</label>
+                    <input 
+                      type="text" 
+                      value={newClient.address || ''}
+                      onChange={e => setNewClient({...newClient, address: e.target.value})}
+                      placeholder="Adresa completă"
+                      className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                    />
+                  </div>
+
+                  <div className="col-span-2 text-xs font-bold text-gray-500 dark:text-gray-400 mt-6 border-b pb-2 dark:border-gray-700 uppercase">
+                    Date Reprezentant Legal
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Nume Reprezentant</label>
+                    <input 
+                      type="text" 
+                      value={newClient.representative_name || ''}
+                      onChange={e => setNewClient({...newClient, representative_name: e.target.value})}
+                      placeholder="Nume Reprezentant (sau folosește OCR)"
+                      className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4 mt-2">
                     <div className="col-span-2">
                       <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">CNP Reprezentant</label>
                       <input 
@@ -563,7 +574,7 @@ const ClientsList = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Serie</label>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Serie Buletin</label>
                       <input 
                         type="text" 
                         value={newClient.id_card_series || ''}
@@ -574,7 +585,7 @@ const ClientsList = () => {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Număr</label>
+                      <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Număr Buletin</label>
                       <input 
                         type="text" 
                         value={newClient.id_card_number || ''}
@@ -596,75 +607,99 @@ const ClientsList = () => {
                     </div>
                   </div>
                 </>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Adresă / Sediu Social</label>
-                <input 
-                  type="text" 
-                  value={newClient.address || ''}
-                  onChange={e => setNewClient({...newClient, address: e.target.value})}
-                  placeholder="Adresa completă"
-                  className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                />
-              </div>
-
-              {newClient.type === 'PF' && (
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="col-span-2 text-sm font-bold text-gray-700 dark:text-gray-300 mt-2 border-t pt-2 dark:border-gray-700">Date Buletin (C.I.)</div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Serie</label>
-                    <input 
-                      type="text" 
-                      value={newClient.id_card_series || ''}
-                      onChange={e => setNewClient({...newClient, id_card_series: e.target.value.toUpperCase()})}
-                      placeholder="Ex: RX"
-                      maxLength={2}
-                      className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all uppercase"
-                    />
+              ) : (
+                <>
+                  <div className="col-span-2 text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 border-b pb-2 dark:border-gray-700 uppercase">
+                    Date Persoană Fizică
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Număr</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">CNP</label>
                     <input 
                       type="text" 
-                      value={newClient.id_card_number || ''}
-                      onChange={e => setNewClient({...newClient, id_card_number: e.target.value})}
-                      placeholder="Ex: 123456"
-                      maxLength={6}
-                      className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
-                    />
-                  </div>
-                  <div className="col-span-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Emis de</label>
-                    <input 
-                      type="text" 
-                      value={newClient.id_card_issued_by || ''}
-                      onChange={e => setNewClient({...newClient, id_card_issued_by: e.target.value})}
-                      placeholder="Ex: SPCLEP Bucuresti Sec 1"
+                      required
+                      value={newClient.cui_cnp}
+                      onChange={e => setNewClient({...newClient, cui_cnp: e.target.value})}
                       className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Valabil de la</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Nume Complet <span className="text-red-500">*</span></label>
                     <input 
                       type="text" 
-                      value={newClient.id_card_valid_from || ''}
-                      onChange={e => setNewClient({...newClient, id_card_valid_from: e.target.value})}
-                      placeholder="DD.MM.YYYY"
-                      className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      required
+                      placeholder="Nume și prenume"
+                      value={newClient.name}
+                      onChange={e => setNewClient({...newClient, name: e.target.value})}
+                      className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder-gray-400"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Valabil până la</label>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Adresă Domiciliu</label>
                     <input 
                       type="text" 
-                      value={newClient.id_card_valid_until || ''}
-                      onChange={e => setNewClient({...newClient, id_card_valid_until: e.target.value})}
-                      placeholder="DD.MM.YYYY"
+                      value={newClient.address || ''}
+                      onChange={e => setNewClient({...newClient, address: e.target.value})}
+                      placeholder="Adresa completă"
                       className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                     />
                   </div>
-                </div>
+                  
+                  <div className="grid grid-cols-2 gap-4 mt-6">
+                    <div className="col-span-2 text-xs font-bold text-gray-500 dark:text-gray-400 border-b pb-2 dark:border-gray-700 uppercase">Date Buletin (C.I.)</div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Serie</label>
+                      <input 
+                        type="text" 
+                        value={newClient.id_card_series || ''}
+                        onChange={e => setNewClient({...newClient, id_card_series: e.target.value.toUpperCase()})}
+                        placeholder="Ex: RX"
+                        maxLength={2}
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all uppercase"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Număr</label>
+                      <input 
+                        type="text" 
+                        value={newClient.id_card_number || ''}
+                        onChange={e => setNewClient({...newClient, id_card_number: e.target.value})}
+                        placeholder="Ex: 123456"
+                        maxLength={6}
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
+                    <div className="col-span-2">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Emis de</label>
+                      <input 
+                        type="text" 
+                        value={newClient.id_card_issued_by || ''}
+                        onChange={e => setNewClient({...newClient, id_card_issued_by: e.target.value})}
+                        placeholder="Ex: SPCLEP Bucuresti Sec 1"
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Valabil de la</label>
+                      <input 
+                        type="text" 
+                        value={newClient.id_card_valid_from || ''}
+                        onChange={e => setNewClient({...newClient, id_card_valid_from: e.target.value})}
+                        placeholder="DD.MM.YYYY"
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Valabil până la</label>
+                      <input 
+                        type="text" 
+                        value={newClient.id_card_valid_until || ''}
+                        onChange={e => setNewClient({...newClient, id_card_valid_until: e.target.value})}
+                        placeholder="DD.MM.YYYY"
+                        className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+                      />
+                    </div>
+                  </div>
+                </>
               )}
               </form>
             </div>
