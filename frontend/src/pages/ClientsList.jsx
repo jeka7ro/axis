@@ -7,6 +7,7 @@ import { extractTextFromFile, parseRomanianIDCard } from '../utils/pdfOcr';
 const ClientsList = () => {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [apiError, setApiError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [newClient, setNewClient] = useState({ type: 'PJ', name: '', cui_cnp: '', representative_cnp: '', representative_address: '' });
@@ -20,12 +21,14 @@ const ClientsList = () => {
   const [itemsPerPage, setItemsPerPage] = useState(25);
 
   const loadClients = async () => {
+    setLoading(true);
+    setApiError("");
     try {
       const data = await fetchClients();
       setClients(data);
     } catch (error) {
       console.error(error);
-      // No fallback mock anymore! We rely completely on the real backend.
+      setApiError("Eroare de conexiune la serverul de date (Railway). Vă rugăm să reîncărcați pagina sau să așteptați câteva momente.");
     } finally {
       setLoading(false);
     }
@@ -321,6 +324,21 @@ const ClientsList = () => {
                     <div className="flex flex-col items-center justify-center">
                       <div className="w-8 h-8 border-4 border-gray-200 border-t-primary rounded-full animate-spin mb-3"></div>
                       Se încarcă clienții...
+                    </div>
+                  </td>
+                </tr>
+              ) : apiError ? (
+                <tr>
+                  <td colSpan="8" className="px-6 py-10 text-center text-red-500 bg-red-50/50 dark:bg-red-900/10">
+                    <div className="flex flex-col items-center justify-center gap-2">
+                      <AlertCircle size={24} />
+                      <span className="font-medium">{apiError}</span>
+                      <button 
+                        onClick={loadClients} 
+                        className="mt-2 text-sm text-red-600 dark:text-red-400 hover:underline font-medium"
+                      >
+                        Reîncearcă conexiunea
+                      </button>
                     </div>
                   </td>
                 </tr>
