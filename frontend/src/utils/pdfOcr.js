@@ -189,10 +189,20 @@ export function parseRomanianIDCard(text) {
 
   let validFrom = '';
   let validUntil = '';
-  const validityMatch = text.match(/(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})\s*[^0-9A-Za-z]?\s*(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})/);
+  // Match standard Romanian ID date format like 24.11.21-24.11.31 or with spaces 
+  const validityMatch = text.match(/(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})\s*[\-\–\—]?\s*(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})/);
   if (validityMatch) {
     validFrom = validityMatch[1].replace(/-/g, '.');
     validUntil = validityMatch[2].replace(/-/g, '.');
+  } else {
+    // Sometimes it splits lines
+    const dateRegex = /(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})/g;
+    const datesFound = [...text.matchAll(dateRegex)].map(m => m[1]);
+    if (datesFound.length >= 2) {
+      // Find the last two dates
+      validFrom = datesFound[datesFound.length - 2].replace(/-/g, '.');
+      validUntil = datesFound[datesFound.length - 1].replace(/-/g, '.');
+    }
   }
 
   let issuedBy = '';
