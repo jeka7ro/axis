@@ -126,30 +126,32 @@ export function parseRomanianIDCard(text) {
   }
   
   let nume = '';
-  const textLines = text.split('\n').map(l => l.trim());
-  const numeIdx = textLines.findIndex(l => l.toUpperCase().includes('NUME') || l.toUpperCase().includes('NOM') || l.toUpperCase().includes('LAST NAME'));
-  if (numeIdx !== -1 && textLines[numeIdx + 1]) {
-     nume = textLines[numeIdx + 1].replace(/[^a-zA-ZĂÂÎȘȚăâîșț\s-]/g, '').trim();
-     const prenumeIdx = textLines.findIndex(l => l.toUpperCase().includes('PRENUME') || l.toUpperCase().includes('FIRST NAME'));
-     if (prenumeIdx !== -1 && textLines[prenumeIdx + 1]) {
-         nume += ' ' + textLines[prenumeIdx + 1].replace(/[^a-zA-ZĂÂÎȘȚăâîșț\s-]/g, '').trim();
-     }
+
+  // 1. ALWAYS try MRZ first for name, it's the most reliable
+  const textNoSpacesMRZ = text.replace(/\s+/g, '').replace(/0/g, 'O'); 
+  const mrzMatchName = textNoSpacesMRZ.match(/(?:ID|1D|I0|10)R[O0U]+([A-Z<]{15,30})/i);
+  if (mrzMatchName) {
+    const namePart = mrzMatchName[1];
+    const parts = namePart.split('<<');
+    if (parts.length >= 2) {
+      const lastName = parts[0].replace(/</g, ' ').trim();
+      const firstName = parts[1].replace(/</g, ' ').trim();
+      nume = `${lastName} ${firstName}`;
+    } else {
+      nume = namePart.replace(/</g, ' ').trim();
+    }
   }
 
+  // 2. Fallback to label-based if MRZ failed or produced tiny string
   if (!nume || nume.length < 3) {
-    const textNoSpacesMRZ = text.replace(/\s+/g, '').replace(/0/g, 'O'); // Replace 0 with O for MRZ alpha line
-    // Look for IDROU or 1DROU or something similar followed by 25 letters/chevrons
-    const mrzMatchName = textNoSpacesMRZ.match(/(?:ID|1D|I0|10)R[O0U]+([A-Z<]{15,30})/i);
-    if (mrzMatchName) {
-      const namePart = mrzMatchName[1];
-      const parts = namePart.split('<<');
-      if (parts.length >= 2) {
-        const lastName = parts[0].replace(/</g, ' ').trim();
-        const firstName = parts[1].replace(/</g, ' ').trim();
-        nume = `${lastName} ${firstName}`;
-      } else {
-        nume = namePart.replace(/</g, ' ').trim();
-      }
+    const textLines = text.split('\n').map(l => l.trim());
+    const numeIdx = textLines.findIndex(l => l.toUpperCase().includes('NUME') || l.toUpperCase().includes('NOM') || l.toUpperCase().includes('LAST NAME'));
+    if (numeIdx !== -1 && textLines[numeIdx + 1]) {
+       nume = textLines[numeIdx + 1].replace(/[^a-zA-ZĂÂÎȘȚăâîșț\s-]/g, '').trim();
+       const prenumeIdx = textLines.findIndex(l => l.toUpperCase().includes('PRENUME') || l.toUpperCase().includes('FIRST NAME'));
+       if (prenumeIdx !== -1 && textLines[prenumeIdx + 1]) {
+           nume += ' ' + textLines[prenumeIdx + 1].replace(/[^a-zA-ZĂÂÎȘȚăâîșț\s-]/g, '').trim();
+       }
     }
   }
   
