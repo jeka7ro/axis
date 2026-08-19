@@ -256,7 +256,12 @@ const ClientsList = () => {
           </p>
         </div>
         <button 
-          onClick={() => setIsModalOpen(true)}
+          onClick={() => {
+            setFormError("");
+            setIsEditing(false);
+            setNewClient({ type: 'PJ', name: '', cui_cnp: '', representative_cnp: '', representative_address: '' });
+            setIsModalOpen(true);
+          }}
           className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-full hover:bg-primary/90 transition-colors"
         >
           <Plus size={18} />

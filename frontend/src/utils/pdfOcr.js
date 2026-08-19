@@ -119,20 +119,21 @@ async function processPdf(file) {
 
 export function parseRomanianIDCard(text) {
   let cnp = '';
-  const textCleaned = text.replace(/O/gi, '0').replace(/l/gi, '1').replace(/I/gi, '1').replace(/\s+/g, '');
-  const cnpMatch = textCleaned.match(/([1-8]\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{6})/);
+  // Normalized text for CNP to handle common OCR letter->number confusions
+  const numText = text.replace(/O/gi, '0').replace(/[lI]/g, '1').replace(/S/gi, '5').replace(/B/gi, '8').replace(/Z/gi, '2').replace(/\s+/g, '');
+  const cnpMatch = numText.match(/([1-8]\d{2}(?:0[1-9]|1[0-2])(?:0[1-9]|[12]\d|3[01])\d{6})/);
   if (cnpMatch) {
      cnp = cnpMatch[1];
   }
   
   let nume = '';
-
-  // 1. ALWAYS try MRZ first for name, it's the most reliable
-  const textNoSpacesMRZ = text.replace(/\s+/g, '').replace(/0/g, 'O'); 
+  
+  // Cleaned text for Name MRZ
+  const textNoSpacesMRZ = text.replace(/\s+/g, '').replace(/0/g, 'O').replace(/1/g, 'I'); 
   const mrzMatchName = textNoSpacesMRZ.match(/(?:ID|1D|I0|10)R[O0U]+([A-Z<]{15,30})/i);
   if (mrzMatchName) {
     const namePart = mrzMatchName[1];
-    const parts = namePart.split('<<');
+    const parts = namePart.split(/<{2,}/);
     if (parts.length >= 2) {
       const lastName = parts[0].replace(/</g, ' ').trim();
       const firstName = parts[1].replace(/</g, ' ').trim();
@@ -142,15 +143,23 @@ export function parseRomanianIDCard(text) {
     }
   }
 
-  // 2. Fallback to label-based if MRZ failed or produced tiny string
-  const textLines = text.split('\n').map(l => l.trim());
+  const textLines = text.split('\n').map(l => l.trim()).filter(l => l.length > 2);
+  
   if (!nume || nume.length < 3) {
     const numeIdx = textLines.findIndex(l => l.toUpperCase().includes('NUME') || l.toUpperCase().includes('NOM') || l.toUpperCase().includes('LAST NAME'));
     if (numeIdx !== -1 && textLines[numeIdx + 1]) {
-       nume = textLines[numeIdx + 1].replace(/[^a-zA-ZĂÂÎȘȚăâîșț\s-]/g, '').trim();
+       const extrNume = textLines[numeIdx + 1].replace(/[^a-zA-ZĂÂÎȘȚăâîșț\s-]/g, '').trim();
        const prenumeIdx = textLines.findIndex(l => l.toUpperCase().includes('PRENUME') || l.toUpperCase().includes('FIRST NAME'));
        if (prenumeIdx !== -1 && textLines[prenumeIdx + 1]) {
-           nume += ' ' + textLines[prenumeIdx + 1].replace(/[^a-zA-ZĂÂÎȘȚăâîșț\s-]/g, '').trim();
+           const extrPrenume = textLines[prenumeIdx + 1].replace(/[^a-zA-ZĂÂÎȘȚăâîșț\s-]/g, '').trim();
+           // Avoid concatenating the exact same line
+           if (extrNume !== extrPrenume && !extrNume.includes(extrPrenume)) {
+               nume = extrNume + ' ' + extrPrenume;
+           } else {
+               nume = extrNume;
+           }
+       } else {
+           nume = extrNume;
        }
     }
   }
@@ -162,54 +171,78 @@ export function parseRomanianIDCard(text) {
     for (let i = domIdx + 1; i < textLines.length; i++) {
       if (textLines[i].toUpperCase().includes('EMIS') || textLines[i].toUpperCase().includes('ISSUED')) break;
       if (textLines[i].toUpperCase().includes('SEX') || textLines[i].toUpperCase().includes('CNP')) break;
-      if (textLines[i].length > 3) addrLines.push(textLines[i].trim());
+      // Skip very short garbage lines (1-2 chars like "E", "Ei", "x")
+      if (textLines[i].replace(/[^a-zA-ZĂÂÎȘȚăâîșț0-9]/g, '').length < 3) continue;
+      addrLines.push(textLines[i].trim());
     }
-    // Clean up address by removing weird lonely "nr " endings and joining properly
-    address = addrLines.join(', ').replace(/\s+nr\s*,/gi, ' nr. ').replace(/\s+nr\s*$/gi, '').replace(/\s+/g, ' ')
-      .replace(/\b(?:NSE|E Ss|evp|eup)\b/gi, '') 
-      .replace(/\b[789]\d{2}\b/g, '') 
-      .replace(/[«»<>\|_:]/g, '') 
-      .replace(/a Enășeti/gi, 'Orș. Mărășești') 
+    address = addrLines.join(', ')
+      // Normalize Sector patterns: "Sec..." / "Sec?" / "Sec." / "Sec " -> "Sector"
+      .replace(/\bSec[\.\?\!\*…]{0,3}\s*/gi, 'Sector ')
+      // Normalize "Sector" followed by random garbage before the number
+      .replace(/Sector\s*[^0-9,]{0,4}([0-9])/gi, 'Sector $1')
+      // Clean "SÂ" / "Să" / "SA" after Sector number (OCR misread)
+      .replace(/(Sector\s*\d)\s*[SŞș][AÂăâ]/gi, '$1')
+      // Normalize Mun. / Str. / Int. / Nr. spacing
+      .replace(/\bMun\s*\./gi, 'Mun.')
+      .replace(/\bStr\s*\./gi, 'Str.')
+      .replace(/\bInt\s*\./gi, 'Int.')
+      .replace(/\bnr\s*\./gi, 'nr.')
+      .replace(/\bBl\s*\./gi, 'Bl.')
+      .replace(/\bSc\s*\./gi, 'Sc.')
+      .replace(/\bEt\s*\./gi, 'Et.')
+      .replace(/\bAp\s*\./gi, 'Ap.')
+      // Remove common OCR noise words
+      .replace(/\b(?:NSE|E Ss|evp|eup|GOE)\b/gi, '')
+      // Remove stray 3-digit numbers that are NOT part of addresses (700-999 range noise)
+      .replace(/\b[789]\d{2}\b/g, '')
+      // Remove special characters that shouldn't be in addresses
+      .replace(/[«»<>\\|_:]/g, '')
+      // Specific known OCR corrections
+      .replace(/a Enășeti/gi, 'Orș. Mărășești')
+      // Strip trailing short garbage fragments (1-2 letter words at end)
+      .replace(/,?\s*\b[a-zA-Z]{1,2}\s*$/g, '')
+      // Clean up spacing and commas
+      .replace(/\s+nr\s*,/gi, ' nr.')
+      .replace(/\s+nr\s*$/gi, '')
       .replace(/\s{2,}/g, ' ')
       .replace(/,\s*,/g, ',')
       .replace(/,\s*$/, '')
+      .replace(/^\s*,\s*/, '')
       .trim();
   }
   
   let series = '';
   let number = '';
-  const seriesMatch = text.match(/SERI[A-Z\s:]*([A-Z]{2})\s*NR[A-Z\s\.:]*([0-9]{6})/i);
+  const textCleanedSeries = text.replace(/\|/g, 'I').replace(/!/g, '1');
+  const seriesMatch = textCleanedSeries.match(/SERI[A-Z\s:]*([A-Z]{2})\s*NR[A-Z\s\.:]*([0-9]{6})/i);
   if (seriesMatch) {
     series = seriesMatch[1];
     number = seriesMatch[2];
   } else {
-    const altMatch = text.match(/\b([A-Z]{2})\s*([0-9]{6})\b/);
+    // Fallback: search for 2 capital letters and 6 digits anywhere
+    const altMatch = textCleanedSeries.match(/\b([A-Z]{2})\s*([0-9OIlS]{6})\b/);
     if (altMatch) {
       series = altMatch[1];
-      number = altMatch[2];
+      number = altMatch[2].replace(/O/gi, '0').replace(/[lI]/g, '1').replace(/S/gi, '5');
     }
   }
 
   let validFrom = '';
   let validUntil = '';
-  // Match standard Romanian ID date format like 24.11.21-24.11.31 or with spaces 
   const validityMatch = text.match(/(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})\s*[\-\–\—]?\s*(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})/);
   if (validityMatch) {
     validFrom = validityMatch[1].replace(/-/g, '.');
     validUntil = validityMatch[2].replace(/-/g, '.');
   } else {
-    // Try on text without spaces
     const textNoSpacesDates = text.replace(/\s+/g, '');
     const validMatchNoSpace = textNoSpacesDates.match(/(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})[\-\–\—]?(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})/);
     if (validMatchNoSpace) {
       validFrom = validMatchNoSpace[1].replace(/-/g, '.');
       validUntil = validMatchNoSpace[2].replace(/-/g, '.');
     } else {
-      // Sometimes it splits lines
       const dateRegex = /(\d{2}[\.\-]\d{2}[\.\-]\d{2,4})/g;
       const datesFound = [...text.matchAll(dateRegex)].map(m => m[1]);
       if (datesFound.length >= 2) {
-        // Find the last two dates
         validFrom = datesFound[datesFound.length - 2].replace(/-/g, '.');
         validUntil = datesFound[datesFound.length - 1].replace(/-/g, '.');
       }
@@ -225,7 +258,6 @@ export function parseRomanianIDCard(text) {
     } else if (textLines[issuedIdx + 1]) {
       issuedBy = textLines[issuedIdx + 1];
     }
-    
     if (issuedBy.toUpperCase().includes('CNP') || issuedBy.length < 3) {
        issuedBy = '';
     }
@@ -235,47 +267,30 @@ export function parseRomanianIDCard(text) {
   issuedBy = issuedBy.replace(dateStripRegex, '')
                      .replace(/\b(?:20|19)\d{2}\b.*/, '')
                      .replace(/(?:ED pier|ISSUED BY|EMISA DE|EMIS DE)/gi, '')
-                     .replace(/\d{2,}.*/, '') // strip any leftover trailing numbers (dates) and noise
+                     .replace(/\d{2,}.*/, '') 
                      .replace(/GOE/gi, '')
                      .trim();
                      
-  // If it contains SPCLEP or similar, only keep from that word onwards
   const issuerPrefix = issuedBy.match(/(SPCLEP|SPCEP|DIREC[TȚ]IA|POLI[TȚ]IA|SEC[TȚ]IA)/i);
   if (issuerPrefix) {
     issuedBy = issuedBy.substring(issuerPrefix.index);
   }
   
-  const textNoSpaces = text.replace(/\s+/g, '');
-  const mrzLine2Match = textNoSpaces.match(/([A-Z]{2})([0-9O]{6})[<\dK\(\)]+R[O0]U/i);
-  if (mrzLine2Match) {
-    series = mrzLine2Match[1].toUpperCase();
-    number = mrzLine2Match[2].replace(/O/gi, '0');
+  const mrzLine2Match = numText.match(/([A-Z]{2})([0-9]{6})[<\dK\(\)]+R[O0]U/i);
+  if (mrzLine2Match && !series) {
+      series = mrzLine2Match[1];
+      number = mrzLine2Match[2];
   }
-
-  const textNoSpacesDatesMRZ = text.replace(/\s+/g, '').replace(/O/gi, '0').replace(/l/gi, '1').replace(/I/gi, '1');
-  const mrzDateMatch = textNoSpacesDatesMRZ.match(/([0-9]{6})[0-9][a-zA-Z<]([0-9]{6})/i);
-  if (mrzDateMatch && !validUntil) {
-    const expStr = mrzDateMatch[2];
-    const yy = parseInt(expStr.substring(0, 2), 10);
-    const mm = expStr.substring(2, 4);
-    const dd = expStr.substring(4, 6);
-    const year = yy < 50 ? `20${yy < 10 ? '0' + yy : yy}` : `19${yy}`;
-    validUntil = `${dd}.${mm}.${year}`;
-    
-    if (!validFrom) {
-      // Typically Romanian IDs are valid for 10 years
-      validFrom = `${dd}.${mm}.${year - 10}`;
-    }
-  }
-
+  
   return {
-    name: nume,
-    cui_cnp: cnp,
-    address,
-    id_card_series: series,
-    id_card_number: number,
-    id_card_issued_by: issuedBy,
-    id_card_valid_from: validFrom,
-    id_card_valid_until: validUntil
+    cui_cnp: cnp || '',
+    name: nume || '',
+    address: address || '',
+    id_card_series: series || '',
+    id_card_number: number || '',
+    id_card_issued_by: issuedBy || '',
+    id_card_valid_from: validFrom || '',
+    id_card_valid_until: validUntil || ''
   };
 }
+
