@@ -35,6 +35,7 @@ class ClientBase(BaseModel):
     id_card_issued_by: Optional[str] = None
     id_card_valid_from: Optional[str] = None
     id_card_valid_until: Optional[str] = None
+    profile_photo: Optional[str] = None
 
 class ClientCreate(ClientBase):
     pass

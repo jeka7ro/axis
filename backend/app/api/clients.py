@@ -100,16 +100,26 @@ async def evaluate_client(client_id: int, db: Session = Depends(get_db), current
         raise HTTPException(status_code=404, detail="Client not found")
         
     # 1. OSINT Data Collection (Caracatița)
-    anaf_scraper = AnafScraper()
-    registry_scraper = RegistryScraper()
-    cross_checker = CrossChecker()
+    osint_data = {}
     
-    anaf_data = await anaf_scraper.fetch_company_data(client.cui_cnp)
-    personnel_data = await registry_scraper.fetch_company_personnel(client.cui_cnp)
-    balance_data = await registry_scraper.fetch_company_balance(client.cui_cnp)
-    
-    # 2. Cross Check
-    osint_data = cross_checker.evaluate_risk(anaf_data, personnel_data, balance_data)
+    if client.type == ClientType.PJ:
+        anaf_scraper = AnafScraper()
+        registry_scraper = RegistryScraper()
+        cross_checker = CrossChecker()
+        
+        anaf_data = await anaf_scraper.fetch_company_data(client.cui_cnp)
+        personnel_data = await registry_scraper.fetch_company_personnel(client.cui_cnp)
+        balance_data = await registry_scraper.fetch_company_balance(client.cui_cnp)
+        
+        # 2. Cross Check
+        osint_data = cross_checker.evaluate_risk(anaf_data, personnel_data, balance_data)
+    else:
+        # PF (Physical Person) - Skip company OSINT
+        osint_data = {
+            "osint_score": 85,
+            "osint_flags": ["Evaluare standard Persoană Fizică"],
+            "details": "Nu se aplică verificări ANAF / Bilanț pentru Persoane Fizice."
+        }
         
     # 3. Call AI Engine
     ai_result = AIEngineService.evaluate_client(name=client.name, osint_data=osint_data)

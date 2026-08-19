@@ -1,8 +1,8 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Plus, Search, Building2, User, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CheckSquare, Trash, AlertCircle, FileText, Check, CreditCard, ScanLine } from 'lucide-react';
+import { Plus, Search, Building2, User, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, CheckSquare, Trash, AlertCircle, FileText, Check, CreditCard, ScanLine, Upload, Link2 as LinkIcon } from 'lucide-react';
 import { fetchClients, createClient, updateClient, deleteClient, lookupClientByCui } from '../services/api';
-import { extractTextFromFile, parseRomanianIDCard } from '../utils/pdfOcr';
+import { extractTextFromFile, parseRomanianIDCard, extractFaceFromIDCard } from '../utils/pdfOcr';
 
 const ClientsList = () => {
   const [clients, setClients] = useState([]);
@@ -19,6 +19,7 @@ const ClientsList = () => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, isBulk: false });
 
   const loadClients = async () => {
     setLoading(true);
@@ -63,16 +64,8 @@ const ClientsList = () => {
     setIsModalOpen(true);
   };
 
-  const handleDeleteClick = async (id) => {
-    if (window.confirm("Ești sigur că vrei să ștergi acest client?")) {
-      try {
-        await deleteClient(id);
-        loadClients();
-      } catch (error) {
-        console.error("Eroare la ștergere:", error);
-        alert("Eroare la ștergerea clientului.");
-      }
-    }
+  const handleDeleteClick = (id) => {
+    setDeleteConfirm({ isOpen: true, id, isBulk: false });
   };
 
   const handleCuiBlur = async () => {
@@ -97,7 +90,10 @@ const ClientsList = () => {
     if (!file) return;
     setOcrLoading(true);
     try {
-      const text = await extractTextFromFile(file);
+      const [text, facePhoto] = await Promise.all([
+        extractTextFromFile(file),
+        extractFaceFromIDCard(file)
+      ]);
       
       const idData = parseRomanianIDCard(text);
       setNewClient(prev => {
@@ -111,7 +107,8 @@ const ClientsList = () => {
             id_card_number: idData.id_card_number,
             id_card_issued_by: idData.id_card_issued_by,
             id_card_valid_from: idData.id_card_valid_from,
-            id_card_valid_until: idData.id_card_valid_until
+            id_card_valid_until: idData.id_card_valid_until,
+            profile_photo: facePhoto || prev.profile_photo
           };
         } else {
           return {
@@ -123,7 +120,8 @@ const ClientsList = () => {
             id_card_number: idData.id_card_number,
             id_card_issued_by: idData.id_card_issued_by,
             id_card_valid_from: idData.id_card_valid_from,
-            id_card_valid_until: idData.id_card_valid_until
+            id_card_valid_until: idData.id_card_valid_until,
+            profile_photo: facePhoto || prev.profile_photo
           };
         }
       });
@@ -293,7 +291,10 @@ const ClientsList = () => {
               <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-full hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:border-blue-800/50 transition-colors">
                 <CheckSquare size={16} /> Bulk Edit
               </button>
-              <button className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-full hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800/50 transition-colors">
+              <button 
+                onClick={() => setDeleteConfirm({ isOpen: true, id: null, isBulk: true })}
+                className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-red-700 bg-red-50 border border-red-200 rounded-full hover:bg-red-100 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800/50 transition-colors"
+              >
                 <Trash size={16} /> Bulk Delete
               </button>
             </div>
@@ -369,7 +370,16 @@ const ClientsList = () => {
                     </td>
                     <td className="px-4 py-4 font-medium text-gray-400">{startIndex + idx + 1}</td>
                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white">
-                      {client.name}
+                      <div className="flex items-center gap-3">
+                        {client.profile_photo ? (
+                          <img src={client.profile_photo} alt="" className="w-8 h-8 rounded-full object-cover border border-gray-200 dark:border-gray-700 shadow-sm" />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-400 text-xs font-bold uppercase shrink-0">
+                            {client.name ? client.name.charAt(0) : '?'}
+                          </div>
+                        )}
+                        <span>{client.name}</span>
+                      </div>
                     </td>
                     <td className="px-6 py-4">{client.cui_cnp}</td>
                     <td className="px-6 py-4">
@@ -477,7 +487,7 @@ const ClientsList = () => {
               </button>
             </div>
             
-            <div className="p-6 overflow-y-auto">
+            <div className="p-6 overflow-y-auto flex-1 min-h-0">
               <form id="add-client-form" onSubmit={handleAddClient} className="space-y-5">
                 {formError && (
                   <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
@@ -523,8 +533,44 @@ const ClientsList = () => {
               </div>
               {newClient.type === 'PJ' ? (
                 <>
-                  <div className="col-span-2 text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 border-b pb-2 dark:border-gray-700 uppercase">
-                    Date Companie
+                  <div className="col-span-2 flex items-center justify-between mt-2 border-b pb-2 dark:border-gray-700">
+                    <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">
+                      Date Companie
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {newClient.profile_photo && (
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-gray-400">Logo:</span>
+                          <img src={newClient.profile_photo} alt="Logo preview" className="w-8 h-8 rounded-full object-cover border border-gray-300 shadow-sm" />
+                        </div>
+                      )}
+                      <label className="cursor-pointer text-xs flex items-center gap-1 text-primary hover:text-blue-600 transition-colors">
+                        <Upload size={14} />
+                        <span>Încarcă Logo</span>
+                        <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                           const file = e.target.files[0];
+                           if (!file) return;
+                           const reader = new FileReader();
+                           reader.onload = (event) => {
+                             setNewClient({...newClient, profile_photo: event.target.result});
+                           };
+                           reader.readAsDataURL(file);
+                        }} />
+                      </label>
+                      <button 
+                        type="button"
+                        onClick={() => {
+                          const url = prompt("Introdu link-ul către logo (ex: https://site.com/logo.png):");
+                          if (url) {
+                            setNewClient({...newClient, profile_photo: url});
+                          }
+                        }}
+                        className="text-xs flex items-center gap-1 text-gray-500 hover:text-gray-700 transition-colors"
+                      >
+                        <LinkIcon size={14} />
+                        <span>Link</span>
+                      </button>
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4 mt-4">
                     <div>
@@ -571,8 +617,16 @@ const ClientsList = () => {
                     />
                   </div>
 
-                  <div className="col-span-2 text-xs font-bold text-gray-500 dark:text-gray-400 mt-6 border-b pb-2 dark:border-gray-700 uppercase">
-                    Date Reprezentant Legal
+                  <div className="col-span-2 flex items-center justify-between border-b pb-2 mt-6 dark:border-gray-700">
+                    <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">
+                      Date Reprezentant Legal
+                    </div>
+                    {newClient.profile_photo && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">Poză profil:</span>
+                        <img src={newClient.profile_photo} alt="Profile preview" className="w-8 h-8 rounded-full object-cover border border-gray-300 shadow-sm" />
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Nume Reprezentant</label>
@@ -662,8 +716,16 @@ const ClientsList = () => {
                 </>
               ) : (
                 <>
-                  <div className="col-span-2 text-xs font-bold text-gray-500 dark:text-gray-400 mt-2 border-b pb-2 dark:border-gray-700 uppercase">
-                    Date Persoană Fizică
+                  <div className="col-span-2 flex items-center justify-between border-b pb-2 mt-2 dark:border-gray-700">
+                    <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">
+                      Date Persoană Fizică
+                    </div>
+                    {newClient.profile_photo && (
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-gray-400">Poză profil:</span>
+                        <img src={newClient.profile_photo} alt="Profile preview" className="w-8 h-8 rounded-full object-cover border border-gray-300 shadow-sm" />
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">CNP</label>
@@ -762,6 +824,55 @@ const ClientsList = () => {
               </button>
               <button type="submit" form="add-client-form" className="px-6 py-2.5 text-sm font-medium text-white bg-primary rounded-full hover:bg-primary/90 transition-colors shadow-sm">
                 Salvează
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700/50 rounded-full flex items-center justify-center text-gray-900 dark:text-gray-200">
+                <Trash size={32} strokeWidth={1.5} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Confirmare Ștergere</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {deleteConfirm.isBulk 
+                  ? "Ești sigur că vrei să ștergi clienții selectați? Această acțiune este ireversibilă." 
+                  : "Ești sigur că vrei să ștergi acest client? Această acțiune este ireversibilă."}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 mt-8">
+              <button 
+                onClick={() => setDeleteConfirm({ isOpen: false, id: null, isBulk: false })}
+                className="flex-1 py-2.5 px-4 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Anulează
+              </button>
+              <button 
+                onClick={async () => {
+                  try {
+                    if (deleteConfirm.isBulk) {
+                      for (const clientId of selectedIds) {
+                        await deleteClient(clientId);
+                      }
+                      setSelectedIds([]);
+                    } else if (deleteConfirm.id) {
+                      await deleteClient(deleteConfirm.id);
+                    }
+                    loadClients();
+                    setDeleteConfirm({ isOpen: false, id: null, isBulk: false });
+                  } catch (error) {
+                    console.error("Eroare la ștergere:", error);
+                    setApiError("Eroare la ștergere. Posibil clientul selectat are alte date asociate.");
+                    setDeleteConfirm({ isOpen: false, id: null, isBulk: false });
+                  }
+                }}
+                className="flex-1 py-2.5 px-4 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 transition-colors shadow-sm"
+              >
+                Da, Șterge
               </button>
             </div>
           </div>

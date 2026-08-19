@@ -67,9 +67,25 @@ const ClientDetails = () => {
 
       {/* Main Info Card */}
       <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 flex items-start justify-between">
-        <div>
-          <h3 className="text-xl font-bold text-gray-900 dark:text-white">{client.name}</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">CUI/CNP: {client.cui_cnp} • Tip: {client.type}</p>
+        <div className="flex items-center gap-4">
+          {/* Profile Photo / Avatar */}
+          {client.profile_photo ? (
+            <img 
+              src={client.profile_photo} 
+              alt={client.name}
+              className="w-16 h-16 rounded-full object-cover border-2 border-gray-200 dark:border-gray-600 shadow-sm"
+            />
+          ) : (
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary/20 to-primary/40 flex items-center justify-center border-2 border-gray-200 dark:border-gray-600">
+              <span className="text-xl font-bold text-primary">
+                {client.name ? client.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() : '?'}
+              </span>
+            </div>
+          )}
+          <div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white">{client.name}</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">CUI/CNP: {client.cui_cnp} • Tip: {client.type}</p>
+          </div>
         </div>
         <button 
           onClick={handleEvaluate}

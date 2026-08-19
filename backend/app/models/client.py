@@ -33,6 +33,7 @@ class Client(Base):
     id_card_issued_by = Column(String, nullable=True)
     id_card_valid_from = Column(String, nullable=True)
     id_card_valid_until = Column(String, nullable=True)
+    profile_photo = Column(Text, nullable=True)  # Base64 encoded face photo from ID card
     created_at = Column(DateTime, default=datetime.utcnow)
 
     evaluations = relationship("Evaluation", back_populates="client")

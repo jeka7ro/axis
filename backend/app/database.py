@@ -11,6 +11,8 @@ if db_url and db_url.startswith("postgres://"):
 # Setup database engine
 engine = create_engine(
     db_url, 
+    pool_pre_ping=True,  # IMPORTANT: checks if connection is alive before using it
+    pool_recycle=300,    # IMPORTANT: recycles connections older than 5 minutes
     connect_args={"check_same_thread": False} if "sqlite" in db_url else {}
 )
 
