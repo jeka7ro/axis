@@ -14,6 +14,7 @@ const CampaignsList = () => {
 
   // Modal state
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, isBulk: false });
   const [editingCampaign, setEditingCampaign] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
@@ -98,17 +99,22 @@ const CampaignsList = () => {
   };
 
   const handleDelete = (id) => {
-    if (window.confirm("Sigur dorești să ștergi această campanie?")) {
-      setCampaigns(campaigns.filter(c => c.id !== id));
-      setSelectedIds(selectedIds.filter(selectedId => selectedId !== id));
-    }
+    setDeleteConfirm({ isOpen: true, id, isBulk: false });
   };
 
   const handleBulkDelete = () => {
-    if (window.confirm(`Sigur dorești să ștergi ${selectedIds.length} campanii selectate?`)) {
+    setDeleteConfirm({ isOpen: true, id: null, isBulk: true });
+  };
+
+  const confirmDelete = () => {
+    if (deleteConfirm.isBulk) {
       setCampaigns(campaigns.filter(c => !selectedIds.includes(c.id)));
       setSelectedIds([]);
+    } else if (deleteConfirm.id) {
+      setCampaigns(campaigns.filter(c => c.id !== deleteConfirm.id));
+      setSelectedIds(selectedIds.filter(selectedId => selectedId !== deleteConfirm.id));
     }
+    setDeleteConfirm({ isOpen: false, id: null, isBulk: false });
   };
 
   // Pagination logic
@@ -371,6 +377,39 @@ const CampaignsList = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700/50 rounded-full flex items-center justify-center text-gray-900 dark:text-gray-200">
+                <Trash size={32} strokeWidth={1.5} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Confirmare Ștergere</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {deleteConfirm.isBulk 
+                  ? `Ești sigur că vrei să ștergi cele ${selectedIds.length} campanii selectate? Această acțiune este ireversibilă.` 
+                  : "Ești sigur că vrei să ștergi această campanie? Această acțiune este ireversibilă."}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 mt-8">
+              <button 
+                onClick={() => setDeleteConfirm({ isOpen: false, id: null, isBulk: false })}
+                className="flex-1 py-2.5 px-4 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Anulează
+              </button>
+              <button 
+                onClick={confirmDelete}
+                className="flex-1 py-2.5 px-4 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 transition-colors shadow-sm"
+              >
+                Da, Șterge
+              </button>
+            </div>
           </div>
         </div>
       )}

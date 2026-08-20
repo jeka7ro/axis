@@ -29,7 +29,7 @@ const ClientsList = () => {
       setClients(data);
     } catch (error) {
       console.error(error);
-      setApiError("Eroare de conexiune la serverul de date (Railway). Vă rugăm să reîncărcați pagina sau să așteptați câteva momente.");
+      setApiError("Eroare de conexiune la serverul de date. Vă rugăm să verificați dacă backend-ul rulează sau așteptați câteva momente.");
     } finally {
       setLoading(false);
     }

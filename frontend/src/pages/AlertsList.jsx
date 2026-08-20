@@ -10,6 +10,9 @@ const AlertsList = () => {
   const [selectedIds, setSelectedIds] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(25);
+  
+  // Modal state
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, isBulk: false });
 
   const loadAlerts = async () => {
     try {
@@ -55,13 +58,23 @@ const AlertsList = () => {
 
   const handleBulkDelete = async () => {
     if (selectedIds.length === 0) return;
-    if (!window.confirm(`Sunteți sigur că doriți să ștergeți cele ${selectedIds.length} alerte selectate?`)) return;
+    setDeleteConfirm({ isOpen: true, id: null, isBulk: true });
+  };
+  
+  const confirmDelete = async () => {
     try {
-      await deleteAlerts(selectedIds);
-      setSelectedIds([]);
+      if (deleteConfirm.isBulk) {
+        await deleteAlerts(selectedIds);
+        setSelectedIds([]);
+      } else if (deleteConfirm.id) {
+        await deleteAlerts([deleteConfirm.id]);
+        setSelectedIds(selectedIds.filter(id => id !== deleteConfirm.id));
+      }
       loadAlerts();
     } catch (error) {
       console.error(error);
+    } finally {
+      setDeleteConfirm({ isOpen: false, id: null, isBulk: false });
     }
   };
 
@@ -208,15 +221,7 @@ const AlertsList = () => {
                         )}
                         <button 
                           onClick={() => {
-                            setSelectedIds([alert.id]);
-                            // Set a timeout to let state update, then call delete directly or rely on the bulk delete button
-                            // Better yet, just call delete directly here for single action:
-                            if(window.confirm('Stergi alerta?')) {
-                               deleteAlerts([alert.id]).then(() => {
-                                   setSelectedIds(selectedIds.filter(id => id !== alert.id));
-                                   loadAlerts();
-                               });
-                            }
+                            setDeleteConfirm({ isOpen: true, id: alert.id, isBulk: false });
                           }}
                           className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-red-50 dark:hover:bg-red-900/20 text-gray-500 hover:text-red-600 transition-colors"
                           title="Șterge alertă"
@@ -275,6 +280,39 @@ const AlertsList = () => {
           </div>
         </div>
       </div>
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700/50 rounded-full flex items-center justify-center text-gray-900 dark:text-gray-200">
+                <Trash size={32} strokeWidth={1.5} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Confirmare Ștergere</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {deleteConfirm.isBulk 
+                  ? `Ești sigur că vrei să ștergi cele ${selectedIds.length} alerte selectate? Această acțiune este ireversibilă.` 
+                  : "Ești sigur că vrei să ștergi această alertă? Această acțiune este ireversibilă."}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 mt-8">
+              <button 
+                onClick={() => setDeleteConfirm({ isOpen: false, id: null, isBulk: false })}
+                className="flex-1 py-2.5 px-4 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Anulează
+              </button>
+              <button 
+                onClick={confirmDelete}
+                className="flex-1 py-2.5 px-4 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 transition-colors shadow-sm"
+              >
+                Da, Șterge
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

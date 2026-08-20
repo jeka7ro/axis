@@ -21,6 +21,9 @@ const Nomenclatures = () => {
   // Form state
   const [newBrandName, setNewBrandName] = useState('');
   const [newModelName, setNewModelName] = useState('');
+  
+  // Custom Delete Confirm Modal State
+  const [deleteConfirm, setDeleteConfirm] = useState({ isOpen: false, id: null, type: null }); // type: 'brand' | 'model'
 
   const loadBrands = async () => {
     setLoading(true);
@@ -56,13 +59,7 @@ const Nomenclatures = () => {
 
   const handleDeleteBrand = async (e, id) => {
     e.stopPropagation();
-    if (!window.confirm("Ești sigur că vrei să ștergi această marcă? Se vor șterge toate modelele asociate!")) return;
-    try {
-      await deleteVehicleBrand(id);
-      loadBrands();
-    } catch (error) {
-      alert("Eroare la ștergerea mărcii.");
-    }
+    setDeleteConfirm({ isOpen: true, id, type: 'brand' });
   };
 
   const handleAddModel = async (e) => {
@@ -81,12 +78,21 @@ const Nomenclatures = () => {
   };
 
   const handleDeleteModel = async (id) => {
-    if (!window.confirm("Ești sigur că vrei să ștergi acest model?")) return;
+    setDeleteConfirm({ isOpen: true, id, type: 'model' });
+  };
+  
+  const confirmDelete = async () => {
     try {
-      await deleteVehicleModel(id);
+      if (deleteConfirm.type === 'brand') {
+        await deleteVehicleBrand(deleteConfirm.id);
+      } else if (deleteConfirm.type === 'model') {
+        await deleteVehicleModel(deleteConfirm.id);
+      }
       loadBrands();
     } catch (error) {
-      alert("Eroare la ștergerea modelului.");
+      alert(`Eroare la ștergerea ${deleteConfirm.type === 'brand' ? 'mărcii' : 'modelului'}.`);
+    } finally {
+      setDeleteConfirm({ isOpen: false, id: null, type: null });
     }
   };
 
@@ -244,6 +250,39 @@ const Nomenclatures = () => {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Delete Confirmation Modal */}
+      {deleteConfirm.isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700/50 rounded-full flex items-center justify-center text-gray-900 dark:text-gray-200">
+                <Trash2 size={32} strokeWidth={1.5} />
+              </div>
+              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Confirmare Ștergere</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                {deleteConfirm.type === 'brand'
+                  ? "Ești sigur că vrei să ștergi această marcă? Se vor șterge și toate modelele asociate!"
+                  : "Ești sigur că vrei să ștergi acest model?"}
+              </p>
+            </div>
+            <div className="flex items-center gap-3 mt-8">
+              <button 
+                onClick={() => setDeleteConfirm({ isOpen: false, id: null, type: null })}
+                className="flex-1 py-2.5 px-4 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 transition-colors"
+              >
+                Anulează
+              </button>
+              <button 
+                onClick={confirmDelete}
+                className="flex-1 py-2.5 px-4 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 transition-colors shadow-sm"
+              >
+                Da, Șterge
+              </button>
+            </div>
           </div>
         </div>
       )}
