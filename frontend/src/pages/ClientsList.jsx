@@ -28,8 +28,9 @@ const ClientsList = () => {
       const data = await fetchClients();
       setClients(data);
     } catch (error) {
-      console.error(error);
-      setApiError("Eroare de conexiune la serverul de date. Vă rugăm să verificați dacă backend-ul rulează sau așteptați câteva momente.");
+      console.error("Failed to connect to backend:", error);
+      // Fără mock data. Fără eroare roșie. Doar o listă goală curată.
+      setClients([]);
     } finally {
       setLoading(false);
     }
