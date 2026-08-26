@@ -20,6 +20,10 @@ try:
             conn.execute(text("ALTER TABLE axis_clients ADD COLUMN representative_address VARCHAR;"))
         except Exception:
             pass
+        try:
+            conn.execute(text("ALTER TABLE axis_clients ADD COLUMN profile_photo VARCHAR;"))
+        except Exception:
+            pass
 except Exception as e:
     print(f"Auto-migration skipped: {e}")
 
