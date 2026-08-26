@@ -13,11 +13,11 @@ from sqlalchemy import text
 try:
     with engine.begin() as conn:
         try:
-            conn.execute(text("ALTER TABLE client ADD COLUMN representative_cnp VARCHAR;"))
+            conn.execute(text("ALTER TABLE axis_clients ADD COLUMN representative_cnp VARCHAR;"))
         except Exception:
             pass
         try:
-            conn.execute(text("ALTER TABLE client ADD COLUMN representative_address VARCHAR;"))
+            conn.execute(text("ALTER TABLE axis_clients ADD COLUMN representative_address VARCHAR;"))
         except Exception:
             pass
 except Exception as e:
