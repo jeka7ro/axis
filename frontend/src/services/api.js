@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://axis-backend.up.railway.app/api' : 'http://localhost:8000/api');
 
 const getHeaders = () => {
   // In a real app we'd get this from a store or localStorage.
