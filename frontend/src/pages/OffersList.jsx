@@ -278,7 +278,7 @@ const OffersList = () => {
                     <td className="px-6 py-4 flex items-center justify-end gap-2">
                       {offer.contract ? (
                         <a 
-                          href={`${import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : 'http://localhost:8000'}${offer.contract.document_url}`}
+                          href={`${import.meta.env.VITE_API_URL ? import.meta.env.VITE_API_URL.replace('/api', '') : (import.meta.env.PROD ? 'https://axis-v1-backend-production.up.railway.app' : 'http://localhost:8000')}${offer.contract.document_url}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           onClick={(e) => e.stopPropagation()}

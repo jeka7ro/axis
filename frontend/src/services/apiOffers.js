@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api';
+const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://axis-v1-backend-production.up.railway.app/api' : 'http://localhost:8000/api');
 
 export const fetchOffers = async () => {
   const response = await fetch(`${API_URL}/offers/`);
