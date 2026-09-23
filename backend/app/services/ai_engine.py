@@ -1,5 +1,6 @@
 import json
 from typing import Dict, Any
+from ..models.client import RiskLevel
 
 class AIEngineService:
     """
@@ -17,13 +18,13 @@ class AIEngineService:
         
         # 2. Generare Răspuns (Simularea LLM-ului care procesează promptul OSINT)
         if score > 80:
-            risk_level = "LOW"
+            risk_level = RiskLevel.LOW
             summary = f"Clientul {name} prezintă un profil financiar solid. Fără alerte în rețeaua de administratori (Analiza OSINT OK)."
         elif score > 50:
-            risk_level = "MEDIUM"
+            risk_level = RiskLevel.MEDIUM
             summary = f"Clientul {name} are un grad de risc moderat. Atenție la indicatorii extrași: {', '.join(osint_flags[:1]) if osint_flags else 'N/A'}"
         else:
-            risk_level = "HIGH" if score > 35 else "CRITICAL"
+            risk_level = RiskLevel.HIGH if score > 35 else RiskLevel.CRITICAL
             flags_text = "; ".join(osint_flags)
             summary = f"RISC MAJOR identificat prin OSINT pentru {name}. Probleme semnalate: {flags_text}. Se recomandă respingerea colaborării."
             

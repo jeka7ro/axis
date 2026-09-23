@@ -1,3 +1,5 @@
+import json
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -6,18 +8,36 @@ from datetime import datetime
 from ..services.mof_pdf_generator import generate_mof_pdf
 
 from ..database import get_db
-from ..models.client import Client, Evaluation, ClientType
+from ..models.client import Client, Evaluation, ClientType, RiskLevel
+from ..models.user import User
 from ..schemas.client import ClientCreate, ClientResponse, ClientDetailResponse, EvaluationResponse
 from ..services.ai_engine import AIEngineService
 
 router = APIRouter(prefix="/api/clients", tags=["Clients"])
 
-# --- AUTH BYPASS FOR LOCAL DEV (So the UI doesn't break due to missing JWT) ---
-class MockUser:
-    id = 1
-
-def mock_get_current_user():
-    return MockUser()
+# --- AUTH BYPASS FOR LOCAL DEV & RESILIENCE ---
+def mock_get_current_user(db: Session = Depends(get_db)):
+    try:
+        user = db.query(User).first()
+        if not user:
+            from ..models.user import RoleEnum
+            user = User(
+                email="admin@axis.ro",
+                hashed_password="mock",
+                full_name="Eugeniu Cazmal",
+                role=RoleEnum.super_admin,
+                is_active=True
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        return user
+    except Exception:
+        class FallbackUser:
+            id = None
+            full_name = "Eugeniu Cazmal"
+            email = "admin@axis.ro"
+        return FallbackUser()
 # -----------------------------------------------------------------------------
 
 @router.post("/", response_model=ClientResponse)
@@ -304,6 +324,7 @@ async def verify_client_address(client_id: int, db: Session = Depends(get_db)):
     return await checker.verify_address(client.address, client.cui_cnp)
 
 @router.post("/{client_id}/evaluate", response_model=EvaluationResponse)
+@router.post("/{client_id}/evaluate/", response_model=EvaluationResponse)
 async def evaluate_client(client_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
     client = db.query(Client).filter(Client.id == client_id).first()
     if not client:
@@ -396,13 +417,19 @@ async def evaluate_client(client_id: int, db: Session = Depends(get_db), current
     ai_result = AIEngineService.evaluate_client(name=client.name, osint_data=osint_data)
     
     # 4. Save evaluation
+    user_id = getattr(current_user, "id", None) if current_user else None
+    if user_id:
+        existing_user = db.query(User).filter(User.id == user_id).first()
+        if not existing_user:
+            user_id = None
+
     new_evaluation = Evaluation(
         client_id=client.id,
         score=ai_result["score"],
         risk_level=ai_result["risk_level"],
         ai_summary=ai_result["ai_summary"],
         raw_financial_data=ai_result["raw_financial_data"],
-        created_by_user_id=current_user.id
+        created_by_user_id=user_id
     )
     
     db.add(new_evaluation)
@@ -412,6 +439,7 @@ async def evaluate_client(client_id: int, db: Session = Depends(get_db), current
     return new_evaluation
 
 @router.post("/evaluate-by-cui/{cui}")
+@router.post("/evaluate-by-cui/{cui}/")
 async def evaluate_company_by_cui(cui: str, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
     """
     Evaluează orice companie după CUI.

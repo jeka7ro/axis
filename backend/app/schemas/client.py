@@ -1,14 +1,36 @@
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from typing import Optional, List
 from datetime import datetime
 from .user import UserResponse
 from ..models.client import ClientType, RiskLevel
+
+def _normalize_risk_level(v):
+    if v is None:
+        return None
+    if isinstance(v, str):
+        mapping = {
+            "LOW": RiskLevel.LOW,
+            "MEDIUM": RiskLevel.MEDIUM,
+            "HIGH": RiskLevel.HIGH,
+            "CRITICAL": RiskLevel.CRITICAL,
+            "Scăzut": RiskLevel.LOW,
+            "Mediu": RiskLevel.MEDIUM,
+            "Ridicat": RiskLevel.HIGH,
+            "Critic": RiskLevel.CRITICAL
+        }
+        return mapping.get(v, v)
+    return v
 
 class EvaluationBase(BaseModel):
     score: int
     risk_level: RiskLevel
     ai_summary: str
     raw_financial_data: Optional[str] = None
+
+    @field_validator("risk_level", mode="before")
+    @classmethod
+    def parse_risk_level(cls, v):
+        return _normalize_risk_level(v)
 
 class EvaluationResponse(EvaluationBase):
     id: int
@@ -51,6 +73,11 @@ class ClientResponse(ClientBase):
     # AI Summary stats for the main table list view
     latest_score: Optional[int] = None
     latest_risk_level: Optional[RiskLevel] = None
+
+    @field_validator("latest_risk_level", mode="before")
+    @classmethod
+    def parse_latest_risk_level(cls, v):
+        return _normalize_risk_level(v)
     
     # Exclude detailed evaluations in the list view to save bandwidth
     class Config:

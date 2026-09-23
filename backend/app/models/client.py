@@ -54,6 +54,6 @@ class Evaluation(Base):
     ai_summary = Column(Text, nullable=False)
     raw_financial_data = Column(Text, nullable=True) # JSON string
     created_at = Column(DateTime, default=datetime.utcnow)
-    created_by_user_id = Column(Integer, ForeignKey("axis_users.id"))
+    created_by_user_id = Column(Integer, ForeignKey("axis_users.id"), nullable=True)
 
     client = relationship("Client", back_populates="evaluations")

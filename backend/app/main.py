@@ -29,6 +29,18 @@ try:
             conn.execute(text("ALTER TABLE axis_offers ADD COLUMN vehicle_id INTEGER;"))
         except Exception:
             pass
+        try:
+            conn.execute(text("ALTER TABLE axis_evaluations ALTER COLUMN created_by_user_id DROP NOT NULL;"))
+        except Exception:
+            pass
+        try:
+            conn.execute(text("""
+                INSERT INTO axis_users (id, email, hashed_password, full_name, role, is_active)
+                VALUES (1, 'admin@axis.ro', 'mock', 'Eugeniu Cazmal', 'super_admin', true)
+                ON CONFLICT (id) DO NOTHING;
+            """))
+        except Exception:
+            pass
 except Exception as e:
     print(f"Auto-migration skipped: {e}")
 

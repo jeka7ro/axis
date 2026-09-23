@@ -159,7 +159,10 @@ export const evaluateClient = async (id) => {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
-  if (!response.ok) throw new Error('Failed to evaluate client');
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(err?.detail || 'Failed to evaluate client');
+  }
   return response.json();
 };
 

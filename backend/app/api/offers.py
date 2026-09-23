@@ -18,13 +18,21 @@ from ..api.auth import get_current_user
 
 # --- AUTH BYPASS FOR LOCAL DEV (So the UI doesn't break due to missing JWT) ---
 def mock_get_current_user(db: Session = Depends(get_db)):
-    user = db.query(User).first()
-    if not user:
-        user = User(email="admin@axis.ro", hashed_password="mock", full_name="Mock Admin", role="Super Admin")
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-    return user
+    try:
+        user = db.query(User).first()
+        if not user:
+            from ..models.user import RoleEnum
+            user = User(email="admin@axis.ro", hashed_password="mock", full_name="Eugeniu Cazmal", role=RoleEnum.super_admin, is_active=True)
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        return user
+    except Exception:
+        class FallbackUser:
+            id = None
+            full_name = "Eugeniu Cazmal"
+            email = "admin@axis.ro"
+        return FallbackUser()
 # -----------------------------------------------------------------------------
 
 router = APIRouter(prefix="/api/offers", tags=["Offers & Contracts"])
