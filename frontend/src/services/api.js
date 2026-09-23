@@ -1,4 +1,4 @@
-const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://axis-v1-backend-production.up.railway.app/api' : 'http://localhost:8000/api');
+export const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://axis-v1-backend-production.up.railway.app/api' : 'http://localhost:8000/api');
 
 const getHeaders = () => {
   // In a real app we'd get this from a store or localStorage.
@@ -24,9 +24,60 @@ export const fetchClient = async (id) => {
   return response.json();
 };
 
+export const addClientToBlacklist = async (id, payload = {}) => {
+  const response = await fetch(`${API_URL}/clients/${id}/blacklist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error('Failed to add client to blacklist');
+  return response.json();
+};
+
+export const removeClientFromBlacklist = async (id) => {
+  const response = await fetch(`${API_URL}/clients/${id}/unblacklist`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!response.ok) throw new Error('Failed to remove client from blacklist');
+  return response.json();
+};
+
+export const fetchBlacklistedClients = async () => {
+  const response = await fetch(`${API_URL}/clients/blacklist/all`);
+  if (!response.ok) throw new Error('Failed to fetch blacklisted clients');
+  return response.json();
+};
+
 export const lookupClientByCui = async (cui) => {
   const response = await fetch(`${API_URL}/clients/lookup/${cui}`);
   if (!response.ok) throw new Error('Failed to lookup client');
+  return response.json();
+};
+
+export const fetchAdminNetwork = async (name, contextCui = '') => {
+  const url = `${API_URL}/clients/admin-network?name=${encodeURIComponent(name)}${contextCui ? `&context_cui=${encodeURIComponent(contextCui)}` : ''}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch administrator network');
+  return response.json();
+};
+
+export const fetchCompanyFullIntel = async (cui, name = '') => {
+  const response = await fetch(`${API_URL}/clients/company-full-intel?cui=${encodeURIComponent(cui)}&name=${encodeURIComponent(name)}`);
+  if (!response.ok) throw new Error('Failed to fetch company full intel');
+  return response.json();
+};
+
+export const fetchPersonFullIntel = async (name, contextCui = '') => {
+  const url = `${API_URL}/clients/person-full-intel?name=${encodeURIComponent(name)}${contextCui ? `&context_cui=${encodeURIComponent(contextCui)}` : ''}`;
+  const response = await fetch(url);
+  if (!response.ok) throw new Error('Failed to fetch person full intel');
+  return response.json();
+};
+
+export const fetchPortalJustCases = async (query) => {
+  const response = await fetch(`${API_URL}/clients/portal-just?query=${encodeURIComponent(query)}`);
+  if (!response.ok) throw new Error('Failed to fetch portal just cases');
   return response.json();
 };
 
@@ -109,6 +160,18 @@ export const evaluateClient = async (id) => {
     headers: { 'Content-Type': 'application/json' }
   });
   if (!response.ok) throw new Error('Failed to evaluate client');
+  return response.json();
+};
+
+export const evaluateCompanyByCui = async (cui) => {
+  const response = await fetch(`${API_URL}/clients/evaluate-by-cui/${cui}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => null);
+    throw new Error(err?.detail || 'Failed to evaluate company');
+  }
   return response.json();
 };
 

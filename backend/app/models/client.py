@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum, Boolean
 from sqlalchemy.orm import relationship
 import enum
 from datetime import datetime
@@ -35,6 +35,12 @@ class Client(Base):
     id_card_valid_until = Column(String, nullable=True)
     profile_photo = Column(Text, nullable=True)  # Base64 encoded face photo from ID card
     created_at = Column(DateTime, default=datetime.utcnow)
+    
+    # Blacklist fields
+    is_blacklisted = Column(Boolean, default=False, nullable=True)
+    blacklist_reason = Column(String, nullable=True)
+    blacklist_severity = Column(String, nullable=True) # "Critic", "Mediu"
+    blacklist_added_at = Column(DateTime, nullable=True)
 
     evaluations = relationship("Evaluation", back_populates="client")
 

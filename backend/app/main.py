@@ -24,6 +24,10 @@ try:
             conn.execute(text("ALTER TABLE axis_clients ADD COLUMN profile_photo VARCHAR;"))
         except Exception:
             pass
+        try:
+            conn.execute(text("ALTER TABLE axis_offers ADD COLUMN vehicle_id INTEGER;"))
+        except Exception:
+            pass
 except Exception as e:
     print(f"Auto-migration skipped: {e}")
 
@@ -38,11 +42,18 @@ os.makedirs("documents", exist_ok=True)
 app.mount("/documents", StaticFiles(directory="documents"), name="documents")
 
 # CORS configuration - Allow all for local dev to support any Vite port
-origins = ["*"]
+origins = [
+    "http://localhost:1987",
+    "http://127.0.0.1:1987",
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "http://localhost:8000",
+]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

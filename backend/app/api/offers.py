@@ -71,9 +71,14 @@ def create_offer(offer: OfferCreate, db: Session = Depends(get_db), current_user
 from sqlalchemy.orm import joinedload
 
 @router.get("/", response_model=List[OfferResponse])
+@router.get("", response_model=List[OfferResponse])
 def get_offers(db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
     offers = db.query(Offer).options(joinedload(Offer.contract)).order_by(Offer.created_at.desc()).all()
     return offers
+
+@router.get("/contracts", response_model=List[ContractResponse])
+def get_contracts(db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    return db.query(Contract).order_by(Contract.created_at.desc()).all()
 
 @router.get("/{offer_id}", response_model=OfferResponse)
 def get_offer(offer_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
@@ -243,6 +248,3 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
     db.refresh(new_contract)
     return new_contract
 
-@router.get("/contracts", response_model=List[ContractResponse])
-def get_contracts(db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
-    return db.query(Contract).order_by(Contract.created_at.desc()).all()

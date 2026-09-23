@@ -156,9 +156,9 @@ const Layout = () => {
                 onChange={(e) => setRole(e.target.value)}
                 className="bg-transparent text-sm font-medium text-gray-700 dark:text-gray-200 focus:outline-none cursor-pointer"
               >
-                <option value="Super Admin">Super Admin</option>
-                <option value="Axis Manager">Axis Manager</option>
-                <option value="Dealer Sales">Dealer Sales</option>
+                <option value="Super Admin" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">Super Admin</option>
+                <option value="Axis Manager" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">Axis Manager</option>
+                <option value="Dealer Sales" className="bg-white dark:bg-gray-800 text-gray-900 dark:text-white">Dealer Sales</option>
               </select>
             </div>
             <button

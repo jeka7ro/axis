@@ -36,6 +36,10 @@ class ClientBase(BaseModel):
     id_card_valid_from: Optional[str] = None
     id_card_valid_until: Optional[str] = None
     profile_photo: Optional[str] = None
+    is_blacklisted: Optional[bool] = False
+    blacklist_reason: Optional[str] = None
+    blacklist_severity: Optional[str] = None
+    blacklist_added_at: Optional[datetime] = None
 
 class ClientCreate(ClientBase):
     pass
