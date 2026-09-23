@@ -209,7 +209,7 @@ const ClientDetails = () => {
               )}
             </div>
             <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
-              <span className="font-mono font-medium">CUI/CNP: {client.cui_cnp}</span>
+              <span className="font-medium">CUI/CNP: {client.cui_cnp}</span>
               <span>•</span>
               <span>Tip: {client.type}</span>
               {client.address && (
@@ -289,7 +289,7 @@ const ClientDetails = () => {
                   />
                 </svg>
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-lg font-bold text-gray-900 dark:text-white font-mono tracking-tight">
+                  <span className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">
                     {latestEval.score}
                   </span>
                 </div>
@@ -416,7 +416,7 @@ const ClientDetails = () => {
                                   )}
                                 </div>
                                 <div className="mt-1.5 flex items-start gap-2.5">
-                                  <span className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-mono font-bold text-xs shrink-0 shadow-xs">
+                                  <span className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-bold text-xs shrink-0 shadow-xs">
                                     CAEN {value}
                                   </span>
                                   <span className="text-xs font-semibold text-gray-900 dark:text-white leading-relaxed">
@@ -489,6 +489,7 @@ const ClientDetails = () => {
                         <OwnershipAndGovernanceCard 
                           holdings={rawDataObj?.holdings || rawDataObj?.personnel || []}
                           administrators={rawDataObj?.administrators || []}
+                          adminNetworks={rawDataObj?.admin_networks || []}
                           caenActivities={rawDataObj?.caen_activities || {
                             cod_caen: rawDataObj?.anaf?.cod_caen,
                             caen_principal: {
@@ -500,6 +501,8 @@ const ClientDetails = () => {
                           companyCui={client.cui_cnp}
                           companyName={client.name}
                           onOpenMofModal={setSelectedMofPub}
+                          onOpenPerson={(personName) => openPersonIntel(personName, client?.cui_cnp)}
+                          onOpenCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}
                         />
                       </div>
                     );

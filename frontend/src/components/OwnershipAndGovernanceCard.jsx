@@ -1,28 +1,63 @@
 import { useState, useMemo } from 'react';
-import { Users, Briefcase, Award, BookOpen, ExternalLink, FileDown, Eye, Check } from 'lucide-react';
+import { 
+  Users, Briefcase, Award, BookOpen, ExternalLink, FileDown, Eye, Check,
+  Building2, User, UserCheck, Network
+} from 'lucide-react';
 import { getCaenInfo, getCaenDescription } from '../utils/caenHelper';
 import { API_URL } from '../services/api';
 
 export const OwnershipAndGovernanceCard = ({ 
   holdings = [], 
   administrators = [], 
+  adminNetworks = [],
   caenActivities = {}, 
   mof = [],
   companyCui = "",
   companyName = "",
-  onOpenMofModal = null 
+  onOpenMofModal = null,
+  onOpenPerson = null,
+  onOpenCompany = null
 }) => {
   const [downloadingPdf, setDownloadingPdf] = useState(null);
+
+  // Helper to find other companies where a person is associate or administrator
+  const getFirmsForPerson = (personName) => {
+    if (!personName || !Array.isArray(adminNetworks) || adminNetworks.length === 0) return [];
+    const cleanTarget = personName.trim().toUpperCase().replace(/[-–]/g, ' ');
+    const matches = adminNetworks.filter(net => {
+      if (!net || !net.nume) return false;
+      const netName = net.nume.trim().toUpperCase().replace(/[-–]/g, ' ');
+      return netName === cleanTarget || netName.includes(cleanTarget) || cleanTarget.includes(netName);
+    });
+    if (matches.length === 0) return [];
+
+    const cleanCurrentCui = String(companyCui || "").replace(/\D/g, '');
+    const firmsMap = new Map();
+    for (const match of matches) {
+      if (Array.isArray(match.firme)) {
+        for (const f of match.firme) {
+          const firmCui = String(f.cui || "").replace(/\D/g, '');
+          if (firmCui && firmCui !== cleanCurrentCui && !firmsMap.has(firmCui)) {
+            firmsMap.set(firmCui, f);
+          }
+        }
+      }
+    }
+    return Array.from(firmsMap.values());
+  };
 
   // Normalize holdings (acționari / asociați cu istoric)
   const normalizedHoldings = useMemo(() => {
     if (Array.isArray(holdings) && holdings.length > 0) {
-      return holdings;
+      return holdings.map(h => ({
+        ...h,
+        name: h.name || h.nume || ""
+      }));
     }
     // Fallback from administrators if holdings is empty
     if (Array.isArray(administrators) && administrators.length > 0) {
       return administrators.map((a, idx) => ({
-        name: a.nume || a.name,
+        name: a.nume || a.name || "",
         type: a.calitate ? `${a.calitate.toUpperCase()} (PF)` : "ASOCIAT SI ADMINISTRATOR (PF)",
         percent: administrators.length === 1 ? 100 : Math.round(100 / administrators.length),
         from: a.data || "2020-01-01",
@@ -38,13 +73,16 @@ export const OwnershipAndGovernanceCard = ({
   // Normalize administrators
   const normalizedAdmins = useMemo(() => {
     if (Array.isArray(administrators) && administrators.length > 0) {
-      return administrators;
+      return administrators.map(a => ({
+        ...a,
+        nume: a.nume || a.name || ""
+      }));
     }
     // Fallback from holdings if is_administrator is true
     const adminHoldings = normalizedHoldings.filter(h => h.is_administrator || (h.type && h.type.includes("ADMINISTRATOR")));
     if (adminHoldings.length > 0) {
       return adminHoldings.map(h => ({
-        nume: h.name,
+        nume: h.name || h.nume || "",
         calitate: "Administrator",
         tip: h.entity === "PJ" ? "Persoană Juridică" : "Persoană Fizică",
         stare: h.current ? "Activ" : "Istoric",
@@ -133,6 +171,8 @@ export const OwnershipAndGovernanceCard = ({
               {normalizedHoldings.map((h, idx) => {
                 const isCurrent = Boolean(h.current);
                 const percent = Math.min(100, Math.max(0, Number(h.percent || 0)));
+                const personName = h.name;
+                const otherFirms = getFirmsForPerson(personName);
 
                 return (
                   <div 
@@ -142,11 +182,17 @@ export const OwnershipAndGovernanceCard = ({
                     {/* Top Row: Name, Badge, Percent */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-gray-900 dark:text-white text-sm">
-                          {h.name}
-                        </span>
+                        <button
+                          type="button"
+                          onClick={() => onOpenPerson && onOpenPerson(personName, companyCui)}
+                          className="font-bold text-gray-900 dark:text-white text-sm hover:text-primary transition-colors text-left inline-flex items-center gap-1.5 group cursor-pointer"
+                          title={`Click pentru dosar persoană și companii: ${personName}`}
+                        >
+                          <span className="group-hover:underline">{personName}</span>
+                          <ExternalLink size={12} className="text-gray-400 group-hover:text-primary transition-colors shrink-0" />
+                        </button>
                         {isCurrent ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60">
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60">
                             Activ
                           </span>
                         ) : (
@@ -155,15 +201,15 @@ export const OwnershipAndGovernanceCard = ({
                           </span>
                         )}
                       </div>
-                      <div className={`font-black font-mono text-sm ${isCurrent ? 'text-emerald-500' : 'text-gray-400'}`}>
+                      <div className={`font-bold text-sm ${isCurrent ? 'text-emerald-600 dark:text-emerald-400' : 'text-gray-400'}`}>
                         {percent}%
                       </div>
                     </div>
 
                     {/* Subtitle Row: Role & Period */}
-                    <div className="flex items-center justify-between gap-2 mt-1 text-xs text-gray-400 dark:text-gray-500 font-mono">
-                      <span className="uppercase text-[11px] font-medium tracking-wider">
-                        {h.type || "ASOCIAT (PF)"}
+                    <div className="flex items-center justify-between gap-2 mt-1 text-xs text-gray-500 dark:text-gray-400">
+                      <span className="text-[11px] font-medium">
+                        {h.type || "Asociat (PF)"}
                       </span>
                       <span>
                         {h.from || "—"} {h.to ? `→ ${h.to}` : (isCurrent ? "→ Prezent" : "")}
@@ -184,6 +230,60 @@ export const OwnershipAndGovernanceCard = ({
                     {h.placeofbirth && (
                       <div className="text-[11px] text-gray-400 dark:text-gray-500">
                         Loc naștere: {h.placeofbirth}
+                      </div>
+                    )}
+
+                    {/* Secțiune: Alte companii conectate */}
+                    {otherFirms.length > 0 ? (
+                      <div className="mt-3 pt-2.5 border-t border-gray-100 dark:border-gray-700/60">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
+                            <Building2 size={13} className="text-gray-400 shrink-0" />
+                            Alte companii conexe ({otherFirms.length}):
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onOpenPerson && onOpenPerson(personName, companyCui)}
+                            className="text-xs text-gray-500 hover:text-gray-900 dark:hover:text-white font-medium hover:underline inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>Vezi rețea</span>
+                            <ExternalLink size={11} />
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {otherFirms.map((firm, fIdx) => (
+                            <button
+                              key={fIdx}
+                              type="button"
+                              onClick={() => onOpenCompany && onOpenCompany(firm.cui, firm.denumire)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-800 dark:text-gray-200 transition-all cursor-pointer text-left"
+                              title={`CUI: ${firm.cui} • Rol: ${firm.rol || 'Asociat'} • Click pentru dosar companie`}
+                            >
+                              <Building2 size={12} className="text-gray-400 shrink-0" />
+                              <span className="font-medium hover:underline">{firm.denumire}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                firm.curent 
+                                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/50' 
+                                  : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                              }`}>
+                                {firm.curent ? 'Activ' : 'Încetat'}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-2.5 pt-2 border-t border-gray-100 dark:border-gray-700/60 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => onOpenPerson && onOpenPerson(personName, companyCui)}
+                          className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white font-medium hover:underline cursor-pointer group"
+                          title={`Verifică conexiunile de companii pentru ${personName}`}
+                        >
+                          <Building2 size={13} className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200 shrink-0" />
+                          <span>Caută alte companii deținute de {personName}</span>
+                          <ExternalLink size={11} className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200" />
+                        </button>
                       </div>
                     )}
                   </div>
@@ -215,36 +315,101 @@ export const OwnershipAndGovernanceCard = ({
 
             {/* List of Administrator Cards */}
             <div className="space-y-3 mt-4">
-              {normalizedAdmins.map((a, idx) => (
-                <div 
-                  key={idx} 
-                  className="p-4 rounded-2xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/40 dark:bg-gray-900/30 shadow-2xs"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-gray-900 dark:text-white text-sm">
-                        {a.nume}
-                      </span>
-                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200/60">
-                        {a.stare || "Activ"}
-                      </span>
+              {normalizedAdmins.map((a, idx) => {
+                const personName = a.nume || a.name;
+                const otherFirms = getFirmsForPerson(personName);
+
+                return (
+                  <div 
+                    key={idx} 
+                    className="p-4 rounded-2xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/40 dark:bg-gray-900/30 shadow-2xs hover:border-gray-200 dark:hover:border-gray-600 transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <button
+                          type="button"
+                          onClick={() => onOpenPerson && onOpenPerson(personName, companyCui)}
+                          className="font-bold text-gray-900 dark:text-white text-sm hover:text-primary transition-colors text-left inline-flex items-center gap-1.5 group cursor-pointer"
+                          title={`Click pentru dosar persoană și companii: ${personName}`}
+                        >
+                          <span className="group-hover:underline">{personName}</span>
+                          <ExternalLink size={12} className="text-gray-400 group-hover:text-primary transition-colors shrink-0" />
+                        </button>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200/60">
+                          {a.stare || "Activ"}
+                        </span>
+                      </div>
+                      {a.data && (
+                        <span className="text-xs text-gray-500 dark:text-gray-400">
+                          Data numirii: <strong className="font-semibold text-gray-800 dark:text-gray-200">{a.data}</strong>
+                        </span>
+                      )}
                     </div>
-                    {a.data && (
-                      <span className="text-xs font-bold font-mono text-gray-900 dark:text-white">
-                        Data numirii <span className="text-gray-600 dark:text-gray-300 font-semibold">{a.data}</span>
-                      </span>
+                    <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                      Calitate: <strong className="text-gray-700 dark:text-gray-200">{a.calitate || "Administrator"}</strong> • {a.tip || "Persoană Fizică"}
+                    </div>
+                    {a.loc_nastere && (
+                      <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
+                        Loc naștere: {a.loc_nastere}
+                      </div>
+                    )}
+
+                    {/* Secțiune: Alte companii în care este administrator */}
+                    {otherFirms.length > 0 ? (
+                      <div className="mt-3 pt-2.5 border-t border-gray-100 dark:border-gray-700/60">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
+                            <Building2 size={13} className="text-gray-400 shrink-0" />
+                            Alte companii în care mai este administrator ({otherFirms.length}):
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => onOpenPerson && onOpenPerson(personName, companyCui)}
+                            className="text-xs text-gray-500 hover:text-gray-900 dark:hover:text-white font-medium hover:underline inline-flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>Vezi rețea</span>
+                            <ExternalLink size={11} />
+                          </button>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {otherFirms.map((firm, fIdx) => (
+                            <button
+                              key={fIdx}
+                              type="button"
+                              onClick={() => onOpenCompany && onOpenCompany(firm.cui, firm.denumire)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/50 text-gray-800 dark:text-gray-200 transition-all cursor-pointer text-left"
+                              title={`CUI: ${firm.cui} • Rol: ${firm.rol || 'Administrator'} • Click pentru dosar companie`}
+                            >
+                              <Building2 size={12} className="text-gray-400 shrink-0" />
+                              <span className="font-medium hover:underline">{firm.denumire}</span>
+                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                firm.curent 
+                                  ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/50' 
+                                  : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400'
+                              }`}>
+                                {firm.curent ? 'Activ' : 'Încetat'}
+                              </span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-2.5 pt-2 border-t border-gray-100 dark:border-gray-700/60 flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => onOpenPerson && onOpenPerson(personName, companyCui)}
+                          className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white font-medium hover:underline cursor-pointer group"
+                          title={`Verifică conexiunile de companii pentru ${personName}`}
+                        >
+                          <Building2 size={13} className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200 shrink-0" />
+                          <span>Caută alte companii deținute de {personName}</span>
+                          <ExternalLink size={11} className="text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-200" />
+                        </button>
+                      </div>
                     )}
                   </div>
-                  <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                    Calitate: <strong className="text-gray-700 dark:text-gray-200">{a.calitate || "Administrator"}</strong> • {a.tip || "Persoană Fizică"}
-                  </div>
-                  {a.loc_nastere && (
-                    <div className="text-[11px] text-gray-400 dark:text-gray-500 mt-1">
-                      Loc naștere: {a.loc_nastere}
-                    </div>
-                  )}
-                </div>
-              ))}
+                );
+              })}
 
               {normalizedAdmins.length === 0 && (
                 <div className="p-3 text-center text-xs text-gray-400">
@@ -264,7 +429,7 @@ export const OwnershipAndGovernanceCard = ({
 
               {caenPrincipal.cod ? (
                 <div className="p-4 rounded-2xl border border-amber-200/70 dark:border-amber-800/40 bg-gradient-to-r from-amber-50/70 to-orange-50/40 dark:from-amber-950/20 dark:to-orange-950/10 flex items-start gap-3.5 shadow-2xs">
-                  <div className="px-3 py-1 rounded-xl bg-amber-500 text-white font-bold font-mono text-sm shrink-0 shadow-xs">
+                  <div className="px-3 py-1 rounded-xl bg-amber-500 text-white font-bold text-sm shrink-0 shadow-xs">
                     {caenPrincipal.cod}
                   </div>
                   <div className="font-bold text-gray-900 dark:text-white text-sm leading-snug">
@@ -287,11 +452,11 @@ export const OwnershipAndGovernanceCard = ({
                 <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto pr-1">
                   {caenSecundare.map((act, idx) => (
                     <div 
-                      key={idx}
+                      key={idx} 
                       className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-gray-50 dark:bg-gray-900/60 border border-gray-200/80 dark:border-gray-700 text-xs text-gray-700 dark:text-gray-300 hover:border-emerald-400 dark:hover:border-emerald-500 transition-colors shadow-2xs"
                       title={`${act.cod} — ${act.denumire}`}
                     >
-                      <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-bold font-mono text-[10px]">
+                      <span className="px-1.5 py-0.5 rounded-md bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 font-semibold text-[10px]">
                         {act.cod}
                       </span>
                       <span className="truncate max-w-[210px] text-[11px] font-medium">
@@ -331,16 +496,16 @@ export const OwnershipAndGovernanceCard = ({
         <div className="mt-5 space-y-3">
           {mof.map((item, idx) => (
             <div 
-              key={idx}
+              key={idx} 
               className="p-4 rounded-2xl border border-gray-100 dark:border-gray-700/60 bg-gray-50/30 dark:bg-gray-900/30 hover:bg-gray-50/70 dark:hover:bg-gray-700/40 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-2xs"
             >
               <div className="space-y-1">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-bold text-xs font-mono text-emerald-600 dark:text-emerald-400">
+                  <span className="font-semibold text-xs text-emerald-600 dark:text-emerald-400">
                     Publicația Nr. {item.publicatieNr || idx + 1}
                   </span>
                   <span className="text-xs text-gray-400">•</span>
-                  <span className="text-xs font-mono text-gray-500 dark:text-gray-400">
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
                     Data: {item.data || "—"}
                   </span>
                 </div>

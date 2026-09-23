@@ -207,7 +207,28 @@ async def get_company_full_intel(cui: str, name: str = "", db: Session = Depends
     if not court_cases and search_name != official_name:
         court_cases = await court_scraper.search_court_cases(search_name, limit=20)
 
-    smart_ownership = cross_checker.analyze_ownership_structure(personnel)
+    # Reverse Lookup Administrator Network ("Caracatița" companii conectate)
+    admin_networks = []
+    checked_names = set()
+    all_people = list(personnel) + list(administrators) + [{"nume": h.get("name")} for h in holdings if h.get("name")]
+    for p in all_people:
+        p_name = (p.get("nume") or p.get("name") or "").strip()
+        if p_name and p_name.upper() not in checked_names:
+            checked_names.add(p_name.upper())
+            net = await reg_scraper.fetch_administrator_network(p_name, match_cui=clean_cui)
+            if net:
+                admin_networks.extend(net)
+
+    if not admin_networks and existing_client:
+        prev_eval = db.query(Evaluation).filter(Evaluation.client_id == existing_client.id).order_by(Evaluation.created_at.desc()).first()
+        if prev_eval and prev_eval.raw_financial_data:
+            try:
+                prev_d = json.loads(prev_eval.raw_financial_data) if isinstance(prev_eval.raw_financial_data, str) else prev_eval.raw_financial_data
+                admin_networks = prev_d.get("admin_networks", []) or []
+            except Exception:
+                pass
+
+    smart_ownership = cross_checker.analyze_ownership_structure(personnel, admin_networks)
 
     return {
         "cui": clean_cui,
@@ -217,6 +238,7 @@ async def get_company_full_intel(cui: str, name: str = "", db: Session = Depends
         "personnel": personnel,
         "holdings": holdings,
         "administrators": administrators,
+        "admin_networks": admin_networks,
         "caen_activities": caen_act,
         "smart_ownership": smart_ownership,
         "balance": balance,
@@ -331,6 +353,16 @@ async def evaluate_client(client_id: int, db: Session = Depends(get_db), current
             )
             if net:
                 admin_networks.extend(net)
+
+        # Fallback de siguranță: dacă scanarea nouă este incompletă, păstrăm rețelele cunoscute din evaluarea anterioară
+        if not admin_networks:
+            prev_eval = db.query(Evaluation).filter(Evaluation.client_id == client.id).order_by(Evaluation.created_at.desc()).first()
+            if prev_eval and prev_eval.raw_financial_data:
+                try:
+                    prev_d = json.loads(prev_eval.raw_financial_data) if isinstance(prev_eval.raw_financial_data, str) else prev_eval.raw_financial_data
+                    admin_networks = prev_d.get("admin_networks", []) or []
+                except Exception:
+                    pass
 
         target_addr = client.address or anaf_data.get("adresa", "")
         if not client.address and target_addr:

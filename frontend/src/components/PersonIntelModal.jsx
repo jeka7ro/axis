@@ -136,7 +136,7 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
                     <span className={`text-[10px] px-1.5 py-0.2 rounded-md ${isSelected ? 'bg-white/20 text-white' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'}`}>
                       {p.varsta ? `${p.varsta} ani` : 'N/A'} • {p.loc_nastere || 'Origine N/A'}
                     </span>
-                    <span className="text-[10px] font-mono">
+                    <span className="text-[10px] text-gray-500">
                       ({p.firme?.length || 0} firme)
                     </span>
                   </button>
@@ -222,7 +222,7 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                           {currentFirme.map((f, idx) => (
                             <tr key={idx} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/40 transition-colors">
-                              <td className="px-4 py-2.5 font-mono text-gray-400 whitespace-nowrap">{idx + 1}</td>
+                              <td className="px-4 py-2.5 text-gray-400 whitespace-nowrap">{idx + 1}</td>
                               <td className="px-4 py-2.5 font-semibold text-gray-900 dark:text-white whitespace-nowrap">
                                 <button
                                   type="button"
@@ -235,13 +235,13 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
                                   <ExternalLink size={10} className="opacity-0 group-hover:opacity-100 text-primary" />
                                 </button>
                               </td>
-                              <td className="px-4 py-2.5 font-mono text-gray-600 dark:text-gray-300 whitespace-nowrap">{f.cui}</td>
+                              <td className="px-4 py-2.5 text-gray-600 dark:text-gray-300 whitespace-nowrap">{f.cui}</td>
                               <td className="px-4 py-2.5 whitespace-nowrap">
                                 <span className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 text-[11px] font-semibold whitespace-nowrap">
                                   {f.rol || (f.este_administrator ? 'ADMINISTRATOR' : 'ASOCIAT')}
                                 </span>
                               </td>
-                              <td className="px-4 py-2.5 text-center font-bold font-mono whitespace-nowrap">
+                              <td className="px-4 py-2.5 text-center font-bold whitespace-nowrap">
                                 {f.procent !== null && f.procent !== undefined ? `${f.procent}%` : '-'}
                               </td>
                               <td className="px-4 py-2.5 text-center whitespace-nowrap">
@@ -254,7 +254,7 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
                                     {f.curent ? 'Activ' : 'Încetat'}
                                   </span>
                                   {f.de_la && (
-                                    <span className="text-[10px] text-gray-400 font-mono">
+                                    <span className="text-[10px] text-gray-400">
                                       ({f.de_la}{f.pana_la ? ` – ${f.pana_la}` : ''})
                                     </span>
                                   )}
@@ -312,13 +312,13 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
                                     href={`https://portal.just.ro/SitePages/cautare.aspx?k=${encodeURIComponent(c.numar)}`} 
                                     target="_blank" 
                                     rel="noreferrer"
-                                    className="hover:underline inline-flex items-center gap-1 font-mono text-xs"
+                                    className="hover:underline inline-flex items-center gap-1 text-xs"
                                   >
                                     <span>{c.numar}</span>
                                     <ExternalLink size={10} />
                                   </a>
                                 </td>
-                                <td className="px-3.5 py-2.5 font-mono text-gray-500 whitespace-nowrap">{c.data || '-'}</td>
+                                <td className="px-3.5 py-2.5 text-gray-500 whitespace-nowrap">{c.data || '-'}</td>
                                 <td className="px-3.5 py-2.5 font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{c.institutie}</td>
                                 <td className="px-3.5 py-2.5 whitespace-nowrap">
                                   <span className="text-gray-900 dark:text-white font-medium">{c.obiect}</span>
@@ -370,7 +370,7 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
                           {courtCases[expandedCase].sedinte?.length > 0 && (
                             <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                               <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">Soluție Ședință ({courtCases[expandedCase].sedinte[0].data}):</span>
-                              <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 font-mono leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
+                              <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
                                 {courtCases[expandedCase].sedinte[0].sumar || courtCases[expandedCase].sedinte[0].solutie || 'Fără sumar publicat.'}
                               </p>
                             </div>

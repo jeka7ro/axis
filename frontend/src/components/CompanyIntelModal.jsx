@@ -82,7 +82,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                 )}
               </div>
               <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1 flex-wrap">
-                <span className="font-mono">CUI: <strong className="text-gray-700 dark:text-gray-200">{cui}</strong></span>
+                <span>CUI: <strong className="text-gray-700 dark:text-gray-200">{cui}</strong></span>
                 {general.nr_reg_com && <span>• ONRC: <strong className="text-gray-700 dark:text-gray-200">{general.nr_reg_com}</strong></span>}
                 {general.cod_caen && (() => {
                   const caenInfo = getCaenInfo(general.cod_caen);
@@ -247,7 +247,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                           )}
                         </div>
                         <div className="flex items-start gap-3">
-                          <div className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-mono font-bold text-xs shrink-0 shadow-xs">
+                          <div className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-bold text-xs shrink-0 shadow-xs">
                             CAEN {general.cod_caen}
                           </div>
                           <div className="flex-1">
@@ -255,7 +255,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                               {caenDesc}
                             </div>
                             {caenGrupa && (
-                              <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5 font-mono">
+                              <div className="text-[10px] text-gray-500 dark:text-gray-400 mt-0.5">
                                 Grupa CAEN: {caenGrupa}
                               </div>
                             )}
@@ -301,7 +301,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                         </div>
                         <div className="flex justify-between">
                           <span className="text-gray-500">Data Înregistrării:</span>
-                          <span className="font-semibold text-gray-900 dark:text-white font-mono">{general.data_inregistrare || '-'}</span>
+                          <span className="font-semibold text-gray-900 dark:text-white">{general.data_inregistrare || '-'}</span>
                         </div>
                       </div>
                     </div>
@@ -397,20 +397,20 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                             {courtCases.map((c, idx) => (
                               <tr key={idx} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/40 transition-colors">
-                                <td className="px-3.5 py-2.5 font-mono text-gray-400 whitespace-nowrap">{idx + 1}</td>
+                                <td className="px-3.5 py-2.5 text-gray-400 whitespace-nowrap">{idx + 1}</td>
                                 <td className="px-3.5 py-2.5 font-semibold text-primary whitespace-nowrap">
                                   <a
                                     href={c.url_portal}
                                     target="_blank"
                                     rel="noreferrer"
-                                    className="hover:underline inline-flex items-center gap-1 font-mono text-xs"
+                                    className="hover:underline inline-flex items-center gap-1 text-xs"
                                     title="Deschide dosarul pe portal.just.ro"
                                   >
                                     <span>{c.numar}</span>
                                     <ExternalLink size={10} />
                                   </a>
                                 </td>
-                                <td className="px-3.5 py-2.5 font-mono text-gray-500 whitespace-nowrap">{c.data || '-'}</td>
+                                <td className="px-3.5 py-2.5 text-gray-500 whitespace-nowrap">{c.data || '-'}</td>
                                 <td className="px-3.5 py-2.5 font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{c.institutie}</td>
                                 <td className="px-3.5 py-2.5 whitespace-nowrap">
                                   <span className="text-gray-900 dark:text-white font-medium">{c.obiect}</span>
@@ -462,7 +462,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                           {courtCases[expandedCase].sedinte?.length > 0 && (
                             <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
                               <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">Soluție Ședință ({courtCases[expandedCase].sedinte[0].data}):</span>
-                              <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 font-mono leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
+                              <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
                                 {courtCases[expandedCase].sedinte[0].sumar || courtCases[expandedCase].sedinte[0].solutie || 'Fără sumar publicat.'}
                               </p>
                             </div>
@@ -487,6 +487,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                   <OwnershipAndGovernanceCard 
                     holdings={data?.holdings || personnel}
                     administrators={data?.administrators || []}
+                    adminNetworks={data?.admin_networks || []}
                     caenActivities={data?.caen_activities || {
                       cod_caen: general.cod_caen,
                       caen_principal: {
@@ -498,6 +499,8 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                     companyCui={cui}
                     companyName={companyName}
                     onOpenMofModal={setSelectedMofPub}
+                    onOpenPerson={(personName) => onOpenPerson && onOpenPerson(personName, cui)}
+                    onOpenCompany={(compCui, compName) => onEvaluate && onEvaluate(compCui, compName)}
                   />
 
                   {/* Smart Ownership & Corporate Governance Box */}
@@ -589,7 +592,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                         <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                           {personnel.map((p, pIdx) => (
                             <tr key={pIdx} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/40 transition-colors">
-                              <td className="px-3 py-2.5 text-center font-mono text-gray-400 text-[11px]">
+                              <td className="px-3 py-2.5 text-center text-gray-400 text-[11px]">
                                 {pIdx + 1}
                               </td>
                               <td className="px-4 py-2.5 font-bold text-gray-900 dark:text-white whitespace-nowrap">
@@ -617,13 +620,13 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                                     {p.rol}
                                   </span>
                                   {p.data_numire && (
-                                    <span className="text-[10px] text-gray-400 font-mono mt-0.5">
+                                    <span className="text-[10px] text-gray-400 mt-0.5">
                                       Din: {p.data_numire} {p.data_sfarsit ? `– ${p.data_sfarsit}` : ''}
                                     </span>
                                   )}
                                 </div>
                               </td>
-                              <td className="px-4 py-2.5 text-center font-bold font-mono whitespace-nowrap">
+                              <td className="px-4 py-2.5 text-center font-bold whitespace-nowrap">
                                 {p.cota_participare ? (
                                   <span className="px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 font-bold">
                                     {p.cota_participare}%
@@ -639,7 +642,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                                   {p.stare || 'Activ'}
                                 </span>
                               </td>
-                              <td className="px-4 py-2.5 text-center font-mono font-bold whitespace-nowrap">
+                              <td className="px-4 py-2.5 text-center font-bold whitespace-nowrap">
                                 {p.alte_companii_active || 0}
                               </td>
                               <td className="px-4 py-2.5 text-right whitespace-nowrap">
@@ -716,7 +719,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                                 <span>{pub.titlu_publicatie || pub.denumire}</span>
                               </div>
                               <div className="flex items-center gap-2 shrink-0">
-                                <span className="text-[10px] text-gray-400 font-mono bg-gray-50 dark:bg-gray-900/60 px-2 py-0.5 rounded border border-gray-100 dark:border-gray-700 whitespace-nowrap">
+                                <span className="text-[10px] text-gray-500 bg-gray-50 dark:bg-gray-900/60 px-2 py-0.5 rounded border border-gray-100 dark:border-gray-700 whitespace-nowrap">
                                   Nr. {pub.publicatieNr} • {pub.data}
                                 </span>
                                 <button

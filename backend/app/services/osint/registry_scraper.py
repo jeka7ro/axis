@@ -300,10 +300,79 @@ class RegistryScraper:
                             return matching
 
                     return persoane
-                return []
+                # Dacă FirmeAPI nu returnează 200 sau nu are rezultate, continuă pe fallback local
         except Exception as e:
-            print(f"Eroare căutare rețea administrator '{name}': {e}")
-            return []
+            print(f"Eroare căutare rețea administrator '{name}' via FirmeAPI: {e}")
+
+        # Fallback local inteligent din baza de date Axis (istoric evaluări și clienți)
+        try:
+            import json
+            from ...database import SessionLocal
+            from ...models.user import User  # Necesar pentru declararea FK-urilor
+            from ...models.client import Client, Evaluation
+
+            db = SessionLocal()
+            clean_target = name.strip().upper().replace("-", " ")
+            found_networks = []
+            
+            # 1. Căutare în evaluări anterioare care au salvat admin_networks
+            evals = db.query(Evaluation).filter(Evaluation.raw_financial_data.isnot(None)).all()
+            for ev in evals:
+                try:
+                    d = json.loads(ev.raw_financial_data) if isinstance(ev.raw_financial_data, str) else ev.raw_financial_data
+                    for an in d.get("admin_networks", []):
+                        an_name = (an.get("nume") or "").strip().upper().replace("-", " ")
+                        if an_name and (an_name == clean_target or clean_target in an_name or an_name in clean_target):
+                            if an.get("firme") and len(an.get("firme")) > 0:
+                                if not any(existing.get("nume") == an.get("nume") and len(existing.get("firme", [])) >= len(an.get("firme", [])) for existing in found_networks):
+                                    found_networks.append(an)
+                except Exception:
+                    pass
+
+            # 2. Căutare între companiile / clienții existenți în DB
+            clients = db.query(Client).all()
+            linked_firms = []
+            for c in clients:
+                rep = (c.representative_name or "").strip().upper().replace("-", " ")
+                if rep and (rep == clean_target or clean_target in rep or rep in clean_target):
+                    linked_firms.append({
+                        "cui": c.cui_cnp,
+                        "denumire": c.name,
+                        "rol": "ADMINISTRATOR / REPREZENTANT",
+                        "este_administrator": True,
+                        "curent": True,
+                        "sursa": "AXIS DB"
+                    })
+            if linked_firms:
+                # Verifică dacă firmele găsite nu sunt deja în found_networks
+                all_cuis = set()
+                for fn in found_networks:
+                    for f in fn.get("firme", []):
+                        all_cuis.add(str(f.get("cui", "")).strip())
+                new_firms = [f for f in linked_firms if str(f.get("cui", "")).strip() not in all_cuis]
+                if new_firms:
+                    if found_networks:
+                        found_networks[0]["firme"].extend(new_firms)
+                        found_networks[0]["total_firme"] = len(found_networks[0]["firme"])
+                        found_networks[0]["firme_active"] = sum(1 for f in found_networks[0]["firme"] if f.get("curent", True))
+                    else:
+                        found_networks.append({
+                            "nume": name.strip(),
+                            "varsta": None,
+                            "loc_nastere": match_loc or "",
+                            "total_firme": len(new_firms),
+                            "firme_active": len(new_firms),
+                            "firme_incetate": 0,
+                            "firme": new_firms
+                        })
+
+            db.close()
+            if found_networks:
+                return found_networks
+        except Exception as db_err:
+            print(f"Eroare fallback local DB administrator_network: {db_err}")
+
+        return []
 
     async def fetch_company_holdings(self, cui: str) -> List[Dict]:
         """Extrage lista completă de acționari/asociați cu tot istoricul de cesiuni din /actionari/{cui}"""
