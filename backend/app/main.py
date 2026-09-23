@@ -51,7 +51,6 @@ app = FastAPI(
     title="Axis AI Platform API",
     description="Backend API for Axis Fleet and Leasing Management",
     version="1.0.0",
-    redirect_slashes=False,
 )
 
 # Global exception handler — guarantees JSON + CORS headers on ALL unhandled errors
