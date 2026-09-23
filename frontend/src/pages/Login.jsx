@@ -11,7 +11,7 @@ const Login = () => {
   const handleLogin = (e) => {
     e.preventDefault();
     // TODO: Real API call
-    login({ full_name: 'Super Admin User', email, role: 'Super Admin' }, 'dummy-token');
+    login({ full_name: 'Eugeniu Cazmal', email: email || 'eugeniu@axisrent.ro', role: 'Super Admin', initials: 'EC' }, 'dummy-token');
     navigate('/dashboard');
   };
 

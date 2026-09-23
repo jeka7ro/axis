@@ -6,8 +6,10 @@ import {
   Building2, Eye, Compass, Layers, CheckSquare, Square, ChevronLeft,
   Camera, Maximize2, X, Image as ImageIcon, Loader2, RefreshCw, Users,
   Search, Briefcase, UserCheck, Scale, BookOpen, Sparkles, Award, Network,
-  Copy, Check
+  Copy, Check, Plus, Minus, ZoomIn, ZoomOut
 } from 'lucide-react';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import L from 'leaflet';
 import { fetchClient, evaluateClient, evaluateCompanyByCui, fetchAdminNetwork } from '../services/api';
 import CompanyIntelModal from '../components/CompanyIntelModal';
 import PersonIntelModal from '../components/PersonIntelModal';
@@ -15,6 +17,22 @@ import MofDocumentModal from '../components/MofDocumentModal';
 import FinancialPerformanceCard from '../components/FinancialPerformanceCard';
 import OwnershipAndGovernanceCard from '../components/OwnershipAndGovernanceCard';
 import { getCaenInfo, getCaenDescription } from '../utils/caenHelper';
+
+const customMapPinIcon = typeof window !== 'undefined' && L ? L.divIcon({
+  className: 'custom-leaflet-marker',
+  html: `
+    <div style="position: relative; width: 34px; height: 34px; transform: translate(-50%, -100%);">
+      <div style="position: absolute; bottom: -2px; left: 50%; transform: translateX(-50%); width: 14px; height: 5px; background: rgba(0,0,0,0.35); border-radius: 50%; filter: blur(1.5px);"></div>
+      <svg width="34" height="34" viewBox="0 0 24 24" fill="#ef4444" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));">
+        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+        <circle cx="12" cy="10" r="3.2" fill="#ffffff"></circle>
+      </svg>
+    </div>
+  `,
+  iconSize: [34, 34],
+  iconAnchor: [17, 34],
+  popupAnchor: [0, -34]
+}) : null;
 
 const ClientDetails = () => {
   const { id } = useParams();
@@ -35,6 +53,8 @@ const ClientDetails = () => {
   const [previewModalOpen, setPreviewModalOpen] = useState(false);
   const [activeViewMode, setActiveViewMode] = useState('photos'); // 'photos' | 'map'
   const [streetView360Mode, setStreetView360Mode] = useState(false);
+  const [mapZoom, setMapZoom] = useState(17);
+  const [mapMode, setMapMode] = useState('google'); // 'google' | 'leaflet'
   const [adminSearchQuery, setAdminSearchQuery] = useState('');
   const [adminSearchResults, setAdminSearchResults] = useState(null);
   const [adminSearchLoading, setAdminSearchLoading] = useState(false);
@@ -1679,6 +1699,7 @@ const ClientDetails = () => {
 
                         {/* DREAPTA: HARTA GOOGLE MAPS (CU PIN PE LOCAȚIE) */}
                         <div className="flex flex-col rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4 shadow-xs">
+                          {/* Card Header cu Switcher Mod */}
                           <div className="flex items-center justify-between mb-3">
                             <div className="flex items-center gap-2">
                               <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
@@ -1693,39 +1714,174 @@ const ClientDetails = () => {
                                 </p>
                               </div>
                             </div>
-                            <a
-                              href={googleMapsUrl}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-xs text-primary hover:underline inline-flex items-center gap-1 font-semibold"
-                            >
-                              Google Maps <ExternalLink size={10} />
-                            </a>
-                          </div>
 
-                          {/* Cadrul Google Maps Live Embed */}
-                          <div className="relative w-full flex-1 min-h-[300px] rounded-xl overflow-hidden border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 shadow-sm flex flex-col">
-                            <iframe
-                              title="Harta Google Maps"
-                              className="w-full h-full min-h-[280px] flex-1 border-0"
-                              loading="lazy"
-                              allowFullScreen
-                              src={`https://maps.google.com/maps?q=${coordinates.lat},${coordinates.lon}&hl=ro&z=16&output=embed`}
-                            />
-
-                            {/* Bară detalii adresă sub Google Maps */}
-                            <div className="p-2.5 bg-white/95 dark:bg-gray-900/95 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs gap-2 shrink-0">
-                              <div className="flex items-center gap-1.5 min-w-0">
-                                <MapPin size={13} className="text-rose-500 shrink-0" />
-                                <span className="truncate font-medium text-gray-800 dark:text-gray-200 text-[11px]" title={addrCheck.address}>
-                                  {addrCheck.address}
-                                </span>
+                            <div className="flex items-center gap-2">
+                              {/* Switcher Mod: Google Maps HD vs Leaflet Interactiv */}
+                              <div className="flex items-center bg-gray-200/80 dark:bg-gray-800 p-0.5 rounded-lg border border-gray-200 dark:border-gray-700 text-xs">
+                                <button
+                                  type="button"
+                                  onClick={() => setMapMode('google')}
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                                    mapMode === 'google'
+                                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs'
+                                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
+                                  }`}
+                                >
+                                  Google Maps HD
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setMapMode('leaflet')}
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                                    mapMode === 'leaflet'
+                                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs'
+                                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
+                                  }`}
+                                >
+                                  Interactiv
+                                </button>
                               </div>
+
                               <a
                                 href={googleMapsUrl}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="shrink-0 px-2.5 py-1 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 text-[11px] font-semibold rounded-full transition-colors inline-flex items-center gap-1"
+                                className="text-xs text-primary hover:underline inline-flex items-center gap-1 font-semibold"
+                                title="Deschide în Google Maps complet"
+                              >
+                                Google Maps <ExternalLink size={10} />
+                              </a>
+                            </div>
+                          </div>
+
+                          {/* Map Display Viewport */}
+                          <div className="relative w-full h-[280px] sm:h-[300px] rounded-xl overflow-hidden border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 shadow-sm flex flex-col group">
+                            {mapMode === 'google' ? (
+                              /* 1. Google Maps Static HD Roadmap */
+                              <div className="relative w-full h-full">
+                                <img
+                                  src={`https://maps.googleapis.com/maps/api/staticmap?center=${coordinates.lat},${coordinates.lon}&zoom=${mapZoom}&size=800x500&scale=2&maptype=roadmap&markers=color:red%7C${coordinates.lat},${coordinates.lon}&key=${GOOGLE_MAPS_KEY}`}
+                                  alt={`Harta Google Maps - ${addrCheck.address}`}
+                                  className="w-full h-full object-cover transition-opacity duration-200"
+                                  loading="eager"
+                                />
+
+                                {/* Coordinates Badge */}
+                                <div className="absolute top-2.5 left-2.5 px-3 py-1 bg-black/80 backdrop-blur-xs text-white text-xs font-sans rounded-full border border-white/10 shadow-sm z-10 flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                                  <span>{coordinates.lat.toFixed(4)}° N, {coordinates.lon.toFixed(4)}° E</span>
+                                </div>
+
+                                {/* Zoom Controls Overlay (+ / -) */}
+                                <div className="absolute top-2.5 right-2.5 flex flex-col gap-1 z-10 shadow-md">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMapZoom(prev => Math.min(prev + 1, 20))}
+                                    className="w-8 h-8 bg-white/95 dark:bg-gray-800/95 hover:bg-white dark:hover:bg-gray-800 text-gray-800 dark:text-white rounded-t-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center font-bold text-base transition-colors active:scale-95 cursor-pointer"
+                                    title="Mărește zoom (+)"
+                                  >
+                                    <Plus size={16} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setMapZoom(prev => Math.max(prev - 1, 12))}
+                                    className="w-8 h-8 bg-white/95 dark:bg-gray-800/95 hover:bg-white dark:hover:bg-gray-800 text-gray-800 dark:text-white rounded-b-lg border-t-0 border border-gray-200 dark:border-gray-700 flex items-center justify-center font-bold text-base transition-colors active:scale-95 cursor-pointer"
+                                    title="Micșorează zoom (-)"
+                                  >
+                                    <Minus size={16} />
+                                  </button>
+                                </div>
+
+                                {/* Zoom Level Pill */}
+                                <div className="absolute bottom-2.5 right-2.5 px-2.5 py-1 bg-black/80 backdrop-blur-xs text-white text-[11px] font-sans rounded-full border border-white/10 shadow-sm z-10">
+                                  Zoom {mapZoom}x
+                                </div>
+                              </div>
+                            ) : (
+                              /* 2. Leaflet Interactive Map */
+                              <div className="w-full h-full relative z-0">
+                                <MapContainer
+                                  center={[coordinates.lat, coordinates.lon]}
+                                  zoom={mapZoom}
+                                  className="w-full h-full z-0"
+                                  scrollWheelZoom={true}
+                                >
+                                  <TileLayer
+                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                  />
+                                  <Marker 
+                                    position={[coordinates.lat, coordinates.lon]}
+                                    icon={customMapPinIcon || undefined}
+                                  >
+                                    <Popup>
+                                      <div className="text-xs p-1">
+                                        <div className="font-bold text-gray-900 mb-1">{client?.name || 'Sediu Companie'}</div>
+                                        <div className="text-gray-600 mb-1">{addrCheck.address}</div>
+                                        <div className="text-gray-400 text-[10px]">{coordinates.lat.toFixed(6)}, {coordinates.lon.toFixed(6)}</div>
+                                      </div>
+                                    </Popup>
+                                  </Marker>
+                                </MapContainer>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Zoom Presets & Perspectives (Symmetric with Left Card Thumbnails) */}
+                          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700/60">
+                            <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                              <span>Perspective Zoom Plan Stradal:</span>
+                              <span className="text-gray-400 font-normal">Nivel detaliu</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { zoom: 18, label: 'Detaliu Clădire', sub: 'Zoom 18x' },
+                                { zoom: 16, label: 'Plan Stradal', sub: 'Zoom 16x' },
+                                { zoom: 14, label: 'Vedere Zonă', sub: 'Zoom 14x' },
+                              ].map((preset) => {
+                                const isCurrent = mapZoom === preset.zoom;
+                                return (
+                                  <button
+                                    key={preset.zoom}
+                                    type="button"
+                                    onClick={() => {
+                                      setMapZoom(preset.zoom);
+                                    }}
+                                    className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                                      isCurrent
+                                        ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-900/30 ring-1 ring-blue-500/30'
+                                        : 'border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between mb-0.5">
+                                      <span className={`text-xs font-semibold ${isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-gray-800 dark:text-gray-200'}`}>
+                                        {preset.label}
+                                      </span>
+                                      {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>}
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                      {preset.sub}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Address Footer Bar */}
+                          <div className="mt-3 p-2.5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <MapPin size={13} className="text-rose-500 shrink-0" />
+                              <span className="truncate font-medium text-gray-800 dark:text-gray-200 text-[11px]" title={addrCheck.address}>
+                                {addrCheck.address}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <a
+                                href={`https://www.google.com/maps/dir/?api=1&destination=${coordinates.lat},${coordinates.lon}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 text-[11px] font-semibold rounded-full transition-colors inline-flex items-center gap-1"
                               >
                                 Rută Google Maps <ExternalLink size={10} />
                               </a>

@@ -697,15 +697,7 @@ const ClientsList = () => {
                           </span>
                         </button>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => openAnalysisModal(client, true)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-semibold text-purple-700 bg-purple-50 border border-purple-200 rounded-full hover:bg-purple-100 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800 transition-colors cursor-pointer shadow-2xs"
-                          title="Pornește analiza AI"
-                        >
-                          <Sparkles size={12} />
-                          <span>Evaluează</span>
-                        </button>
+                        <span className="text-gray-400 dark:text-gray-500 text-sm font-medium select-none">—</span>
                       )}
                     </td>
                     <td className="px-6 py-4">{new Date(client.created_at).toLocaleDateString('ro-RO')}</td>

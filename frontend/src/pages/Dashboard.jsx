@@ -61,7 +61,7 @@ const Dashboard = () => {
     <div className="space-y-6">
       <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-100 dark:border-gray-700">
         <h3 className="text-2xl font-semibold text-gray-800 dark:text-white">
-          Salut, {user?.full_name?.split(' ')[0] || 'Utilizator'}!
+          Salut, {user?.full_name?.split(' ')[0] || 'Eugeniu'}!
         </h3>
         <p className="text-gray-500 dark:text-gray-400 mt-1">
           Iată o privire de ansamblu asupra platformei tale de azi.

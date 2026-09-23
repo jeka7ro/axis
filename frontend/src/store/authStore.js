@@ -2,9 +2,10 @@ import { create } from 'zustand';
 
 const useAuthStore = create((set) => ({
   user: {
-    full_name: 'Test Administrator',
-    email: 'admin@axis.ro',
-    role: 'Super Admin'
+    full_name: 'Eugeniu Cazmal',
+    email: 'eugeniu@axisrent.ro',
+    role: 'Super Admin',
+    initials: 'EC'
   }, // Pre-filled for development showcase
   isAuthenticated: true, // Auto-logged in for now to speed up development
   token: 'mock-jwt-token',

@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from .database import engine, Base
@@ -37,12 +38,36 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Custom CORS middleware to guarantee CORS headers on all responses, including OPTIONS preflight and 500 errors
+@app.middleware("http")
+async def cors_handler(request: Request, call_next):
+    origin = request.headers.get("origin")
+    if request.method == "OPTIONS":
+        res = JSONResponse(content={"status": "ok"})
+    else:
+        try:
+            res = await call_next(request)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            res = JSONResponse(status_code=500, content={"detail": str(e), "error": True})
+    
+    if origin:
+        res.headers["Access-Control-Allow-Origin"] = origin
+        res.headers["Access-Control-Allow-Credentials"] = "true"
+        res.headers["Access-Control-Allow-Methods"] = "*"
+        res.headers["Access-Control-Allow-Headers"] = "*"
+        res.headers["Access-Control-Expose-Headers"] = "*"
+    return res
+
 # Mount documents folder
 os.makedirs("documents", exist_ok=True)
 app.mount("/documents", StaticFiles(directory="documents"), name="documents")
 
-# CORS configuration - Allow all for local dev to support any Vite port
+# CORS configuration - Allow Netlify, local dev, and any production client
 origins = [
+    "https://axis-v01.netlify.app",
+    "https://axisrent.ro",
     "http://localhost:1987",
     "http://127.0.0.1:1987",
     "http://localhost:3000",
@@ -53,7 +78,7 @@ origins = [
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
-    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:[0-9]+)?$",
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
