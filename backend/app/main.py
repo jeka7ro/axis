@@ -126,4 +126,9 @@ app.include_router(nomenclatures.router)
 
 @app.get("/")
 def root():
-    return {"message": "Welcome to Axis AI Platform API"}
+    return {"message": "Welcome to Axis AI Platform API", "version": "2.5.1-cors-fix"}
+
+@app.get("/api/debug/test-error")
+async def test_error():
+    """Endpoint de diagnostic — testează dacă global exception handler returnează JSON + CORS"""
+    raise ValueError("Test error — dacă vezi acest mesaj în JSON cu CORS headers, exception handler-ul funcționează!")
