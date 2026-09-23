@@ -323,10 +323,11 @@ async def verify_client_address(client_id: int, db: Session = Depends(get_db)):
     checker = AddressChecker()
     return await checker.verify_address(client.address, client.cui_cnp)
 
-@router.post("/{client_id}/evaluate", response_model=EvaluationResponse)
-@router.post("/{client_id}/evaluate/", response_model=EvaluationResponse)
+@router.post("/{client_id}/evaluate")
+@router.post("/{client_id}/evaluate/")
 async def evaluate_client(client_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
     import traceback
+    from fastapi.responses import JSONResponse
     try:
         client = db.query(Client).filter(Client.id == client_id).first()
         if not client:
@@ -388,7 +389,7 @@ async def evaluate_client(client_id: int, db: Session = Depends(get_db), current
                 except Exception as net_err:
                     print(f"[EVALUATE] Rep network error for {rep_name}: {net_err}")
 
-            # Fallback de siguranță: dacă scanarea nouă este incompletă, păstrăm rețelele cunoscute din evaluarea anterioară
+            # Fallback de siguranță
             if not admin_networks:
                 prev_eval = db.query(Evaluation).filter(Evaluation.client_id == client.id).order_by(Evaluation.created_at.desc()).first()
                 if prev_eval and prev_eval.raw_financial_data:
@@ -421,7 +422,6 @@ async def evaluate_client(client_id: int, db: Session = Depends(get_db), current
             )
             print(f"[EVALUATE] Cross-check OK: score={osint_data.get('osint_score')}")
         else:
-            # PF (Physical Person) - Skip company OSINT
             osint_data = {
                 "osint_score": 85,
                 "osint_flags": ["Evaluare standard Persoană Fizică"],
@@ -432,10 +432,8 @@ async def evaluate_client(client_id: int, db: Session = Depends(get_db), current
         ai_result = AIEngineService.evaluate_client(name=client.name, osint_data=osint_data)
         print(f"[EVALUATE] AI Engine OK: score={ai_result['score']}, risk={ai_result['risk_level']}")
         
-        # 4. Save evaluation — ensure risk_level is stored as string value for Pydantic compatibility
+        # 4. Save evaluation — convert enum to string value for safe Postgres storage
         risk_val = ai_result["risk_level"]
-        if hasattr(risk_val, 'value'):
-            risk_val = risk_val  # Already enum, SQLAlchemy handles it
         
         user_id = getattr(current_user, "id", None) if current_user else None
         if user_id:
@@ -457,7 +455,19 @@ async def evaluate_client(client_id: int, db: Session = Depends(get_db), current
         db.refresh(new_evaluation)
         
         print(f"[EVALUATE] SAVED evaluation #{new_evaluation.id} for client {client_id}")
-        return new_evaluation
+        
+        # Return JSONResponse directly — bypasses response_model serialization which can crash and bypass CORS
+        risk_str = new_evaluation.risk_level.value if hasattr(new_evaluation.risk_level, 'value') else str(new_evaluation.risk_level)
+        return JSONResponse(content={
+            "id": new_evaluation.id,
+            "client_id": new_evaluation.client_id,
+            "score": new_evaluation.score,
+            "risk_level": risk_str,
+            "ai_summary": new_evaluation.ai_summary,
+            "raw_financial_data": new_evaluation.raw_financial_data,
+            "created_at": new_evaluation.created_at.isoformat() if new_evaluation.created_at else None,
+            "created_by_user_id": new_evaluation.created_by_user_id
+        })
     
     except HTTPException:
         raise

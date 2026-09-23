@@ -48,7 +48,27 @@ app = FastAPI(
     title="Axis AI Platform API",
     description="Backend API for Axis Fleet and Leasing Management",
     version="1.0.0",
+    redirect_slashes=False,
 )
+
+# Global exception handler — guarantees JSON + CORS headers on ALL unhandled errors
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.exceptions import RequestValidationError
+import traceback
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    traceback.print_exc()
+    origin = request.headers.get("origin", "*")
+    response = JSONResponse(
+        status_code=500,
+        content={"detail": f"{type(exc).__name__}: {str(exc)}", "error": True}
+    )
+    response.headers["Access-Control-Allow-Origin"] = origin
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
 
 # Custom CORS middleware to guarantee CORS headers on all responses, including OPTIONS preflight and 500 errors
 @app.middleware("http")
