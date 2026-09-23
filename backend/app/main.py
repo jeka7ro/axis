@@ -6,8 +6,11 @@ from .database import engine, Base
 from .api import auth, clients, offers, gps, vehicles, nomenclatures
 import os
 
-# Create database tables
-Base.metadata.create_all(bind=engine)
+# Create database tables (wrapped to survive Postgres enum conflicts)
+try:
+    Base.metadata.create_all(bind=engine)
+except Exception as e:
+    print(f"[STARTUP] create_all warning: {e}")
 
 # Auto-migrate missing columns for existing databases (e.g. Railway Postgres)
 from sqlalchemy import text
