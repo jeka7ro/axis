@@ -4,7 +4,10 @@ from typing import List
 import uuid
 import os
 from datetime import datetime
-from docx import Document
+try:
+    from docx import Document
+except ImportError:
+    Document = None
 from supabase import create_client, Client as SupabaseClient
 
 from ..config import settings

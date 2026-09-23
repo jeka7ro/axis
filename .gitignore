@@ -46,3 +46,5 @@ Thumbs.db
 
 # Documents / Ephemeral storage
 backend/documents/
+axis_dev.db
+*.db
