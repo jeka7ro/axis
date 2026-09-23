@@ -326,117 +326,149 @@ async def verify_client_address(client_id: int, db: Session = Depends(get_db)):
 @router.post("/{client_id}/evaluate", response_model=EvaluationResponse)
 @router.post("/{client_id}/evaluate/", response_model=EvaluationResponse)
 async def evaluate_client(client_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
-    client = db.query(Client).filter(Client.id == client_id).first()
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
-        
-    # 1. OSINT Data Collection (Caracatița & Sediu)
-    osint_data = {}
-    
-    if client.type == ClientType.PJ:
-        anaf_scraper = AnafScraper()
-        registry_scraper = RegistryScraper()
-        cross_checker = CrossChecker()
-        address_checker = AddressChecker()
-        
-        anaf_data = await anaf_scraper.fetch_company_data(client.cui_cnp)
-        personnel_data = await registry_scraper.fetch_company_personnel(client.cui_cnp)
-        balance_data = await registry_scraper.fetch_company_balance(client.cui_cnp)
-        bpi_data = await registry_scraper.fetch_company_bpi(client.cui_cnp)
-        mof_data = await registry_scraper.fetch_company_mof(client.cui_cnp)
-        holdings_data = await registry_scraper.fetch_company_holdings(client.cui_cnp)
-        admins_data = await registry_scraper.fetch_company_administrators(client.cui_cnp)
-        caen_data = await registry_scraper.fetch_company_caen(client.cui_cnp)
-        
-        # Reverse Lookup Administrator Network ("Caracatița" extinsă)
-        admin_networks = []
-        checked_names = set()
-        
-        for p in personnel_data:
-            admin_name = p.get("nume", "").strip()
-            loc_nastere = p.get("loc_nastere", "").strip()
-            if admin_name and admin_name.upper() not in checked_names:
-                checked_names.add(admin_name.upper())
-                net = await registry_scraper.fetch_administrator_network(
-                    admin_name, 
-                    match_cui=client.cui_cnp,
-                    match_loc=loc_nastere
-                )
-                if net:
-                    admin_networks.extend(net)
-                    
-        if client.representative_name and client.representative_name.strip().upper() not in checked_names:
-            rep_name = client.representative_name.strip()
-            checked_names.add(rep_name.upper())
-            net = await registry_scraper.fetch_administrator_network(
-                rep_name, 
-                match_cui=client.cui_cnp
-            )
-            if net:
-                admin_networks.extend(net)
-
-        # Fallback de siguranță: dacă scanarea nouă este incompletă, păstrăm rețelele cunoscute din evaluarea anterioară
-        if not admin_networks:
-            prev_eval = db.query(Evaluation).filter(Evaluation.client_id == client.id).order_by(Evaluation.created_at.desc()).first()
-            if prev_eval and prev_eval.raw_financial_data:
-                try:
-                    prev_d = json.loads(prev_eval.raw_financial_data) if isinstance(prev_eval.raw_financial_data, str) else prev_eval.raw_financial_data
-                    admin_networks = prev_d.get("admin_networks", []) or []
-                except Exception:
-                    pass
-
-        target_addr = client.address or anaf_data.get("adresa", "")
-        if not client.address and target_addr:
-            client.address = target_addr
-            db.commit()
+    import traceback
+    try:
+        client = db.query(Client).filter(Client.id == client_id).first()
+        if not client:
+            raise HTTPException(status_code=404, detail="Client not found")
             
-        address_data = await address_checker.verify_address(target_addr, client.cui_cnp)
+        # 1. OSINT Data Collection (Caracatița & Sediu)
+        osint_data = {}
         
-        # 2. Cross Check
-        osint_data = cross_checker.evaluate_risk(
-            anaf_data,
-            personnel_data,
-            balance_data,
-            address_data,
-            bpi_data,
-            mof_data,
-            admin_networks,
-            holdings_data=holdings_data,
-            administrators_data=admins_data,
-            caen_data=caen_data
-        )
-    else:
-        # PF (Physical Person) - Skip company OSINT
-        osint_data = {
-            "osint_score": 85,
-            "osint_flags": ["Evaluare standard Persoană Fizică"],
-            "details": "Nu se aplică verificări ANAF / Bilanț pentru Persoane Fizice."
-        }
-        
-    # 3. Call AI Engine
-    ai_result = AIEngineService.evaluate_client(name=client.name, osint_data=osint_data)
-    
-    # 4. Save evaluation
-    user_id = getattr(current_user, "id", None) if current_user else None
-    if user_id:
-        existing_user = db.query(User).filter(User.id == user_id).first()
-        if not existing_user:
-            user_id = None
+        if client.type == ClientType.PJ:
+            anaf_scraper = AnafScraper()
+            registry_scraper = RegistryScraper()
+            cross_checker = CrossChecker()
+            address_checker = AddressChecker()
+            
+            print(f"[EVALUATE] Client {client_id} ({client.name}) — Starting OSINT pipeline...")
+            
+            anaf_data = await anaf_scraper.fetch_company_data(client.cui_cnp)
+            print(f"[EVALUATE] ANAF OK: {anaf_data.get('nume', '?')}")
+            
+            personnel_data = await registry_scraper.fetch_company_personnel(client.cui_cnp)
+            balance_data = await registry_scraper.fetch_company_balance(client.cui_cnp)
+            bpi_data = await registry_scraper.fetch_company_bpi(client.cui_cnp)
+            mof_data = await registry_scraper.fetch_company_mof(client.cui_cnp)
+            holdings_data = await registry_scraper.fetch_company_holdings(client.cui_cnp)
+            admins_data = await registry_scraper.fetch_company_administrators(client.cui_cnp)
+            caen_data = await registry_scraper.fetch_company_caen(client.cui_cnp)
+            print(f"[EVALUATE] FirmeAPI OK: personnel={len(personnel_data)}, admins={len(admins_data)}")
+            
+            # Reverse Lookup Administrator Network ("Caracatița" extinsă)
+            admin_networks = []
+            checked_names = set()
+            
+            for p in personnel_data:
+                admin_name = p.get("nume", "").strip()
+                loc_nastere = p.get("loc_nastere", "").strip()
+                if admin_name and admin_name.upper() not in checked_names:
+                    checked_names.add(admin_name.upper())
+                    try:
+                        net = await registry_scraper.fetch_administrator_network(
+                            admin_name, 
+                            match_cui=client.cui_cnp,
+                            match_loc=loc_nastere
+                        )
+                        if net:
+                            admin_networks.extend(net)
+                    except Exception as net_err:
+                        print(f"[EVALUATE] Admin network error for {admin_name}: {net_err}")
+                        
+            if client.representative_name and client.representative_name.strip().upper() not in checked_names:
+                rep_name = client.representative_name.strip()
+                checked_names.add(rep_name.upper())
+                try:
+                    net = await registry_scraper.fetch_administrator_network(
+                        rep_name, 
+                        match_cui=client.cui_cnp
+                    )
+                    if net:
+                        admin_networks.extend(net)
+                except Exception as net_err:
+                    print(f"[EVALUATE] Rep network error for {rep_name}: {net_err}")
 
-    new_evaluation = Evaluation(
-        client_id=client.id,
-        score=ai_result["score"],
-        risk_level=ai_result["risk_level"],
-        ai_summary=ai_result["ai_summary"],
-        raw_financial_data=ai_result["raw_financial_data"],
-        created_by_user_id=user_id
-    )
+            # Fallback de siguranță: dacă scanarea nouă este incompletă, păstrăm rețelele cunoscute din evaluarea anterioară
+            if not admin_networks:
+                prev_eval = db.query(Evaluation).filter(Evaluation.client_id == client.id).order_by(Evaluation.created_at.desc()).first()
+                if prev_eval and prev_eval.raw_financial_data:
+                    try:
+                        prev_d = json.loads(prev_eval.raw_financial_data) if isinstance(prev_eval.raw_financial_data, str) else prev_eval.raw_financial_data
+                        admin_networks = prev_d.get("admin_networks", []) or []
+                    except Exception:
+                        pass
+
+            target_addr = client.address or anaf_data.get("adresa", "")
+            if not client.address and target_addr:
+                client.address = target_addr
+                db.commit()
+                
+            address_data = await address_checker.verify_address(target_addr, client.cui_cnp)
+            print(f"[EVALUATE] Address OK: coords={bool(address_data.get('coordinates'))}, photos={len(address_data.get('photos', []))}")
+            
+            # 2. Cross Check
+            osint_data = cross_checker.evaluate_risk(
+                anaf_data,
+                personnel_data,
+                balance_data,
+                address_data,
+                bpi_data,
+                mof_data,
+                admin_networks,
+                holdings_data=holdings_data,
+                administrators_data=admins_data,
+                caen_data=caen_data
+            )
+            print(f"[EVALUATE] Cross-check OK: score={osint_data.get('osint_score')}")
+        else:
+            # PF (Physical Person) - Skip company OSINT
+            osint_data = {
+                "osint_score": 85,
+                "osint_flags": ["Evaluare standard Persoană Fizică"],
+                "details": "Nu se aplică verificări ANAF / Bilanț pentru Persoane Fizice."
+            }
+            
+        # 3. Call AI Engine
+        ai_result = AIEngineService.evaluate_client(name=client.name, osint_data=osint_data)
+        print(f"[EVALUATE] AI Engine OK: score={ai_result['score']}, risk={ai_result['risk_level']}")
+        
+        # 4. Save evaluation — ensure risk_level is stored as string value for Pydantic compatibility
+        risk_val = ai_result["risk_level"]
+        if hasattr(risk_val, 'value'):
+            risk_val = risk_val  # Already enum, SQLAlchemy handles it
+        
+        user_id = getattr(current_user, "id", None) if current_user else None
+        if user_id:
+            existing_user = db.query(User).filter(User.id == user_id).first()
+            if not existing_user:
+                user_id = None
+
+        new_evaluation = Evaluation(
+            client_id=client.id,
+            score=ai_result["score"],
+            risk_level=risk_val,
+            ai_summary=ai_result["ai_summary"],
+            raw_financial_data=ai_result["raw_financial_data"],
+            created_by_user_id=user_id
+        )
+        
+        db.add(new_evaluation)
+        db.commit()
+        db.refresh(new_evaluation)
+        
+        print(f"[EVALUATE] SAVED evaluation #{new_evaluation.id} for client {client_id}")
+        return new_evaluation
     
-    db.add(new_evaluation)
-    db.commit()
-    db.refresh(new_evaluation)
-    
-    return new_evaluation
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        print(f"[EVALUATE ERROR] Client {client_id}: {type(e).__name__}: {e}")
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=500,
+            content={"detail": f"Evaluation failed: {type(e).__name__}: {str(e)}", "error": True}
+        )
 
 @router.post("/evaluate-by-cui/{cui}")
 @router.post("/evaluate-by-cui/{cui}/")
