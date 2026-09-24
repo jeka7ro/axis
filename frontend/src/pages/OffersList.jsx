@@ -532,15 +532,15 @@ const OffersList = () => {
 
             {/* Secțiune Configurare Fidejusor când template-ul este Fidejusor */}
             {selectedTemplateType === 'fidejusor' && (
-              <div className="p-4 bg-amber-50/70 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-800/50 space-y-3">
+              <div className="p-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 space-y-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2">
-                    <ShieldCheck className="text-amber-600 dark:text-amber-400" size={18} />
+                    <ShieldCheck className="text-gray-700 dark:text-gray-300" size={18} />
                     <span className="text-xs font-bold text-gray-900 dark:text-white">
                       Desemnare Fidejusor Garant (Conform Cod Civil Art. 2280-2323)
                     </span>
                   </div>
-                  <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                  <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-gray-200/70 dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-600 flex items-center gap-1">
                     <Sparkles size={11} /> AI Governance Match
                   </span>
                 </div>
@@ -563,7 +563,7 @@ const OffersList = () => {
                         }}
                         className={`px-2.5 py-1 text-xs rounded-lg border font-medium transition-all flex items-center gap-1 ${
                           fidejusorData.name === cand.name
-                            ? 'bg-amber-600 text-white border-amber-700 shadow-sm'
+                            ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900 border-gray-900 dark:border-white shadow-sm'
                             : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-100'
                         }`}
                       >
@@ -639,7 +639,7 @@ const OffersList = () => {
                 </div>
 
                 {selectedTemplateType === 'fidejusor' && (
-                  <div className="text-sm pl-4 border-l-2 border-amber-400 bg-amber-50/50 dark:bg-amber-900/10 p-2.5 rounded-r-lg space-y-1">
+                  <div className="text-sm pl-4 border-l-2 border-gray-400 dark:border-gray-500 bg-gray-50 dark:bg-gray-800/60 p-2.5 rounded-r-lg space-y-1">
                     <p>1.3. <strong>Fidejusor (Garant Solidar):</strong> {fidejusorData.name || '___________'}</p>
                     <p><strong>CNP:</strong> {fidejusorData.cnp || '___________'} • <strong>Calitate:</strong> {fidejusorData.quality || 'Garant Solidar'}</p>
                     <p><strong>Domiciliat în:</strong> {fidejusorData.address || selectedOfferForContract.client?.address || 'Mun. București'}</p>
@@ -706,8 +706,8 @@ const OffersList = () => {
               </div>
 
               {selectedTemplateType === 'fidejusor' && (
-                <div className="space-y-2 text-sm p-4 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-200">
-                  <h4 className="font-bold uppercase text-xs text-amber-800 dark:text-amber-400 tracking-wider">
+                <div className="space-y-2 text-sm p-4 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-800 dark:text-gray-200">
+                  <h4 className="font-bold uppercase text-xs text-gray-700 dark:text-gray-300 tracking-wider">
                     Cap. V - Angajamentul de Fidejusiune Solidară (Art. 2280 - 2323 Codul Civil Român)
                   </h4>
                   <p>
@@ -747,10 +747,10 @@ const OffersList = () => {
 
                 {selectedTemplateType === 'fidejusor' && (
                   <div>
-                    <p className="font-bold text-xs uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1">FIDEJUSOR (GARANT)</p>
+                    <p className="font-bold text-xs uppercase tracking-wider text-gray-500 mb-1">FIDEJUSOR (GARANT)</p>
                     <p className="font-medium text-gray-900 dark:text-white">{fidejusorData.name || 'Garant Statutar'}</p>
                     <p className="text-xs text-gray-500">{fidejusorData.quality || 'În nume personal'}</p>
-                    <div className="border-t border-dashed border-amber-400 mt-12 pt-1 text-xs text-gray-400">
+                    <div className="border-t border-dashed border-gray-400 mt-12 pt-1 text-xs text-gray-400">
                       Semnătură Fidejusor
                     </div>
                   </div>

@@ -227,7 +227,7 @@ const OfferBuilder = () => {
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center gap-4">
         <button 
           onClick={() => navigate('/offers')} 
@@ -241,8 +241,8 @@ const OfferBuilder = () => {
         </h2>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="md:col-span-2 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-4 bg-gray-50 dark:bg-gray-900 p-4 border border-gray-200 dark:border-gray-700 rounded-lg">
               <div className="flex justify-between items-center">
@@ -280,7 +280,7 @@ const OfferBuilder = () => {
                   />
                   
                   {formData.client_id && clients.find(c => String(c.id) === String(formData.client_id))?.type === 'PJ' && (
-                    <div className="mt-3 p-3 bg-blue-50/50 dark:bg-blue-900/10 rounded-lg text-sm border border-blue-100 dark:border-blue-800/30">
+                    <div className="mt-3 p-3 bg-gray-100/70 dark:bg-gray-800 rounded-lg text-sm border border-gray-200 dark:border-gray-700">
                       <span className="text-gray-500 dark:text-gray-400">Reprezentant Legal curent: </span>
                       <span className="font-medium text-gray-900 dark:text-white">
                         {clients.find(c => String(c.id) === String(formData.client_id))?.representative_name || <span className="text-red-500 italic">Nesetat (Editează clientul în lista de Clienți pentru a adăuga reprezentantul)</span>}
@@ -312,7 +312,7 @@ const OfferBuilder = () => {
                   </div>
 
                   {isCompany && (
-                    <div className="p-4 mb-4 bg-blue-50 dark:bg-blue-900/20 rounded-md border border-blue-200 dark:border-blue-800 space-y-4">
+                    <div className="p-4 mb-4 bg-gray-50 dark:bg-gray-900/60 rounded-md border border-gray-200 dark:border-gray-700 space-y-4">
                       <div className="relative">
                         <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">Selectează Compania (sau Adaugă Nouă)</label>
                         <div 
@@ -343,7 +343,7 @@ const OfferBuilder = () => {
                             </div>
                             <div className="overflow-y-auto flex-1">
                               <div 
-                                className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${selectedCompanyId === 'NEW' ? 'bg-blue-50 dark:bg-blue-900/30 font-medium' : ''}`}
+                                className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${selectedCompanyId === 'NEW' ? 'bg-gray-100 dark:bg-gray-700 font-medium' : ''}`}
                                 onClick={() => { setSelectedCompanyId('NEW'); setShowCompanyDropdown(false); setCompanySearchQuery(''); }}
                               >
                                 --- Adaugă Companie Nouă ---
@@ -351,7 +351,7 @@ const OfferBuilder = () => {
                               {clients.filter(c => c.type === 'PJ' && (c.name.toLowerCase().includes(companySearchQuery.toLowerCase()) || c.cui_cnp.includes(companySearchQuery))).map(c => (
                                 <div 
                                   key={c.id} 
-                                  className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${selectedCompanyId === c.id.toString() ? 'bg-blue-50 dark:bg-blue-900/30 font-medium' : ''}`}
+                                  className={`px-3 py-2 text-sm cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 ${selectedCompanyId === c.id.toString() ? 'bg-gray-100 dark:bg-gray-700 font-medium' : ''}`}
                                   onClick={() => { 
                                     setSelectedCompanyId(c.id.toString()); 
                                     setShowCompanyDropdown(false); 
@@ -463,10 +463,10 @@ const OfferBuilder = () => {
 
             {/* Secțiune Fidejusiune Automată din Guvernanță */}
             {(formData.template_type === 'Fidejusor' || formData.template_type === 'fidejusor') && (
-              <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-700/60 rounded-xl p-5 space-y-4 shadow-sm">
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-5 space-y-4 shadow-xs">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2.5">
-                    <div className="p-2 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded-lg">
+                    <div className="p-2 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg">
                       <ShieldCheck size={20} />
                     </div>
                     <div>
@@ -478,7 +478,7 @@ const OfferBuilder = () => {
                       </p>
                     </div>
                   </div>
-                  <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 flex items-center gap-1 border border-amber-300 dark:border-amber-700">
+                  <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 flex items-center gap-1 border border-gray-200 dark:border-gray-600">
                     <Sparkles size={12} />
                     AI Governance Match
                   </span>
@@ -508,8 +508,8 @@ const OfferBuilder = () => {
                             }}
                             className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all flex items-center gap-1.5 ${
                               isSelected
-                                ? 'bg-amber-600 text-white border-amber-700 shadow-sm'
-                                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900 border-gray-900 dark:border-white shadow-sm'
+                                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'
                             }`}
                           >
                             <UserCheck size={13} />
@@ -616,8 +616,8 @@ const OfferBuilder = () => {
               </div>
             </div>
 
-            <div className="bg-primary/5 dark:bg-primary/10 border border-primary/20 p-4 rounded-lg">
-              <label className="block text-sm font-semibold text-primary dark:text-primary-400 mb-2">
+            <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-lg">
+              <label className="block text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
                 3. Ai Mașina în Parc? Alege din Flotă (Auto-Completare Preț)
               </label>
               <SearchableSelect 
@@ -752,12 +752,12 @@ const OfferBuilder = () => {
             </div>
           </div>
           
-          <div className="mt-8 p-4 bg-primary/10 rounded-lg text-center">
-            <p className="text-sm font-medium text-primary mb-1">Rată Lunară Estimată</p>
-            <p className="text-3xl font-bold text-primary">
+          <div className="mt-8 p-5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-center shadow-xs">
+            <p className="text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">Rată Lunară Estimată</p>
+            <p className="text-3xl font-bold text-gray-900 dark:text-white">
               {formData.currency === 'EUR' ? '€' : formData.currency === 'USD' ? '$' : ''}{monthlyRate.toFixed(2)}{formData.currency === 'RON' ? ' RON' : ''}
             </p>
-            <p className="text-xs text-primary/70 mt-1">fără TVA / {formData.period_months} luni</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">fără TVA / {formData.period_months} luni</p>
           </div>
         </div>
       </div>

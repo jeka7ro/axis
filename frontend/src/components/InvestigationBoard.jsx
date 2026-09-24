@@ -1694,8 +1694,8 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             title="Exportă Panoul de Investigație în format PDF"
             className={`px-2.5 py-1.5 rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 text-xs font-semibold ${
               isDark
-                ? 'bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border-blue-500/40 hover:border-blue-400'
-                : 'bg-blue-50 hover:bg-blue-100 text-blue-700 border-blue-200 shadow-xs'
+                ? 'bg-gray-800/90 hover:bg-gray-700 text-gray-200 border-gray-700/60'
+                : 'bg-white hover:bg-gray-100 text-gray-800 border-gray-200 shadow-xs'
             }`}
           >
             <FileDown size={13} className={isExporting ? 'animate-bounce' : ''} />
