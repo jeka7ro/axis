@@ -48,11 +48,26 @@ export const deleteOffer = async (id) => {
   return response.json();
 };
 
-export const generateContract = async (id, vehicleId) => {
+export const fetchFidejusorSuggestion = async (clientId) => {
+  const response = await fetch(`${API_URL}/offers/fidejusor-suggestion/${clientId}`);
+  if (!response.ok) throw new Error('Failed to fetch fidejusor suggestion');
+  return response.json();
+};
+
+export const generateContract = async (id, vehicleId, templateType = 'standard', fidejusorData = {}) => {
+  const payload = {
+    vehicle_id: vehicleId ? parseInt(vehicleId, 10) : null,
+    template_type: templateType,
+    fidejusor_name: fidejusorData?.name || null,
+    fidejusor_cnp: fidejusorData?.cnp || null,
+    fidejusor_address: fidejusorData?.address || null,
+    fidejusor_id_card: fidejusorData?.id_card || null,
+    fidejusor_quality: fidejusorData?.quality || null
+  };
   const response = await fetch(`${API_URL}/offers/${id}/generate-contract`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ vehicle_id: vehicleId })
+    body: JSON.stringify(payload)
   });
   if (!response.ok) throw new Error('Failed to generate contract');
   return response.json();

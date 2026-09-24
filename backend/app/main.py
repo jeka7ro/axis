@@ -36,6 +36,26 @@ try:
             conn.execute(text("ALTER TABLE axis_evaluations ALTER COLUMN created_by_user_id DROP NOT NULL;"))
         except Exception:
             pass
+        # Auto-migrate Fidejusor and Template fields
+        for tbl, col, ctype in [
+            ("axis_offers", "template_type", "VARCHAR"),
+            ("axis_offers", "currency", "VARCHAR"),
+            ("axis_offers", "fidejusor_name", "VARCHAR"),
+            ("axis_offers", "fidejusor_cnp", "VARCHAR"),
+            ("axis_offers", "fidejusor_address", "VARCHAR"),
+            ("axis_offers", "fidejusor_id_card", "VARCHAR"),
+            ("axis_offers", "fidejusor_quality", "VARCHAR"),
+            ("axis_contracts", "template_type", "VARCHAR"),
+            ("axis_contracts", "fidejusor_name", "VARCHAR"),
+            ("axis_contracts", "fidejusor_cnp", "VARCHAR"),
+            ("axis_contracts", "fidejusor_address", "VARCHAR"),
+            ("axis_contracts", "fidejusor_id_card", "VARCHAR"),
+            ("axis_contracts", "fidejusor_quality", "VARCHAR"),
+        ]:
+            try:
+                conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {ctype};"))
+            except Exception:
+                pass
         try:
             conn.execute(text("""
                 INSERT INTO axis_users (id, email, hashed_password, full_name, role, is_active)

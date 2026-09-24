@@ -15,6 +15,15 @@ class OfferBase(BaseModel):
     period_months: int
     residual_value_percent: float
     interest_rate: float
+    currency: Optional[str] = "EUR"
+    template_type: Optional[str] = "standard"
+    
+    # Fidejusor details
+    fidejusor_name: Optional[str] = None
+    fidejusor_cnp: Optional[str] = None
+    fidejusor_address: Optional[str] = None
+    fidejusor_id_card: Optional[str] = None
+    fidejusor_quality: Optional[str] = None
 
 class OfferCreate(OfferBase):
     pass
@@ -38,15 +47,27 @@ class OfferResponse(OfferBase):
 class ContractCreateRequest(BaseModel):
     vehicle_id: Optional[int] = None
     template_type: Optional[str] = 'standard'
+    fidejusor_name: Optional[str] = None
+    fidejusor_cnp: Optional[str] = None
+    fidejusor_address: Optional[str] = None
+    fidejusor_id_card: Optional[str] = None
+    fidejusor_quality: Optional[str] = None
 
 class ContractResponse(BaseModel):
     id: int
     offer_id: int
     vehicle_id: Optional[int] = None
     contract_number: str
+    template_type: Optional[str] = 'standard'
     status: str
     document_url: Optional[str]
     created_at: datetime
+    
+    fidejusor_name: Optional[str] = None
+    fidejusor_cnp: Optional[str] = None
+    fidejusor_address: Optional[str] = None
+    fidejusor_id_card: Optional[str] = None
+    fidejusor_quality: Optional[str] = None
 
     vehicle: Optional[VehicleResponse] = None
 

@@ -1,10 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchClients, createClient, updateClient, fetchVehicles, fetchVehicleBrands } from '../services/api';
-import { createOffer, updateOffer, fetchOffer, uploadTemplate } from '../services/apiOffers';
+import { createOffer, updateOffer, fetchOffer, uploadTemplate, fetchFidejusorSuggestion } from '../services/apiOffers';
 import useAuthStore from '../store/authStore';
 import { extractTextFromFile, parseRomanianIDCard } from '../utils/pdfOcr';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, ShieldCheck, UserCheck, Sparkles, AlertCircle } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
 
 const OfferBuilder = () => {
@@ -24,6 +24,9 @@ const OfferBuilder = () => {
   const [ocrLoading, setOcrLoading] = useState(false);
   const [savingNewClient, setSavingNewClient] = useState(false);
   
+  const [fidejusorCandidates, setFidejusorCandidates] = useState([]);
+  const [loadingFidejusor, setLoadingFidejusor] = useState(false);
+
   const [formData, setFormData] = useState({
     client_id: '',
     vehicle_id: null,
@@ -35,7 +38,12 @@ const OfferBuilder = () => {
     period_months: 60,
     residual_value_percent: 1,
     interest_rate: 5.9,
-    template_type: 'Standard'
+    template_type: 'Standard',
+    fidejusor_name: '',
+    fidejusor_cnp: '',
+    fidejusor_address: '',
+    fidejusor_id_card: '',
+    fidejusor_quality: ''
   });
 
   const [isCompany, setIsCompany] = useState(false);
@@ -66,8 +74,14 @@ const OfferBuilder = () => {
             period_months: offer.period_months,
             residual_value_percent: offer.residual_value_percent,
             interest_rate: offer.interest_rate,
-            template_type: offer.template_type || 'Standard'
+            template_type: offer.template_type || 'Standard',
+            fidejusor_name: offer.fidejusor_name || '',
+            fidejusor_cnp: offer.fidejusor_cnp || '',
+            fidejusor_address: offer.fidejusor_address || '',
+            fidejusor_id_card: offer.fidejusor_id_card || '',
+            fidejusor_quality: offer.fidejusor_quality || ''
           });
+          loadFidejusorForClient(offer.client_id);
         })
         .catch(err => {
           console.error(err);
@@ -77,6 +91,32 @@ const OfferBuilder = () => {
         .finally(() => setLoading(false));
     }
   }, [id, isEditMode, navigate]);
+
+  const loadFidejusorForClient = async (clientId) => {
+    if (!clientId) return;
+    setLoadingFidejusor(true);
+    try {
+      const data = await fetchFidejusorSuggestion(clientId);
+      if (data?.suggested_fidejusor) {
+        setFidejusorCandidates(data.all_candidates || [data.suggested_fidejusor]);
+        setFormData(prev => {
+          if (prev.fidejusor_name) return prev;
+          return {
+            ...prev,
+            fidejusor_name: data.suggested_fidejusor.name || '',
+            fidejusor_cnp: data.suggested_fidejusor.cnp || '',
+            fidejusor_address: data.suggested_fidejusor.address || '',
+            fidejusor_id_card: data.suggested_fidejusor.id_card || '',
+            fidejusor_quality: data.suggested_fidejusor.quality || 'Administrator Statutar'
+          };
+        });
+      }
+    } catch (err) {
+      console.warn("Could not fetch fidejusor suggestion:", err);
+    } finally {
+      setLoadingFidejusor(false);
+    }
+  };
 
   const handleOCR = async (e) => {
     const file = e.target.files[0];
@@ -225,11 +265,17 @@ const OfferBuilder = () => {
                     onChange={(val) => {
                       const clientId = val;
                       const prefCurr = localStorage.getItem(`pref_curr_${clientId}`);
-                      setFormData({
-                        ...formData, 
+                      setFormData(prev => ({
+                        ...prev, 
                         client_id: clientId,
-                        currency: prefCurr || formData.currency
-                      });
+                        currency: prefCurr || prev.currency,
+                        fidejusor_name: '',
+                        fidejusor_cnp: '',
+                        fidejusor_address: '',
+                        fidejusor_id_card: '',
+                        fidejusor_quality: ''
+                      }));
+                      loadFidejusorForClient(clientId);
                     }}
                   />
                   
@@ -400,13 +446,151 @@ const OfferBuilder = () => {
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tip Contract (Template)</label>
               <select 
                 value={formData.template_type}
-                onChange={e => setFormData({...formData, template_type: e.target.value})}
+                onChange={e => {
+                  const newType = e.target.value;
+                  setFormData({...formData, template_type: newType});
+                  if ((newType === 'Fidejusor' || newType === 'fidejusor') && formData.client_id) {
+                    loadFidejusorForClient(formData.client_id);
+                  }
+                }}
                 className="mt-1 block w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md dark:bg-gray-700 dark:text-white"
               >
                 <option value="Standard">Contract Leasing Standard</option>
-                <option value="Fidejusor">Contract cu Fidejusor (Garant)</option>
+                <option value="Fidejusor">Contract cu Fidejusor (Șablon Oficial Maria - Recomandat AI)</option>
+                <option value="leasing">Contract Leasing Operațional Termen Lung</option>
               </select>
             </div>
+
+            {/* Secțiune Fidejusiune Automată din Guvernanță */}
+            {(formData.template_type === 'Fidejusor' || formData.template_type === 'fidejusor') && (
+              <div className="bg-amber-50/60 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-700/60 rounded-xl p-5 space-y-4 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <div className="p-2 bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400 rounded-lg">
+                      <ShieldCheck size={20} />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Garanție Personală & Desemnare Fidejusor
+                      </h4>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        Conform Art. 2280-2323 Cod Civil Român. Pre-completat automat din analiza structurii de asociați / administratori.
+                      </p>
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 text-xs font-semibold rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 flex items-center gap-1 border border-amber-300 dark:border-amber-700">
+                    <Sparkles size={12} />
+                    AI Governance Match
+                  </span>
+                </div>
+
+                {fidejusorCandidates.length > 1 && (
+                  <div className="space-y-1.5 pt-1">
+                    <label className="text-xs font-semibold text-gray-700 dark:text-gray-300">
+                      Candidați Eligibili Detectați în Structura Firmei:
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {fidejusorCandidates.map((cand, idx) => {
+                        const isSelected = formData.fidejusor_name === cand.name;
+                        return (
+                          <button
+                            key={idx}
+                            type="button"
+                            onClick={() => {
+                              setFormData(prev => ({
+                                ...prev,
+                                fidejusor_name: cand.name,
+                                fidejusor_cnp: cand.cnp || prev.fidejusor_cnp,
+                                fidejusor_address: cand.address || prev.fidejusor_address,
+                                fidejusor_quality: cand.quality || prev.fidejusor_quality,
+                                fidejusor_id_card: cand.id_card || prev.fidejusor_id_card
+                              }));
+                            }}
+                            className={`px-3 py-1.5 text-xs rounded-lg border font-medium transition-all flex items-center gap-1.5 ${
+                              isSelected
+                                ? 'bg-amber-600 text-white border-amber-700 shadow-sm'
+                                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                            }`}
+                          >
+                            <UserCheck size={13} />
+                            <span>{cand.name}</span>
+                            <span className="opacity-80 text-[10px]">({cand.quality})</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                      Nume și Prenume Fidejusor (Garant)
+                    </label>
+                    <input 
+                      type="text" 
+                      required 
+                      value={formData.fidejusor_name} 
+                      onChange={e => setFormData({ ...formData, fidejusor_name: e.target.value })} 
+                      className="mt-1 block w-full px-3 py-2 border rounded-md dark:bg-gray-800 border-gray-300 dark:border-gray-600 dark:text-white text-sm" 
+                      placeholder="Ex: POPESCU ION"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                      Calitate în Cadrul Locatarului
+                    </label>
+                    <input 
+                      type="text" 
+                      value={formData.fidejusor_quality} 
+                      onChange={e => setFormData({ ...formData, fidejusor_quality: e.target.value })} 
+                      className="mt-1 block w-full px-3 py-2 border rounded-md dark:bg-gray-800 border-gray-300 dark:border-gray-600 dark:text-white text-sm" 
+                      placeholder="Ex: Asociat Majoritar (100%) & Administrator"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                      CNP Fidejusor
+                    </label>
+                    <input 
+                      type="text" 
+                      value={formData.fidejusor_cnp} 
+                      onChange={e => setFormData({ ...formData, fidejusor_cnp: e.target.value })} 
+                      className="mt-1 block w-full px-3 py-2 border rounded-md dark:bg-gray-800 border-gray-300 dark:border-gray-600 dark:text-white text-sm" 
+                      placeholder="13 cifre..."
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                      Serie și Număr Carte Identitate
+                    </label>
+                    <input 
+                      type="text" 
+                      value={formData.fidejusor_id_card} 
+                      onChange={e => setFormData({ ...formData, fidejusor_id_card: e.target.value })} 
+                      className="mt-1 block w-full px-3 py-2 border rounded-md dark:bg-gray-800 border-gray-300 dark:border-gray-600 dark:text-white text-sm" 
+                      placeholder="Ex: RX 123456"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-gray-700 dark:text-gray-300">
+                      Adresă de Domiciliu Fidejusor
+                    </label>
+                    <input 
+                      type="text" 
+                      value={formData.fidejusor_address} 
+                      onChange={e => setFormData({ ...formData, fidejusor_address: e.target.value })} 
+                      className="mt-1 block w-full px-3 py-2 border rounded-md dark:bg-gray-800 border-gray-300 dark:border-gray-600 dark:text-white text-sm" 
+                      placeholder="Mun. București, Str. ..."
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-4">
               <div>

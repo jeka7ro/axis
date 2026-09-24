@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Plus, Check, FileSignature, FileText, ChevronLeft, ChevronRight, CheckSquare, Trash, Eye, Edit2, PenTool } from 'lucide-react';
-import { fetchOffers, approveOffer, generateContract, sendESign, uploadTemplate, deleteOffer } from '../services/apiOffers';
+import { Plus, Check, FileSignature, FileText, ChevronLeft, ChevronRight, CheckSquare, Trash, Eye, Edit2, PenTool, Download, ShieldCheck, UserCheck, Sparkles } from 'lucide-react';
+import { fetchOffers, approveOffer, generateContract, sendESign, uploadTemplate, deleteOffer, fetchFidejusorSuggestion } from '../services/apiOffers';
 import { fetchVehicles } from '../services/api';
 import useAuthStore from '../store/authStore';
+import { generateContractPdf } from '../utils/contractPdfGenerator';
 
 const OffersList = () => {
   const navigate = useNavigate();
@@ -14,6 +15,10 @@ const OffersList = () => {
   const [vehicles, setVehicles] = useState([]);
   const [selectedVehicleId, setSelectedVehicleId] = useState('');
   const [selectedTemplateType, setSelectedTemplateType] = useState('standard');
+  const [fidejusorData, setFidejusorData] = useState({ name: '', cnp: '', address: '', id_card: '', quality: '' });
+  const [fidejusorCandidates, setFidejusorCandidates] = useState([]);
+  const [loadingFidejusor, setLoadingFidejusor] = useState(false);
+  const [generatingPdf, setGeneratingPdf] = useState(false);
 
   const formatCurrency = (amount) => {
     if (amount === undefined || amount === null) return '0';
@@ -78,7 +83,7 @@ const OffersList = () => {
 
   const handleGenerateContract = async (id) => {
     try {
-      const data = await generateContract(id, selectedVehicleId, selectedTemplateType);
+      const data = await generateContract(id, selectedVehicleId, selectedTemplateType, fidejusorData);
       alert('Contract generat cu succes!');
       // descarcă direct documentul
       if (data.document_url) {
@@ -88,6 +93,27 @@ const OffersList = () => {
     } catch (error) {
       console.error(error);
       alert("Eroare la generarea contractului.");
+    }
+  };
+
+  const handleDownloadContractPdf = async () => {
+    if (!selectedOfferForContract) return;
+    setGeneratingPdf(true);
+    try {
+      const selectedVehicleObj = vehicles.find(v => v.id.toString() === selectedVehicleId.toString());
+      await generateContractPdf({
+        offer: selectedOfferForContract,
+        client: selectedOfferForContract.client,
+        vehicle: selectedVehicleObj,
+        templateType: selectedTemplateType,
+        fidejusorData: fidejusorData,
+        contractNum: selectedOfferForContract.contract?.contract_number
+      });
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      alert("Eroare la generarea fișierului PDF al contractului.");
+    } finally {
+      setGeneratingPdf(false);
     }
   };
 
@@ -149,6 +175,38 @@ const OffersList = () => {
     } else {
       setSelectedVehicleId('');
     }
+
+    const tType = offer.template_type?.toLowerCase() || (offer.client?.type === 'PJ' ? 'fidejusor' : 'standard');
+    setSelectedTemplateType(tType);
+
+    const initialF = {
+      name: offer.fidejusor_name || '',
+      cnp: offer.fidejusor_cnp || '',
+      address: offer.fidejusor_address || '',
+      id_card: offer.fidejusor_id_card || '',
+      quality: offer.fidejusor_quality || ''
+    };
+    setFidejusorData(initialF);
+
+    if (offer.client_id) {
+      setLoadingFidejusor(true);
+      fetchFidejusorSuggestion(offer.client_id)
+        .then(res => {
+          if (res?.suggested_fidejusor) {
+            setFidejusorCandidates(res.all_candidates || [res.suggested_fidejusor]);
+            setFidejusorData(prev => ({
+              name: prev.name || res.suggested_fidejusor.name || '',
+              cnp: prev.cnp || res.suggested_fidejusor.cnp || '',
+              address: prev.address || res.suggested_fidejusor.address || '',
+              id_card: prev.id_card || res.suggested_fidejusor.id_card || '',
+              quality: prev.quality || res.suggested_fidejusor.quality || 'Administrator Statutar'
+            }));
+          }
+        })
+        .catch(console.warn)
+        .finally(() => setLoadingFidejusor(false));
+    }
+
     setSelectedOfferForContract(offer);
   };
 
@@ -414,126 +472,312 @@ const OffersList = () => {
       </div>
 
       {selectedOfferForContract && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[92vh] border border-gray-200 dark:border-gray-700">
+            <div className="p-5 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-gray-50 dark:bg-gray-900">
               <div className="flex items-center gap-3">
-                <FileSignature className="text-primary" size={24} />
-                <h3 className="text-xl font-bold text-gray-900 dark:text-white">Generare Contract Auto</h3>
+                <div className="p-2 bg-primary/10 rounded-xl text-primary">
+                  <FileSignature size={22} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Generare Contract Auto & Fidejusiune</h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    Ofertă #{selectedOfferForContract.id} • {selectedOfferForContract.client?.name}
+                  </p>
+                </div>
               </div>
               <button 
                 onClick={() => { setSelectedOfferForContract(null); setSelectedVehicleId(''); }}
-                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
               >
                 ✕
               </button>
             </div>
-            
 
-
-            <div className="p-8 overflow-y-auto font-serif text-gray-800 dark:text-gray-200 leading-relaxed space-y-6">
-              <div className="text-center mb-8 border-b border-gray-200 dark:border-gray-700 pb-6">
-                <h1 className="text-2xl font-bold mb-2 uppercase tracking-wide">Contract de Închiriere Auto / Leasing</h1>
-                <p className="text-sm text-gray-500">Document generat automat pe baza datelor din platformă</p>
+            {/* Quick Settings Bar: Vehicul & Template */}
+            <div className="p-4 bg-gray-100/70 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700 grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  1. Vehicul din Flotă (pentru serie VIN & Nr. Înmatriculare):
+                </label>
+                <select
+                  value={selectedVehicleId}
+                  onChange={(e) => setSelectedVehicleId(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-primary focus:border-primary"
+                >
+                  <option value="">-- Completează manual / Alocare ulterioară --</option>
+                  {vehicles.map((v) => (
+                    <option key={v.id} value={v.id.toString()}>
+                      {v.make} {v.model} • {v.license_plate} (VIN: {v.vin})
+                    </option>
+                  ))}
+                </select>
               </div>
 
-              <div className="space-y-4">
-                <h4 className="font-bold uppercase text-sm text-gray-500 tracking-wider">Cap. I - Părțile Contractante</h4>
-                <p>
-                  Între <strong>AXIS RENT SRL</strong>, cu sediul în București, CUI RO12345678, reprezentată legal, denumită în continuare "Locator", și:
-                </p>
-                <div className="text-sm space-y-1">
-                  <p><strong>Client (Locatar):</strong> {selectedOfferForContract.client?.name}</p>
-                  <p><strong>CUI / CNP:</strong> {selectedOfferForContract.client?.cui_cnp}</p>
-                  <p><strong>Sediul / Domiciliul:</strong> {selectedOfferForContract.client?.address}</p>
-                  <p><strong>Reprezentat prin:</strong> {selectedOfferForContract.client?.type === 'PJ' ? selectedOfferForContract.client?.representative_name : selectedOfferForContract.client?.name}</p>
-                  <p><strong>Identificat cu CI:</strong> Seria {selectedOfferForContract.client?.id_card_series || '___'} nr. {selectedOfferForContract.client?.id_card_number || '______'}</p>
+              <div>
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 mb-1">
+                  2. Tip Contract & Template Juridic:
+                </label>
+                <select
+                  value={selectedTemplateType}
+                  onChange={(e) => setSelectedTemplateType(e.target.value)}
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-primary focus:border-primary"
+                >
+                  <option value="standard">Contract Leasing Standard (Fără Garant)</option>
+                  <option value="fidejusor">Contract cu Fidejusor (Șablon Oficial Maria - Recomandat AI)</option>
+                  <option value="leasing">Contract Leasing Operațional LT</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Secțiune Configurare Fidejusor când template-ul este Fidejusor */}
+            {selectedTemplateType === 'fidejusor' && (
+              <div className="p-4 bg-amber-50/70 dark:bg-amber-950/20 border-b border-amber-200 dark:border-amber-800/50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="text-amber-600 dark:text-amber-400" size={18} />
+                    <span className="text-xs font-bold text-gray-900 dark:text-white">
+                      Desemnare Fidejusor Garant (Conform Cod Civil Art. 2280-2323)
+                    </span>
+                  </div>
+                  <span className="px-2 py-0.5 text-[11px] font-semibold rounded-full bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 flex items-center gap-1">
+                    <Sparkles size={11} /> AI Governance Match
+                  </span>
+                </div>
+
+                {fidejusorCandidates.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                    <span className="text-xs text-gray-500 dark:text-gray-400 font-medium">Asociați / Administratori:</span>
+                    {fidejusorCandidates.map((cand, idx) => (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => {
+                          setFidejusorData({
+                            name: cand.name,
+                            cnp: cand.cnp || fidejusorData.cnp,
+                            address: cand.address || fidejusorData.address,
+                            id_card: cand.id_card || fidejusorData.id_card,
+                            quality: cand.quality || fidejusorData.quality
+                          });
+                        }}
+                        className={`px-2.5 py-1 text-xs rounded-lg border font-medium transition-all flex items-center gap-1 ${
+                          fidejusorData.name === cand.name
+                            ? 'bg-amber-600 text-white border-amber-700 shadow-sm'
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-300 dark:border-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        <UserCheck size={12} />
+                        <span>{cand.name}</span>
+                        <span className="opacity-75 text-[10px]">({cand.quality})</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-1">
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-400">Nume Fidejusor</label>
+                    <input 
+                      type="text" 
+                      value={fidejusorData.name} 
+                      onChange={e => setFidejusorData({...fidejusorData, name: e.target.value})} 
+                      className="mt-0.5 w-full px-2.5 py-1.5 text-xs border rounded-lg dark:bg-gray-800 border-gray-300 dark:border-gray-600 dark:text-white"
+                      placeholder="POPESCU ION"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-400">Calitate / Procent</label>
+                    <input 
+                      type="text" 
+                      value={fidejusorData.quality} 
+                      onChange={e => setFidejusorData({...fidejusorData, quality: e.target.value})} 
+                      className="mt-0.5 w-full px-2.5 py-1.5 text-xs border rounded-lg dark:bg-gray-800 border-gray-300 dark:border-gray-600 dark:text-white"
+                      placeholder="Asociat Majoritar (100%)"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-medium text-gray-600 dark:text-gray-400">CNP Fidejusor</label>
+                    <input 
+                      type="text" 
+                      value={fidejusorData.cnp} 
+                      onChange={e => setFidejusorData({...fidejusorData, cnp: e.target.value})} 
+                      className="mt-0.5 w-full px-2.5 py-1.5 text-xs border rounded-lg dark:bg-gray-800 border-gray-300 dark:border-gray-600 dark:text-white"
+                      placeholder="13 cifre..."
+                    />
+                  </div>
                 </div>
               </div>
+            )}
 
-              <div className="space-y-4">
-                <h4 className="font-bold uppercase text-sm text-gray-500 tracking-wider mt-8">Cap. II - Obiectul Contractului</h4>
-                <p>
-                  Locatorul se obligă să transmită folosința, iar Locatarul să primească și să plătească prețul pentru folosința autovehiculului descris mai jos:
+            {/* Document Preview Canvas / Paper */}
+            <div className="p-8 overflow-y-auto font-serif text-gray-800 dark:text-gray-200 leading-relaxed space-y-6 flex-1 bg-white dark:bg-gray-900">
+              <div className="text-center mb-6 border-b border-gray-200 dark:border-gray-700 pb-5">
+                <span className="text-xs uppercase tracking-widest text-primary font-bold block mb-1">
+                  AXIS FLEET MANAGEMENT • DIVIZIA LEASING OPERAȚIONAL
+                </span>
+                <h1 className="text-2xl font-bold uppercase tracking-wide">
+                  {selectedTemplateType === 'fidejusor' 
+                    ? 'CONTRACT DE LEASING OPERAȚIONAL CU ANGAJAMENT DE FIDEJUSIUNE' 
+                    : 'CONTRACT DE ÎNCHIRIERE AUTO / LEASING OPERAȚIONAL'}
+                </h1>
+                <p className="text-xs text-gray-500 mt-1">
+                  Nr. Înregistrare: AXIS-{new Date().getFullYear()}-PROV • Data: {new Date().toLocaleDateString('ro-RO')}
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="font-bold uppercase text-xs text-gray-500 tracking-wider">Cap. I - Părțile Contractante</h4>
+                <p className="text-sm">
+                  1.1. <strong>S.C. AXIS RENT S.R.L.</strong>, cu sediul în București, CUI RO12345678, reprezentată legal, denumită în continuare <em>"Locator"</em>, și
+                </p>
+                <div className="text-sm pl-4 border-l-2 border-primary/30 space-y-1">
+                  <p>1.2. <strong>Locatar (Debitor Principal):</strong> {selectedOfferForContract.client?.name}</p>
+                  <p><strong>CUI / CNP:</strong> {selectedOfferForContract.client?.cui_cnp} • <strong>Reg. Com:</strong> {selectedOfferForContract.client?.reg_com || 'J40/___/____'}</p>
+                  <p><strong>Sediul:</strong> {selectedOfferForContract.client?.address || 'Mun. București'}</p>
+                  <p><strong>Reprezentat prin:</strong> {selectedOfferForContract.client?.type === 'PJ' ? selectedOfferForContract.client?.representative_name : selectedOfferForContract.client?.name} (Administrator)</p>
+                </div>
+
+                {selectedTemplateType === 'fidejusor' && (
+                  <div className="text-sm pl-4 border-l-2 border-amber-400 bg-amber-50/50 dark:bg-amber-900/10 p-2.5 rounded-r-lg space-y-1">
+                    <p>1.3. <strong>Fidejusor (Garant Solidar):</strong> {fidejusorData.name || '___________'}</p>
+                    <p><strong>CNP:</strong> {fidejusorData.cnp || '___________'} • <strong>Calitate:</strong> {fidejusorData.quality || 'Garant Solidar'}</p>
+                    <p><strong>Domiciliat în:</strong> {fidejusorData.address || selectedOfferForContract.client?.address || 'Mun. București'}</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="font-bold uppercase text-xs text-gray-500 tracking-wider mt-6">Cap. II - Obiectul Contractului</h4>
+                <p className="text-sm">
+                  Locatorul transmite folosința exclusivă, iar Locatarul primește și achită prețul chiriei pentru autovehiculul specificat:
                 </p>
                 {selectedVehicleId ? (
-                  <div className="text-sm space-y-1">
+                  <div className="text-sm bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 space-y-1">
                     {(() => {
                       const v = vehicles.find(v => v.id.toString() === selectedVehicleId.toString());
                       return (
                         <>
-                          <p><strong>Marcă și Model:</strong> {v.make} {v.model}</p>
-                          <p><strong>Număr de Înmatriculare:</strong> {v.license_plate}</p>
-                          <p><strong>Serie Șasiu (VIN):</strong> {v.vin}</p>
-                          <p><strong>Valoare Declarată (Ofertă):</strong> {formatCurrency(selectedOfferForContract.vehicle_price)}</p>
+                          <p><strong>Marcă și Model:</strong> {v?.make} {v?.model}</p>
+                          <p><strong>Număr de Înmatriculare:</strong> {v?.license_plate}</p>
+                          <p><strong>Serie Șasiu (VIN):</strong> {v?.vin}</p>
+                          <p><strong>Valoare de Bază (Catalog):</strong> {formatCurrency(selectedOfferForContract.vehicle_price)}</p>
                         </>
                       );
                     })()}
                   </div>
                 ) : (
-                  <div className="text-gray-600 dark:text-gray-400 text-sm">
+                  <div className="text-sm bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border border-gray-200 dark:border-gray-700 space-y-1">
                     <p><strong>Marcă și Model:</strong> {selectedOfferForContract.vehicle_make} {selectedOfferForContract.vehicle_model}</p>
-                    <p><strong>Număr de Înmatriculare:</strong> ___________</p>
-                    <p><strong>Serie Șasiu (VIN):</strong> ___________</p>
-                    <p><strong>Valoare Declarată (Ofertă):</strong> {formatCurrency(selectedOfferForContract.vehicle_price)}</p>
-                    <p className="text-amber-600 dark:text-amber-400 mt-2 text-xs italic">* Datele tehnice specifice vor fi completate manual sau la asocierea cu un vehicul din flotă.</p>
+                    <p><strong>Număr de Înmatriculare:</strong> ___________ (alocat la predare)</p>
+                    <p><strong>Serie Șasiu (VIN):</strong> ___________ (alocat la predare)</p>
+                    <p><strong>Valoare de Bază (Catalog):</strong> {formatCurrency(selectedOfferForContract.vehicle_price)}</p>
                   </div>
                 )}
               </div>
 
-              <div className="space-y-4">
-                <h4 className="font-bold uppercase text-sm text-gray-500 tracking-wider mt-8">Cap. III - Valoarea și Modalitatea de Plată</h4>
-                <p>
-                  Prețul chiriei / ratei lunare convenite pentru utilizarea autovehiculului este de <strong>{formatCurrency(selectedOfferForContract.monthly_rate?.toFixed(2))}</strong>.
-                </p>
-                <p>
-                  Contractul se încheie pe o perioadă de <strong>{selectedOfferForContract.period_months} luni</strong>. Plățile se vor efectua lunar, pe baza facturilor fiscale emise de Locator.
-                </p>
-              </div>
-              
-              <div className="space-y-4">
-                <h4 className="font-bold uppercase text-sm text-gray-500 tracking-wider mt-8">Cap. IV - Drepturi, Obligații și Responsabilități</h4>
-                <ul className="list-disc list-inside space-y-2 text-sm text-gray-700 dark:text-gray-300">
-                  <li>Locatarul se obligă să exploateze vehiculul în conformitate cu instrucțiunile producătorului.</li>
-                  <li>Locatarul va suporta contravaloarea amenzilor de circulație și a daunelor neacoperite de polițele de asigurare (CASCO / RCA).</li>
-                  <li>Locatorul se obligă să asigure vehiculul pe toată perioada derulării prezentului contract.</li>
-                  <li>Subînchirierea vehiculului către terți este strict interzisă fără acordul prealabil scris al Locatorului.</li>
-                </ul>
+              <div className="space-y-3">
+                <h4 className="font-bold uppercase text-xs text-gray-500 tracking-wider mt-6">Cap. III - Condiții Financiare</h4>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
+                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <span className="text-xs text-gray-500 block">Rată Lunară</span>
+                    <strong className="text-primary text-base">{formatCurrency(selectedOfferForContract.monthly_rate?.toFixed(2))}</strong>
+                  </div>
+                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <span className="text-xs text-gray-500 block">Avans Inițial</span>
+                    <strong>{selectedOfferForContract.advance_percent}% ({formatCurrency((selectedOfferForContract.vehicle_price * selectedOfferForContract.advance_percent) / 100)})</strong>
+                  </div>
+                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <span className="text-xs text-gray-500 block">Durată</span>
+                    <strong>{selectedOfferForContract.period_months} Luni</strong>
+                  </div>
+                  <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                    <span className="text-xs text-gray-500 block">Valoare Reziduală</span>
+                    <strong>{selectedOfferForContract.residual_value_percent}%</strong>
+                  </div>
+                </div>
               </div>
 
-              <div className="mt-16 pt-8 border-t border-gray-200 dark:border-gray-700 grid grid-cols-2 gap-8 text-sm">
-                <div>
-                  <p className="font-bold mb-8">LOCATOR,</p>
-                  <p>AXIS RENT SRL</p>
-                  <p className="border-t border-gray-400 w-48 mt-4 pt-1">Semnătură / Ștampilă</p>
+              <div className="space-y-2 text-sm text-gray-600 dark:text-gray-300">
+                <h4 className="font-bold uppercase text-xs text-gray-500 tracking-wider mt-6">Cap. IV - Telematics & Monitorizare GPS</h4>
+                <p>
+                  Autovehiculul este echipat cu sistem telematic activ GPS Axis pentru siguranța activului, geofencing și asistență rutieră. Locatarul se obligă să nu intervină asupra instalației de monitorizare.
+                </p>
+              </div>
+
+              {selectedTemplateType === 'fidejusor' && (
+                <div className="space-y-2 text-sm p-4 bg-amber-50/60 dark:bg-amber-950/20 border border-amber-300 dark:border-amber-800 rounded-xl text-amber-900 dark:text-amber-200">
+                  <h4 className="font-bold uppercase text-xs text-amber-800 dark:text-amber-400 tracking-wider">
+                    Cap. V - Angajamentul de Fidejusiune Solidară (Art. 2280 - 2323 Codul Civil Român)
+                  </h4>
+                  <p>
+                    Fidejusorul garantează irevocabil și necondiționat executarea tuturor obligațiilor decurgând din prezentul contract.
+                  </p>
+                  <p className="font-semibold text-xs text-red-700 dark:text-red-400">
+                    • RENUNȚARE LA BENEFICIUL DE DISCUȚIUNE (Art. 2294 Cod Civil): Locatorul poate executa direct Fidejusorul fără a fi obligat să urmărească în prealabil patrimoniul Locatarului.
+                  </p>
+                  <p className="font-semibold text-xs text-red-700 dark:text-red-400">
+                    • RENUNȚARE LA BENEFICIUL DE DIVIZIUNE (Art. 2300 Cod Civil): Răspunderea este integrală și indivizibilă.
+                  </p>
+                  <p className="text-xs">
+                    • Prezentul contract are forță de Titlu Executoriu în condițiile legii române.
+                  </p>
                 </div>
+              )}
+
+              {/* Bloc Semnături */}
+              <div className={`mt-10 pt-6 border-t border-gray-200 dark:border-gray-700 grid ${selectedTemplateType === 'fidejusor' ? 'grid-cols-3' : 'grid-cols-2'} gap-6 text-sm`}>
                 <div>
-                  <p className="font-bold mb-8">LOCATAR,</p>
-                  <p>{selectedOfferForContract.client?.type === 'PJ' ? selectedOfferForContract.client?.name : selectedOfferForContract.client?.name}</p>
-                  <p className="border-t border-gray-400 w-48 mt-4 pt-1">Semnătură</p>
+                  <p className="font-bold text-xs uppercase tracking-wider text-gray-500 mb-1">LOCATOR</p>
+                  <p className="font-medium text-gray-900 dark:text-white">AXIS RENT SRL</p>
+                  <p className="text-xs text-gray-500">Reprezentant Legal</p>
+                  <div className="border-t border-dashed border-gray-400 mt-12 pt-1 text-xs text-gray-400">
+                    Semnătură / Ștampilă
+                  </div>
                 </div>
+
+                <div>
+                  <p className="font-bold text-xs uppercase tracking-wider text-gray-500 mb-1">LOCATAR</p>
+                  <p className="font-medium text-gray-900 dark:text-white">{selectedOfferForContract.client?.name}</p>
+                  <p className="text-xs text-gray-500">Reprezentant: {selectedOfferForContract.client?.representative_name || selectedOfferForContract.client?.name}</p>
+                  <div className="border-t border-dashed border-gray-400 mt-12 pt-1 text-xs text-gray-400">
+                    Semnătură
+                  </div>
+                </div>
+
+                {selectedTemplateType === 'fidejusor' && (
+                  <div>
+                    <p className="font-bold text-xs uppercase tracking-wider text-amber-600 dark:text-amber-400 mb-1">FIDEJUSOR (GARANT)</p>
+                    <p className="font-medium text-gray-900 dark:text-white">{fidejusorData.name || 'Garant Statutar'}</p>
+                    <p className="text-xs text-gray-500">{fidejusorData.quality || 'În nume personal'}</p>
+                    <div className="border-t border-dashed border-amber-400 mt-12 pt-1 text-xs text-gray-400">
+                      Semnătură Fidejusor
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
             
-            <div className="p-6 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center">
+            <div className="p-5 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900 flex justify-between items-center">
               <button 
                 onClick={() => { setSelectedOfferForContract(null); setSelectedVehicleId(''); setSelectedTemplateType('standard'); }}
-                className="px-6 py-2.5 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-all"
+                className="px-5 py-2.5 text-gray-600 dark:text-gray-300 font-medium hover:bg-gray-200 dark:hover:bg-gray-800 rounded-full transition-all text-sm"
               >
                 Anulează
               </button>
               
-              <div className="flex items-center gap-4">
-                <select
-                  value={selectedTemplateType}
-                  onChange={(e) => setSelectedTemplateType(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:ring-primary focus:border-primary"
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  disabled={generatingPdf}
+                  onClick={handleDownloadContractPdf}
+                  className="px-5 py-2.5 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 text-gray-800 dark:text-white font-medium rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 shadow-sm transition-all flex items-center gap-2 text-sm disabled:opacity-50"
+                  title="Generează și descarcă raportul PDF oficial al contractului (Canvas 200 DPI)"
                 >
-                  <option value="standard">Contract Standard</option>
-                  <option value="fidejusor">Contract cu Fidejusor</option>
-                  <option value="leasing">Contract de Leasing</option>
-                </select>
-                
+                  <Download size={16} />
+                  {generatingPdf ? "Generare PDF..." : "Descarcă PDF (Oficial)"}
+                </button>
+
                 <button 
                   onClick={() => {
                     handleGenerateContract(selectedOfferForContract.id);
@@ -541,10 +785,11 @@ const OffersList = () => {
                     setSelectedVehicleId('');
                     setSelectedTemplateType('standard');
                   }}
-                  className="px-8 py-2.5 bg-primary text-white font-medium rounded-full hover:bg-primary/90 shadow-sm transition-all flex items-center gap-2"
+                  className="px-6 py-2.5 bg-primary text-white font-medium rounded-full hover:bg-primary/90 shadow-sm transition-all flex items-center gap-2 text-sm"
+                  title="Generează contractul complet editabil în format Microsoft Word (.docx)"
                 >
-                  <CheckSquare size={18} />
-                  Confirmă și Generează
+                  <CheckSquare size={16} />
+                  Confirmă și Descarcă DOCX
                 </button>
               </div>
             </div>

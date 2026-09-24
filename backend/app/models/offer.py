@@ -34,6 +34,15 @@ class Offer(Base):
     
     # Calculated fields
     monthly_rate = Column(Float, nullable=False)
+    currency = Column(String, default="EUR", nullable=True)
+    template_type = Column(String, default="standard", nullable=True)
+
+    # Fidejusor / Guarantor fields (From AI governance or manual entry)
+    fidejusor_name = Column(String, nullable=True)
+    fidejusor_cnp = Column(String, nullable=True)
+    fidejusor_address = Column(String, nullable=True)
+    fidejusor_id_card = Column(String, nullable=True)
+    fidejusor_quality = Column(String, nullable=True)
     
     status = Column(Enum(OfferStatus), default=OfferStatus.DRAFT)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -51,8 +60,16 @@ class Contract(Base):
     offer_id = Column(Integer, ForeignKey("axis_offers.id"), unique=True, nullable=False)
     vehicle_id = Column(Integer, ForeignKey("axis_vehicles.id"), nullable=True) # Legătura cu mașina fizică
     contract_number = Column(String, unique=True, index=True, nullable=False)
+    template_type = Column(String, default="standard", nullable=True)
     status = Column(Enum(ContractStatus), default=ContractStatus.GENERATED)
     document_url = Column(String, nullable=True) # Path to generated DOCX/PDF
+    
+    # Fidejusor / Guarantor fields
+    fidejusor_name = Column(String, nullable=True)
+    fidejusor_cnp = Column(String, nullable=True)
+    fidejusor_address = Column(String, nullable=True)
+    fidejusor_id_card = Column(String, nullable=True)
+    fidejusor_quality = Column(String, nullable=True)
     
     created_at = Column(DateTime, default=datetime.utcnow)
     signed_client_at = Column(DateTime, nullable=True)
