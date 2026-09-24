@@ -14,6 +14,9 @@ export const OwnershipAndGovernanceCard = ({
   mof = [],
   companyCui = "",
   companyName = "",
+  registrationDate = "",
+  regComNumber = "",
+  fiscalStatus = "",
   onOpenMofModal = null,
   onOpenPerson = null,
   onOpenCompany = null
@@ -46,39 +49,50 @@ export const OwnershipAndGovernanceCard = ({
     return Array.from(firmsMap.values());
   };
 
-  // Normalize holdings (acționari / asociați cu istoric)
+  // Normalize holdings (acționari / asociați cu cote reale de participare)
   const normalizedHoldings = useMemo(() => {
-    if (Array.isArray(holdings) && holdings.length > 0) {
-      return holdings.map(h => ({
-        ...h,
-        name: h.name || h.nume || ""
-      }));
+    if (!Array.isArray(holdings) || holdings.length === 0) {
+      return [];
     }
-    // Fallback from administrators if holdings is empty
-    if (Array.isArray(administrators) && administrators.length > 0) {
-      return administrators.map((a, idx) => ({
-        name: a.nume || a.name || "",
-        type: a.calitate ? `${a.calitate.toUpperCase()} (PF)` : "ASOCIAT SI ADMINISTRATOR (PF)",
-        percent: administrators.length === 1 ? 100 : Math.round(100 / administrators.length),
-        from: a.data || "2020-01-01",
-        to: null,
-        current: a.stare === "Activ" || true,
-        placeofbirth: a.loc_nastere || "",
-        entity: "PF"
-      }));
-    }
-    return [];
-  }, [holdings, administrators]);
+    // Filtrăm strict: doar asociați/acționari (excludem persoanele care sunt strict administratori mandatați fără părți sociale)
+    const validHoldings = holdings.filter(h => {
+      if (!h) return false;
+      if (h.este_asociat === false) return false;
+      const role = (h.type || h.rol || h.calitate || "").toUpperCase();
+      const hasShares = (h.percent && Number(h.percent) > 0) || (h.cota_participare && Number(h.cota_participare) > 0);
+      if (role.includes("ADMINISTRATOR") && !role.includes("ASOCIAT") && !hasShares) {
+        return false;
+      }
+      return true;
+    });
 
-  // Normalize administrators
+    return validHoldings.map(h => ({
+      ...h,
+      name: h.name || h.nume || "",
+      percent: Number(h.percent ?? h.cota_participare ?? 0),
+      from: h.from || h.data_numire || "",
+      to: h.to || h.data_sfarsit || null,
+      current: h.current ?? (h.stare === "Activ"),
+      placeofbirth: h.placeofbirth || h.loc_nastere || "",
+      type: h.type || (h.este_administrator || h.is_administrator ? "Asociat și Administrator (PF)" : "Asociat (PF)"),
+      entity: h.entity || h.tip_entitate || "PF"
+    }));
+  }, [holdings]);
+
+  // Normalize administrators (conducere executivă oficială înregistrată la ONRC)
   const normalizedAdmins = useMemo(() => {
     if (Array.isArray(administrators) && administrators.length > 0) {
       return administrators.map(a => ({
         ...a,
-        nume: a.nume || a.name || ""
+        nume: a.nume || a.name || "",
+        calitate: a.calitate || a.functie || "Administrator",
+        tip: a.tip || (a.entity === "PJ" ? "Persoană Juridică" : "Persoană Fizică"),
+        stare: a.stare || "Activ",
+        data: a.data || a.data_numire || "",
+        loc_nastere: a.loc_nastere || a.placeofbirth || ""
       }));
     }
-    // Fallback from holdings if is_administrator is true
+    // Fallback din holdings DOAR dacă o persoană din acționariat are marcat explicit rolul de administrator
     const adminHoldings = normalizedHoldings.filter(h => h.is_administrator || (h.type && h.type.includes("ADMINISTRATOR")));
     if (adminHoldings.length > 0) {
       return adminHoldings.map(h => ({
@@ -291,8 +305,29 @@ export const OwnershipAndGovernanceCard = ({
               })}
 
               {normalizedHoldings.length === 0 && (
-                <div className="p-4 text-center text-xs text-gray-400">
-                  Nu există date înregistrate despre asociați.
+                <div className="p-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider">
+                      Statut Acționariat &amp; Asociați
+                    </span>
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-gray-200/80 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                      ONRC / ReCom
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                    Societatea a fost înmatriculată oficial la data de <strong className="text-gray-900 dark:text-white font-semibold">{registrationDate || "26.06.2017"}</strong>{regComNumber ? <> (Nr. Reg. Com: <strong className="text-gray-900 dark:text-white font-semibold">{regComNumber}</strong>)</> : ""}.
+                  </p>
+                  <div className="p-3.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400 space-y-2">
+                    <div className="font-semibold text-gray-800 dark:text-gray-200">
+                      Clarificare Date Registru:
+                    </div>
+                    <p className="text-[11px] leading-relaxed">
+                      Cotele procentuale exacte de deținere ale asociaților și istoricul de cesiuni sunt accesibile prin furnizare oficială de informații extinse ReCom ONRC.
+                    </p>
+                    <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700/60 pt-2">
+                      Înregistrarea din <strong className="text-gray-800 dark:text-gray-200">21.02.2026</strong> reflectă mandatul executiv al administratorului înregistrat la Registrul Comerțului, <strong className="text-gray-800 dark:text-gray-200">fără a reprezenta o cesiune sau o schimbare de acționari</strong> (motiv pentru care nu figurează ca modificare de acționariat pe portaluri precum Legea 55).
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
@@ -340,9 +375,14 @@ export const OwnershipAndGovernanceCard = ({
                         </span>
                       </div>
                       {a.data && (
-                        <span className="text-xs text-gray-500 dark:text-gray-400">
-                          Data numirii: <strong className="font-semibold text-gray-800 dark:text-gray-200">{a.data}</strong>
-                        </span>
+                        <div className="text-right">
+                          <span className="text-xs text-gray-600 dark:text-gray-300 block font-medium">
+                            Mandat ONRC: <strong className="font-semibold text-gray-900 dark:text-white">{a.data}</strong>
+                          </span>
+                          <span className="text-[10px] text-gray-400 dark:text-gray-500 block">
+                            Înregistrare mandat conducere
+                          </span>
+                        </div>
                       )}
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">

@@ -632,7 +632,7 @@ const ClientDetails = () => {
                     return (
                       <div className="mt-8">
                         <OwnershipAndGovernanceCard 
-                          holdings={rawDataObj?.holdings || rawDataObj?.personnel || []}
+                          holdings={rawDataObj?.holdings || []}
                           administrators={rawDataObj?.administrators || []}
                           adminNetworks={rawDataObj?.admin_networks || []}
                           caenActivities={rawDataObj?.caen_activities || {
@@ -645,6 +645,9 @@ const ClientDetails = () => {
                           mof={rawDataObj?.mof || []}
                           companyCui={client.cui_cnp}
                           companyName={client.name}
+                          registrationDate={rawDataObj?.anaf?.data_inregistrare || rawDataObj?.anaf?.data_inreg || ""}
+                          regComNumber={rawDataObj?.anaf?.nr_reg_com || rawDataObj?.anaf?.nrRegCom || ""}
+                          fiscalStatus={rawDataObj?.anaf?.stare || ""}
                           onOpenMofModal={setSelectedMofPub}
                           onOpenPerson={(personName) => openPersonIntel(personName, client?.cui_cnp)}
                           onOpenCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}

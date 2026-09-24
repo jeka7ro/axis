@@ -437,27 +437,8 @@ class RegistryScraper:
         except Exception as e:
             print(f"Eroare extragere holdings: {e}")
 
-        # Fallback când endpoint-ul premium /actionari este epuizat: preluăm din /administratori
-        try:
-            admins = await self.fetch_company_administrators(clean_cui)
-            if admins:
-                synth = []
-                for a in admins:
-                    synth.append({
-                        "name": a.get("nume"),
-                        "type": "ASOCIAT SI ADMINISTRATOR (PF)",
-                        "is_administrator": True,
-                        "percent": 100.0 if len(admins) == 1 else round(100.0 / len(admins), 1),
-                        "from": a.get("data") or "2020-01-01",
-                        "to": None,
-                        "current": a.get("stare", "Activ") == "Activ",
-                        "placeofbirth": a.get("loc_nastere") or "",
-                        "entity": "PF"
-                    })
-                return synth
-        except Exception:
-            pass
-
+        # Nu sintetizăm acționari artificiali din administratori!
+        # Un mandat de administrator la ONRC nu reprezintă o deținere de părți sociale și nici o cesiune de acțiuni.
         return []
 
     async def fetch_company_administrators(self, cui: str) -> List[Dict]:

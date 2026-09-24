@@ -99,6 +99,9 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
               <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1 flex-wrap">
                 <span>CUI: <strong className="text-gray-700 dark:text-gray-200">{cui}</strong></span>
                 {general.nr_reg_com && <span>• ONRC: <strong className="text-gray-700 dark:text-gray-200">{general.nr_reg_com}</strong></span>}
+                {(general.data_inregistrare || general.data_inreg) && (
+                  <span>• Înregistrată: <strong className="text-gray-700 dark:text-gray-200">{general.data_inregistrare || general.data_inreg}</strong></span>
+                )}
                 {general.cod_caen && (() => {
                   const caenInfo = getCaenInfo(general.cod_caen);
                   const caenDesc = general.caen_descriere || caenInfo?.denumire;
@@ -522,7 +525,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
               {activeTab === 'personnel' && (
                 <div className="space-y-6">
                   <OwnershipAndGovernanceCard 
-                    holdings={data?.holdings || personnel}
+                    holdings={data?.holdings || []}
                     administrators={data?.administrators || []}
                     adminNetworks={data?.admin_networks || []}
                     caenActivities={data?.caen_activities || {
@@ -535,6 +538,9 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                     mof={mof}
                     companyCui={cui}
                     companyName={companyName}
+                    registrationDate={general.data_inregistrare || general.data_inreg || ""}
+                    regComNumber={general.nr_reg_com || general.nrRegCom || ""}
+                    fiscalStatus={general.stare || ""}
                     onOpenMofModal={setSelectedMofPub}
                     onOpenPerson={(personName) => onOpenPerson && onOpenPerson(personName, cui)}
                     onOpenCompany={(compCui, compName) => onEvaluate && onEvaluate(compCui, compName)}
