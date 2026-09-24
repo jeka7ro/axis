@@ -3,7 +3,7 @@ import {
   X, Building2, ExternalLink, Scale, FileText, Users, 
   TrendingUp, AlertTriangle, ShieldCheck, CheckCircle2, 
   MapPin, Phone, Hash, Calendar, Loader2, Eye, RefreshCw,
-  Sparkles, Award, Briefcase, Layers, Network
+  Sparkles, Award, Briefcase, Layers, Network, ArrowLeft, ChevronRight
 } from 'lucide-react';
 import { fetchCompanyFullIntel } from '../services/api';
 import { Link } from 'react-router-dom';
@@ -12,7 +12,17 @@ import FinancialPerformanceCard from './FinancialPerformanceCard';
 import OwnershipAndGovernanceCard from './OwnershipAndGovernanceCard';
 import { getCaenInfo, getCaenDescription } from '../utils/caenHelper';
 
-const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOpenPerson }) => {
+const CompanyIntelModal = ({ 
+  isOpen, 
+  onClose, 
+  cui, 
+  initialName, 
+  onEvaluate, 
+  onOpenPerson, 
+  onOpenCompany,
+  history = [],
+  onBack 
+}) => {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('general');
@@ -75,6 +85,32 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
       >
+        {/* Navigation Breadcrumb History Trail */}
+        {history && history.length > 0 && (
+          <div className="px-5 py-2.5 bg-gray-100/90 dark:bg-gray-900/90 border-b border-gray-200 dark:border-gray-700/80 flex items-center justify-between gap-3 text-xs shrink-0">
+            <button
+              type="button"
+              onClick={onBack}
+              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg font-bold bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-100 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 shadow-2xs transition-all cursor-pointer text-xs"
+            >
+              <ArrowLeft size={13} />
+              <span>Înapoi ({history[history.length - 1].name || history[history.length - 1].cui})</span>
+            </button>
+            <div className="flex items-center gap-1.5 text-gray-400 dark:text-gray-500 overflow-x-auto text-[11px] truncate">
+              <span className="font-semibold text-gray-500 dark:text-gray-400">Traseu:</span>
+              {history.map((step, idx) => (
+                <span key={idx} className="flex items-center gap-1 shrink-0 font-medium text-gray-600 dark:text-gray-300">
+                  <span>{step.name || step.cui}</span>
+                  <ChevronRight size={10} className="text-gray-400" />
+                </span>
+              ))}
+              <span className="font-bold text-primary shrink-0 truncate max-w-[180px]">
+                {companyName}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Modal Header */}
         <div className="p-5 border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-start justify-between gap-4 shrink-0">
           <div className="flex items-start gap-3 min-w-0">
@@ -543,7 +579,7 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                     fiscalStatus={general.stare || ""}
                     onOpenMofModal={setSelectedMofPub}
                     onOpenPerson={(personName) => onOpenPerson && onOpenPerson(personName, cui)}
-                    onOpenCompany={(compCui, compName) => onEvaluate && onEvaluate(compCui, compName)}
+                    onOpenCompany={(compCui, compName) => onOpenCompany ? onOpenCompany(compCui, compName) : (onEvaluate && onEvaluate(compCui, compName))}
                   />
 
                   {/* Smart Ownership & Corporate Governance Box */}
@@ -640,15 +676,28 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                               </td>
                               <td className="px-4 py-2.5 font-bold text-gray-900 dark:text-white whitespace-nowrap">
                                 <div className="flex items-center gap-1.5">
-                                  <button
-                                    type="button"
-                                    onClick={() => onOpenPerson && onOpenPerson(p.nume, cui)}
-                                    className="hover:text-primary hover:underline inline-flex items-center gap-1.5 cursor-pointer text-left"
-                                    title="Deschide profil persoană &amp; dosare just.ro"
-                                  >
-                                    <span>{p.nume}</span>
-                                    <ExternalLink size={11} className="text-gray-400 hover:text-primary" />
-                                  </button>
+                                  {p.tip_entitate === 'PJ' || p.cui ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenCompany ? onOpenCompany(p.cui, p.nume) : (onOpenPerson && onOpenPerson(p.nume, cui))}
+                                      className="hover:text-primary hover:underline inline-flex items-center gap-1.5 cursor-pointer text-left font-bold"
+                                      title="Deschide dosar companie asociată (PJ)"
+                                    >
+                                      <Building2 size={13} className="text-indigo-500" />
+                                      <span>{p.nume}</span>
+                                      <ExternalLink size={11} className="text-gray-400 hover:text-primary" />
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => onOpenPerson && onOpenPerson(p.nume, cui)}
+                                      className="hover:text-primary hover:underline inline-flex items-center gap-1.5 cursor-pointer text-left font-bold"
+                                      title="Deschide profil persoană &amp; dosare just.ro"
+                                    >
+                                      <span>{p.nume}</span>
+                                      <ExternalLink size={11} className="text-gray-400 hover:text-primary" />
+                                    </button>
+                                  )}
                                   <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${
                                     p.tip_entitate === 'PJ' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
                                   }`}>
@@ -691,9 +740,15 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                               <td className="px-4 py-2.5 text-right whitespace-nowrap">
                                 <button
                                   type="button"
-                                  onClick={() => onOpenPerson && onOpenPerson(p.nume, cui)}
+                                  onClick={() => {
+                                    if (p.tip_entitate === 'PJ' || p.cui) {
+                                      if (onOpenCompany) onOpenCompany(p.cui, p.nume);
+                                    } else {
+                                      if (onOpenPerson) onOpenPerson(p.nume, cui);
+                                    }
+                                  }}
                                   className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-lg bg-primary/10 hover:bg-primary text-primary hover:text-white font-medium transition-colors cursor-pointer"
-                                  title="Lansează investigația Rețea Asociați"
+                                  title="Lansează investigația Rețea / Caracatiță"
                                 >
                                   <Network size={12} />
                                   <span>Rețea</span>

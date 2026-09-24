@@ -196,15 +196,31 @@ export const OwnershipAndGovernanceCard = ({
                     {/* Top Row: Name, Badge, Percent */}
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <button
-                          type="button"
-                          onClick={() => onOpenPerson && onOpenPerson(personName, companyCui)}
-                          className="font-bold text-gray-900 dark:text-white text-sm hover:text-primary transition-colors text-left inline-flex items-center gap-1.5 group cursor-pointer"
-                          title={`Click pentru dosar persoană și companii: ${personName}`}
-                        >
-                          <span className="group-hover:underline">{personName}</span>
-                          <ExternalLink size={12} className="text-gray-400 group-hover:text-primary transition-colors shrink-0" />
-                        </button>
+                        {h.entity === 'PJ' || (h.type && h.type.includes('(PJ)')) || h.cui ? (
+                          <button
+                            type="button"
+                            onClick={() => onOpenCompany && onOpenCompany(h.cui, personName)}
+                            className="font-bold text-gray-900 dark:text-white text-sm hover:text-primary transition-colors text-left inline-flex items-center gap-1.5 group cursor-pointer"
+                            title={`Click pentru dosar companie asociată (PJ): ${personName} (CUI ${h.cui || 'N/A'})`}
+                          >
+                            <Building2 size={13} className="text-indigo-500 shrink-0" />
+                            <span className="group-hover:underline">{personName}</span>
+                            <span className="text-[10px] px-1 py-0.2 rounded bg-indigo-50 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-400 font-semibold border border-indigo-200/50">
+                              PJ
+                            </span>
+                            <ExternalLink size={12} className="text-gray-400 group-hover:text-primary transition-colors shrink-0" />
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => onOpenPerson && onOpenPerson(personName, companyCui)}
+                            className="font-bold text-gray-900 dark:text-white text-sm hover:text-primary transition-colors text-left inline-flex items-center gap-1.5 group cursor-pointer"
+                            title={`Click pentru dosar persoană și companii: ${personName}`}
+                          >
+                            <span className="group-hover:underline">{personName}</span>
+                            <ExternalLink size={12} className="text-gray-400 group-hover:text-primary transition-colors shrink-0" />
+                          </button>
+                        )}
                         {isCurrent ? (
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200/60">
                             Activ

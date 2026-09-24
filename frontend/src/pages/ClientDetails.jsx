@@ -66,6 +66,7 @@ const ClientDetails = () => {
   const [showAllHomonyms, setShowAllHomonyms] = useState(false);
   const [companyIntelTarget, setCompanyIntelTarget] = useState({ isOpen: false, cui: null, name: '' });
   const [personIntelTarget, setPersonIntelTarget] = useState({ isOpen: false, name: '', contextCui: null });
+  const [intelHistory, setIntelHistory] = useState([]);
   const [selectedMofPub, setSelectedMofPub] = useState(null);
   const [expandedMofIndices, setExpandedMofIndices] = useState([]);
   const [showConfirmReevalModal, setShowConfirmReevalModal] = useState(false);
@@ -79,22 +80,59 @@ const ClientDetails = () => {
     );
   };
 
-  const openCompanyIntel = (cui, name) => {
+  const openCompanyIntel = (cui, name, addToHistory = true) => {
+    if (!cui && !name) return;
+    if (addToHistory) {
+      if (companyIntelTarget.isOpen && companyIntelTarget.cui) {
+        setIntelHistory(prev => [...prev, { type: 'company', cui: companyIntelTarget.cui, name: companyIntelTarget.name }]);
+      } else if (personIntelTarget.isOpen && personIntelTarget.name) {
+        setIntelHistory(prev => [...prev, { type: 'person', name: personIntelTarget.name, contextCui: personIntelTarget.contextCui }]);
+      }
+    }
+    setPersonIntelTarget({ isOpen: false, name: '', contextCui: null });
     setCompanyIntelTarget({ isOpen: true, cui: String(cui).trim(), name: name || '' });
   };
+
   const closeCompanyIntel = () => {
     setCompanyIntelTarget({ isOpen: false, cui: null, name: '' });
+    setIntelHistory([]);
   };
 
-  const openPersonIntel = (name, contextCui = null) => {
+  const openPersonIntel = (name, contextCui = null, addToHistory = true) => {
+    if (!name) return;
+    if (addToHistory) {
+      if (companyIntelTarget.isOpen && companyIntelTarget.cui) {
+        setIntelHistory(prev => [...prev, { type: 'company', cui: companyIntelTarget.cui, name: companyIntelTarget.name }]);
+      } else if (personIntelTarget.isOpen && personIntelTarget.name) {
+        setIntelHistory(prev => [...prev, { type: 'person', name: personIntelTarget.name, contextCui: personIntelTarget.contextCui }]);
+      }
+    }
+    setCompanyIntelTarget({ isOpen: false, cui: null, name: '' });
     setPersonIntelTarget({ 
       isOpen: true, 
       name: name ? name.trim() : '', 
       contextCui: contextCui || client?.cui_cnp || null 
     });
   };
+
   const closePersonIntel = () => {
     setPersonIntelTarget({ isOpen: false, name: '', contextCui: null });
+    setIntelHistory([]);
+  };
+
+  const handleIntelBack = () => {
+    if (intelHistory.length === 0) return;
+    const newHistory = [...intelHistory];
+    const prevItem = newHistory.pop();
+    setIntelHistory(newHistory);
+
+    if (prevItem.type === 'company') {
+      setPersonIntelTarget({ isOpen: false, name: '', contextCui: null });
+      setCompanyIntelTarget({ isOpen: true, cui: prevItem.cui, name: prevItem.name });
+    } else if (prevItem.type === 'person') {
+      setCompanyIntelTarget({ isOpen: false, cui: null, name: '' });
+      setPersonIntelTarget({ isOpen: true, name: prevItem.name, contextCui: prevItem.contextCui });
+    }
   };
 
   const loadTelemetryReport = async () => {
@@ -2698,10 +2736,10 @@ const ClientDetails = () => {
         cui={companyIntelTarget.cui}
         initialName={companyIntelTarget.name}
         onEvaluate={handleEvaluateCompany}
-        onOpenPerson={(personName) => {
-          closeCompanyIntel();
-          openPersonIntel(personName, companyIntelTarget.cui);
-        }}
+        onOpenPerson={(personName, ctxCui) => openPersonIntel(personName, ctxCui || companyIntelTarget.cui)}
+        onOpenCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}
+        history={intelHistory}
+        onBack={handleIntelBack}
       />
 
       <PersonIntelModal
@@ -2709,10 +2747,9 @@ const ClientDetails = () => {
         onClose={closePersonIntel}
         name={personIntelTarget.name}
         contextCui={personIntelTarget.contextCui || client?.cui_cnp}
-        onSelectCompany={(compCui, compName) => {
-          closePersonIntel();
-          openCompanyIntel(compCui, compName);
-        }}
+        onSelectCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}
+        history={intelHistory}
+        onBack={handleIntelBack}
       />
 
       <MofDocumentModal

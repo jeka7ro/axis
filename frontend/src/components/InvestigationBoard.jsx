@@ -2,7 +2,11 @@ import React, { useRef, useMemo, useState, useEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { forceCollide } from 'd3-force-3d';
 import { jsPDF } from 'jspdf';
-import { X, Maximize2, Minimize2, ZoomIn, ZoomOut, Target, Shield, FileDown, Search, Building2, User, ExternalLink } from 'lucide-react';
+import { 
+  X, Maximize2, Minimize2, ZoomIn, ZoomOut, Target, Shield, FileDown, 
+  Search, Building2, User, ExternalLink, GitBranch, Plus, Loader2 
+} from 'lucide-react';
+import { fetchCompanyFullIntel, fetchPersonFullIntel } from '../services/api';
 
 const THEMES = {
   dark: {
@@ -1110,10 +1114,325 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
 
   const activeConfig = isDark ? THEMES.dark : THEMES.light;
 
-  const graphData = useMemo(
+  const initialGraphData = useMemo(
     () => buildGraph(rawData || {}, clientName || 'Firma', clientCui || ''),
     [rawData, clientName, clientCui]
   );
+
+  const [graphData, setGraphData] = useState(() => initialGraphData);
+
+  useEffect(() => {
+    setGraphData(initialGraphData);
+  }, [initialGraphData]);
+
+  const [expandingNodeId, setExpandingNodeId] = useState(null);
+  const [expandedNodeIds, setExpandedNodeIds] = useState(new Set());
+
+  // Extindere dinamică a unui nod (firmă sau persoană) direct în graf ("Caracatița")
+  const handleExpandNode = async (node) => {
+    if (!node || expandingNodeId) return;
+    setExpandingNodeId(node.id);
+
+    try {
+      const isCompanyType = node.type === 'company' || node.type === 'related_company';
+      const isPersonType = node.type === 'person' || node.type === 'person_historical';
+
+      if (isCompanyType) {
+        const cleanCui = String(node.cui || '').replace(/\D/g, '');
+        const compName = node.fullName || node.label || '';
+        if (!cleanCui && !compName) return;
+
+        const intel = await fetchCompanyFullIntel(cleanCui, compName, false);
+        if (!intel) return;
+
+        setGraphData((prev) => {
+          const newNodes = [...prev.nodes];
+          const newLinks = [...prev.links];
+          const nodeIds = new Set(newNodes.map(n => n.id));
+          const linkKeys = new Set(newLinks.map(l => {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            return `${s}->${t}`;
+          }));
+
+          const addNode = (id, label, type, extra = {}) => {
+            if (nodeIds.has(id)) {
+              const existing = newNodes.find(n => n.id === id);
+              if (existing) Object.assign(existing, extra);
+              return;
+            }
+            nodeIds.add(id);
+            const posX = typeof node.x === 'number' ? node.x + (Math.random() - 0.5) * 160 : undefined;
+            const posY = typeof node.y === 'number' ? node.y + (Math.random() - 0.5) * 160 : undefined;
+            newNodes.push({ id, label, type, x: posX, y: posY, ...extra });
+          };
+
+          const addLink = (source, target, label = '', type = 'default') => {
+            if (!source || !target || source === target) return;
+            const key1 = `${source}->${target}`;
+            const key2 = `${target}->${source}`;
+            if (linkKeys.has(key1) || linkKeys.has(key2)) return;
+            linkKeys.add(key1);
+            linkKeys.add(key2);
+            newLinks.push({ source, target, label, type });
+          };
+
+          // 1. Asociați & Conducere din noua firmă
+          const allPeople = [
+            ...(intel.holdings || []),
+            ...(intel.personnel || []),
+            ...(intel.administrators || [])
+          ];
+
+          const seenPeople = new Set();
+          allPeople.forEach((p) => {
+            const rawName = p.name || p.nume;
+            if (!rawName) return;
+            const norm = normalizePersonName(rawName);
+            if (seenPeople.has(norm)) return;
+            seenPeople.add(norm);
+
+            const isPJ = p.entity === 'PJ' || (p.type && p.type.includes('(PJ)'));
+            if (isPJ) {
+              const pjCui = String(p.cui || '').replace(/\D/g, '');
+              const pjId = getCompanyNodeId(pjCui, rawName);
+              addNode(pjId, rawName.length > 20 ? rawName.slice(0, 18) + '...' : rawName, 'related_company', {
+                fullName: rawName,
+                cui: p.cui,
+                stare: 'Activ',
+                relation: 'Asociat PJ',
+              });
+              addLink(pjId, node.id, p.percent ? `${p.percent}% ACȚIUNI` : 'ASOCIAT PJ', 'primary');
+            } else {
+              const pId = `person_${norm.replace(/[^A-Z0-9]/g, '_')}`;
+              const pct = Number(p.percent || p.cota_participare || 0);
+              const isAdm = p.is_administrator || (p.rol && p.rol.toLowerCase().includes('admin'));
+              const roleLabel = pct === 100 ? 'Asociat Unic (100%)' : pct > 0 ? `Asociat (${pct}%)` : (isAdm ? 'Administrator' : 'Conducere');
+
+              addNode(pId, formatPersonDisplayName(rawName), 'person', {
+                fullName: formatPersonDisplayName(rawName),
+                roles: roleLabel,
+                percent: pct,
+                stare: 'Activ',
+              });
+
+              addLink(node.id, pId, roleLabel, 'primary');
+            }
+          });
+
+          // 2. Firme din rețeaua administratorilor
+          (intel.admin_networks || []).forEach((net) => {
+            const netPersonNorm = normalizePersonName(net.nume);
+            const netPersonId = `person_${netPersonNorm.replace(/[^A-Z0-9]/g, '_')}`;
+
+            (net.firme || []).forEach((f) => {
+              const fCui = String(f.cui || '').replace(/\D/g, '');
+              if (fCui && fCui === cleanCui) return;
+              const fName = f.denumire || f.name || '';
+              if (!fName) return;
+
+              const fId = getCompanyNodeId(fCui, fName);
+              const shortName = fName.length > 22 ? fName.slice(0, 19) + '...' : fName;
+              addNode(fId, shortName, 'related_company', {
+                cui: f.cui,
+                fullName: fName,
+                stare: f.curent ? 'Activ' : 'Istoric',
+                relation: f.rol || 'Firmă Afiliată',
+              });
+
+              addLink(netPersonId, fId, f.rol || 'AFILIAT', f.curent ? 'network' : 'network_historical');
+            });
+          });
+
+          return { nodes: newNodes, links: newLinks };
+        });
+
+        setExpandedNodeIds(prev => new Set([...prev, node.id]));
+        if (graphRef.current) {
+          graphRef.current.d3ReheatSimulation();
+        }
+      } else if (isPersonType) {
+        const pName = node.fullName || node.label;
+        if (!pName) return;
+
+        const pIntel = await fetchPersonFullIntel(pName, clientCui);
+        if (!pIntel) return;
+
+        setGraphData((prev) => {
+          const newNodes = [...prev.nodes];
+          const newLinks = [...prev.links];
+          const nodeIds = new Set(newNodes.map(n => n.id));
+          const linkKeys = new Set(newLinks.map(l => {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            return `${s}->${t}`;
+          }));
+
+          const addNode = (id, label, type, extra = {}) => {
+            if (nodeIds.has(id)) {
+              const existing = newNodes.find(n => n.id === id);
+              if (existing) Object.assign(existing, extra);
+              return;
+            }
+            nodeIds.add(id);
+            const posX = typeof node.x === 'number' ? node.x + (Math.random() - 0.5) * 160 : undefined;
+            const posY = typeof node.y === 'number' ? node.y + (Math.random() - 0.5) * 160 : undefined;
+            newNodes.push({ id, label, type, x: posX, y: posY, ...extra });
+          };
+
+          const addLink = (source, target, label = '', type = 'default') => {
+            if (!source || !target || source === target) return;
+            const key1 = `${source}->${target}`;
+            const key2 = `${target}->${source}`;
+            if (linkKeys.has(key1) || linkKeys.has(key2)) return;
+            linkKeys.add(key1);
+            linkKeys.add(key2);
+            newLinks.push({ source, target, label, type });
+          };
+
+          (pIntel.network || []).forEach((net) => {
+            (net.firme || []).forEach((f) => {
+              const fCui = String(f.cui || '').replace(/\D/g, '');
+              const fName = f.denumire || f.name || '';
+              if (!fName) return;
+
+              const fId = getCompanyNodeId(fCui, fName);
+              const shortName = fName.length > 22 ? fName.slice(0, 19) + '...' : fName;
+              addNode(fId, shortName, 'related_company', {
+                cui: f.cui,
+                fullName: fName,
+                stare: f.curent ? 'Activ' : 'Istoric',
+                relation: f.rol || 'Firmă Afiliată',
+              });
+
+              addLink(node.id, fId, f.rol || 'AFILIAT', f.curent ? 'network' : 'network_historical');
+            });
+          });
+
+          return { nodes: newNodes, links: newLinks };
+        });
+
+        setExpandedNodeIds(prev => new Set([...prev, node.id]));
+        if (graphRef.current) {
+          graphRef.current.d3ReheatSimulation();
+        }
+      }
+    } catch (err) {
+      console.error('Eroare extindere nod în graf:', err);
+    } finally {
+      setExpandingNodeId(null);
+    }
+  };
+
+  // Căutare CUI sau Nume și adăugare directă pe pânză
+  const handleSearchAndExpandToGraph = async (query) => {
+    const q = (query || searchQuery).trim();
+    if (!q) return;
+    const cleanCui = q.replace(/\D/g, '');
+    setExpandingNodeId('search');
+    try {
+      const intel = await fetchCompanyFullIntel(cleanCui || q, q, false);
+      if (!intel) return;
+
+      const compCui = intel.cui || cleanCui;
+      const compName = intel.denumire || q;
+      const compId = getCompanyNodeId(compCui, compName);
+
+      setGraphData((prev) => {
+        const newNodes = [...prev.nodes];
+        const newLinks = [...prev.links];
+        const nodeIds = new Set(newNodes.map(n => n.id));
+        const linkKeys = new Set(newLinks.map(l => {
+          const s = typeof l.source === 'object' ? l.source.id : l.source;
+          const t = typeof l.target === 'object' ? l.target.id : l.target;
+          return `${s}->${t}`;
+        }));
+
+        const addNode = (id, label, type, extra = {}) => {
+          if (nodeIds.has(id)) {
+            const existing = newNodes.find(n => n.id === id);
+            if (existing) Object.assign(existing, extra);
+            return;
+          }
+          nodeIds.add(id);
+          newNodes.push({ id, label, type, ...extra });
+        };
+
+        const addLink = (source, target, label = '', type = 'default') => {
+          if (!source || !target || source === target) return;
+          const key1 = `${source}->${target}`;
+          const key2 = `${target}->${source}`;
+          if (linkKeys.has(key1) || linkKeys.has(key2)) return;
+          linkKeys.add(key1);
+          linkKeys.add(key2);
+          newLinks.push({ source, target, label, type });
+        };
+
+        addNode(compId, compName.length > 22 ? compName.slice(0, 19) + '...' : compName, 'related_company', {
+          fullName: compName,
+          cui: compCui,
+          stare: intel.general?.status || 'Activ',
+          an_infiintare: intel.general?.an_infiintare || null,
+        });
+
+        const allPeople = [
+          ...(intel.holdings || []),
+          ...(intel.personnel || []),
+          ...(intel.administrators || [])
+        ];
+        const seen = new Set();
+        allPeople.forEach((p) => {
+          const raw = p.name || p.nume;
+          if (!raw) return;
+          const norm = normalizePersonName(raw);
+          if (seen.has(norm)) return;
+          seen.add(norm);
+
+          const isPJ = p.entity === 'PJ' || (p.type && p.type.includes('(PJ)'));
+          if (isPJ) {
+            const pjCui = String(p.cui || '').replace(/\D/g, '');
+            const pjId = getCompanyNodeId(pjCui, raw);
+            addNode(pjId, raw.length > 20 ? raw.slice(0, 18) + '...' : raw, 'related_company', {
+              fullName: raw,
+              cui: p.cui,
+              stare: 'Activ',
+              relation: 'Asociat PJ',
+            });
+            addLink(pjId, compId, p.percent ? `${p.percent}% ACȚIUNI` : 'ASOCIAT PJ', 'primary');
+          } else {
+            const pId = `person_${norm.replace(/[^A-Z0-9]/g, '_')}`;
+            const pct = Number(p.percent || p.cota_participare || 0);
+            const isAdm = p.is_administrator || (p.rol && p.rol.toLowerCase().includes('admin'));
+            const roleLabel = pct === 100 ? 'Asociat Unic (100%)' : pct > 0 ? `Asociat (${pct}%)` : (isAdm ? 'Administrator' : 'Conducere');
+
+            addNode(pId, formatPersonDisplayName(raw), 'person', {
+              fullName: formatPersonDisplayName(raw),
+              roles: roleLabel,
+              percent: pct,
+              stare: 'Activ',
+            });
+            addLink(compId, pId, roleLabel, 'primary');
+          }
+        });
+
+        return { nodes: newNodes, links: newLinks };
+      });
+
+      setSearchQuery('');
+      setIsSearchFocused(false);
+
+      if (graphRef.current) {
+        graphRef.current.d3ReheatSimulation();
+      }
+    } catch (err) {
+      console.error('Eroare adăugare firmă în graf:', err);
+      if (onOpenCompany) {
+        onOpenCompany(cleanCui || q, q);
+      }
+    } finally {
+      setExpandingNodeId(null);
+    }
+  };
 
   // Search filtering in the active graph
   const filteredNodes = useMemo(() => {
@@ -1821,24 +2140,41 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
                     );
                   })}
                 </div>
-              ) : searchQuery.trim() ? (
-                <div className="p-3 text-xs">
-                  <div className="text-gray-400 text-center py-1">
-                    Nu s-au găsit noduri corespondente în graful curent.
-                  </div>
+              ) : null}
+
+              {searchQuery.trim() && (
+                <div className="p-2.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 rounded-b-xl space-y-1.5">
                   {onOpenCompany && (
                     <button
                       type="button"
                       onMouseDown={handleDirectSearchSubmit}
-                      className="mt-2 w-full p-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                      className="w-full p-2 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 text-blue-700 dark:text-blue-300 border border-blue-500/30 font-semibold text-xs flex items-center justify-between gap-2 transition-all cursor-pointer text-left"
                     >
-                      <Building2 size={14} />
-                      <span>Investighează CUI / Firmă: "{searchQuery.trim()}"</span>
-                      <ExternalLink size={12} />
+                      <span className="flex items-center gap-1.5 truncate">
+                        <Building2 size={13} className="shrink-0" />
+                        <span className="truncate">Deschide Dosar Complet: "{searchQuery.trim()}"</span>
+                      </span>
+                      <ExternalLink size={11} className="shrink-0" />
                     </button>
                   )}
+                  <button
+                    type="button"
+                    disabled={expandingNodeId === 'search'}
+                    onMouseDown={() => handleSearchAndExpandToGraph(searchQuery)}
+                    className="w-full p-2 rounded-lg bg-purple-600/10 hover:bg-purple-600/20 text-purple-700 dark:text-purple-300 border border-purple-500/30 font-semibold text-xs flex items-center justify-between gap-2 transition-all cursor-pointer text-left disabled:opacity-50"
+                  >
+                    <span className="flex items-center gap-1.5 truncate">
+                      {expandingNodeId === 'search' ? (
+                        <Loader2 size={13} className="animate-spin text-purple-600 shrink-0" />
+                      ) : (
+                        <GitBranch size={13} className="shrink-0" />
+                      )}
+                      <span className="truncate">Adaugă &amp; Extinde în Graf: "{searchQuery.trim()}"</span>
+                    </span>
+                    <Plus size={11} className="shrink-0" />
+                  </button>
                 </div>
-              ) : null}
+              )}
             </div>
           )}
         </div>
@@ -2062,6 +2398,29 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
                     </button>
                   )}
 
+                  {/* Button: Expand Company Connections into ForceGraph ("Caracatița") */}
+                  {isComp && (
+                    <button
+                      type="button"
+                      disabled={expandingNodeId === activeNode.id}
+                      onClick={() => handleExpandNode(activeNode)}
+                      className="mt-2 w-full py-2 px-3 rounded-xl bg-purple-600/10 hover:bg-purple-600/20 text-purple-700 dark:text-purple-300 border border-purple-500/30 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                      title="Extinde asociații, administratorii și firmele conexe direct în panoul vizual"
+                    >
+                      {expandingNodeId === activeNode.id ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin text-purple-600 dark:text-purple-300" />
+                          <span>Se extinde rețeaua în graf...</span>
+                        </>
+                      ) : (
+                        <>
+                          <GitBranch size={14} />
+                          <span>{expandedNodeIds.has(activeNode.id) ? 'Re-extinde Conexiunile în Graf' : 'Extinde în Caracatiță (Graf)'}</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+
                   {isPers && onOpenPerson && (
                     <button
                       type="button"
@@ -2072,6 +2431,29 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
                       <User size={15} />
                       <span>Dosar Persoană (Portal Just &amp; Firme)</span>
                       <ExternalLink size={13} />
+                    </button>
+                  )}
+
+                  {/* Button: Expand Person Companies into ForceGraph */}
+                  {isPers && (
+                    <button
+                      type="button"
+                      disabled={expandingNodeId === activeNode.id}
+                      onClick={() => handleExpandNode(activeNode)}
+                      className="mt-2 w-full py-2 px-3 rounded-xl bg-amber-600/10 hover:bg-amber-600/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                      title="Extinde companiile asociate acestei persoane în panoul vizual"
+                    >
+                      {expandingNodeId === activeNode.id ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin text-amber-600 dark:text-amber-300" />
+                          <span>Se încarcă companiile în graf...</span>
+                        </>
+                      ) : (
+                        <>
+                          <GitBranch size={14} />
+                          <span>{expandedNodeIds.has(activeNode.id) ? 'Re-extinde Firmele în Graf' : 'Extinde Firmele Persoanei în Graf'}</span>
+                        </>
+                      )}
                     </button>
                   )}
                 </>

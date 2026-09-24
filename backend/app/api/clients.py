@@ -195,8 +195,14 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
     și SALVEAZĂ automat firma și evaluarea în baza noastră de date pentru viitor.
     """
     clean_cui = "".join(filter(str.isdigit, str(cui)))
+    if not clean_cui and name:
+        match_client = db.query(Client).filter(Client.name.ilike(f"%{name.strip()}%")).first()
+        if match_client and match_client.cui_cnp:
+            clean_cui = "".join(filter(str.isdigit, str(match_client.cui_cnp)))
+            print(f"[RESOLVE CUI BY NAME] Găsit CUI {clean_cui} pentru '{name}' în baza Axis.")
+
     if not clean_cui:
-        raise HTTPException(status_code=400, detail="CUI invalid")
+        raise HTTPException(status_code=400, detail="CUI invalid sau compania nu a putut fi identificată")
 
     reg_scraper = RegistryScraper()
     court_scraper = CourtScraper()
