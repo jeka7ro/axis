@@ -281,7 +281,7 @@ const VehiclesList = () => {
                       <div className="text-sm text-gray-500 truncate" title={v.model}>{v.model}</div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="font-mono text-gray-900 dark:text-white">{v.license_plate}</div>
+                      <div className="text-gray-900 dark:text-white">{v.license_plate}</div>
                       <div className="text-xs text-gray-500">An: {v.year}</div>
                     </td>
                     <td className="px-6 py-4">

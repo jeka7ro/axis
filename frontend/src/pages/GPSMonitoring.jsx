@@ -297,7 +297,7 @@ const GPSMonitoring = () => {
                           setTargetCenter([loc.latitude, loc.longitude]);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
-                        className="text-xs font-mono text-blue-600 dark:text-blue-400 hover:underline flex items-center justify-end gap-1 ml-auto"
+                        className="text-xs text-blue-600 dark:text-blue-400 hover:underline flex items-center justify-end gap-1 ml-auto"
                         title="Conduceți pe hartă"
                       >
                         <MapPin size={12} />

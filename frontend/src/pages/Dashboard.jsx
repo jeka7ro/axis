@@ -144,7 +144,7 @@ const Dashboard = () => {
                         <div className="w-1.5 h-1.5 rounded-full bg-gray-500"></div>
                         {alert.vehicle_plate}
                       </div>
-                      <span className="text-[10px] text-gray-400 font-mono">{new Date(alert.created_at).toLocaleTimeString('ro-RO')}</span>
+                      <span className="text-[10px] text-gray-400">{new Date(alert.created_at).toLocaleTimeString('ro-RO')}</span>
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400 mt-2 leading-relaxed">{alert.message}</div>
                  </div>

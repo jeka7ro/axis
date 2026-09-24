@@ -172,6 +172,30 @@ class AddressChecker:
                 "photos": []
             }
 
+        # 0. Verificare CACHE în baza de date (evităm interogările duplicate pentru aceeași firmă)
+        clean_cui = "".join(filter(str.isdigit, str(current_cui or "")))
+        if clean_cui:
+            try:
+                from ...database import SessionLocal
+                from ...models.client import Client, Evaluation
+                import json
+                with SessionLocal() as db:
+                    eval_row = (
+                        db.query(Evaluation)
+                        .join(Client, Evaluation.client_id == Client.id)
+                        .filter(Client.cui_cnp.like(f"%{clean_cui}%"))
+                        .order_by(Evaluation.created_at.desc())
+                        .first()
+                    )
+                    if eval_row and eval_row.raw_financial_data:
+                        raw = json.loads(eval_row.raw_financial_data) if isinstance(eval_row.raw_financial_data, str) else eval_row.raw_financial_data
+                        cached_addr = raw.get("address_check")
+                        if cached_addr and cached_addr.get("companies"):
+                            print(f"[DB CACHE HIT] Verificare adresă pentru CUI {clean_cui} încărcată din baza de date.")
+                            return cached_addr
+            except Exception:
+                pass
+
         # 1. Extragere informații structurate
         loc_info = self._extract_location_info(address)
 

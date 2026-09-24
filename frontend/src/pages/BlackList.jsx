@@ -280,7 +280,7 @@ const BlackList = () => {
                         <span>{item.name}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs">{item.cui_cnp}</td>
+                    <td className="px-6 py-4 text-xs">{item.cui_cnp}</td>
                     <td className="px-6 py-4 text-red-600 dark:text-red-400 font-medium">
                       {item.blacklist_reason || 'Risc Critic'}
                     </td>

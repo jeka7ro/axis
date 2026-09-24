@@ -171,14 +171,14 @@ const MofDocumentModal = ({ isOpen, onClose, publication }) => {
           <div className="p-4 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-xs">
             <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2.5 flex items-center justify-between">
               <span>Date de Înregistrare & Publicare</span>
-              <span className="text-blue-500 font-mono text-[11px] font-medium">REGCOM / FIRMEAPI</span>
+              <span className="text-blue-500 text-[11px] font-medium">REGCOM / FIRMEAPI</span>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
               <div className="p-3 rounded-lg bg-gray-50/80 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700/80">
                 <span className="text-gray-500 dark:text-gray-400 text-[10px] uppercase tracking-wide block mb-0.5">
                   Număr Publicație
                 </span>
-                <span className="font-bold text-gray-900 dark:text-white font-mono text-sm">
+                <span className="font-bold text-gray-900 dark:text-white text-sm">
                   Nr. {publication.publicatieNr || '-'}
                 </span>
               </div>
@@ -186,7 +186,7 @@ const MofDocumentModal = ({ isOpen, onClose, publication }) => {
                 <span className="text-gray-500 dark:text-gray-400 text-[10px] uppercase tracking-wide block mb-0.5">
                   Data Publicării
                 </span>
-                <span className="font-bold text-gray-900 dark:text-white font-mono text-sm">
+                <span className="font-bold text-gray-900 dark:text-white text-sm">
                   {publication.data || '-'}
                 </span>
               </div>

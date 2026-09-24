@@ -158,7 +158,7 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
             }`}
           >
             <Building2 size={14} />
-            <span>Firme &amp; Participații („Caracatița”)</span>
+            <span>Firme &amp; Participații</span>
             <span className="px-1.5 py-0.2 rounded-md text-[10px] font-bold bg-gray-100 dark:bg-gray-700 text-gray-500">
               {currentFirme.length}
             </span>
@@ -198,7 +198,7 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
             </div>
           ) : (
             <>
-              {/* TAB 1: CARACATIȚA FIRME */}
+              {/* TAB 1: FIRME & PARTICIPAȚII */}
               {activeTab === 'network' && (
                 <div className="space-y-4">
                   {currentFirme.length === 0 ? (

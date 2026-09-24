@@ -202,9 +202,38 @@ async def get_company_full_intel(cui: str, name: str = "", db: Session = Depends
     cross_checker = CrossChecker()
     search_name = name.strip() or f"CUI {clean_cui}"
 
-    # Verificare dacă este client existent în DB
+    # Verificare dacă este client existent în DB cu evaluare anterioară
     existing_client = db.query(Client).filter(Client.cui_cnp == clean_cui).first()
     existing_client_id = existing_client.id if existing_client else None
+    if existing_client:
+        prev_eval = db.query(Evaluation).filter(Evaluation.client_id == existing_client.id).order_by(Evaluation.created_at.desc()).first()
+        if prev_eval and prev_eval.raw_financial_data:
+            try:
+                prev_d = json.loads(prev_eval.raw_financial_data) if isinstance(prev_eval.raw_financial_data, str) else prev_eval.raw_financial_data
+                if prev_d and (prev_d.get("personnel") or prev_d.get("holdings")):
+                    print(f"[CACHE HIT] Full Intel pentru CUI {clean_cui} ({existing_client.name}) extras din baza de date.")
+                    smart_ownership = prev_d.get("smart_ownership") or cross_checker.analyze_ownership_structure(
+                        prev_d.get("personnel") or prev_d.get("holdings") or [],
+                        prev_d.get("admin_networks") or []
+                    )
+                    return {
+                        "cui": clean_cui,
+                        "denumire": existing_client.name,
+                        "existing_client_id": existing_client.id,
+                        "general": prev_d.get("anaf", {}),
+                        "personnel": prev_d.get("personnel", []),
+                        "holdings": prev_d.get("holdings", []),
+                        "administrators": prev_d.get("administrators", []),
+                        "admin_networks": prev_d.get("admin_networks", []),
+                        "caen_activities": prev_d.get("caen_activities", {}),
+                        "smart_ownership": smart_ownership,
+                        "balance": prev_d.get("balance", {}),
+                        "bpi": prev_d.get("bpi", {}),
+                        "mof": prev_d.get("mof", []),
+                        "cached": True
+                    }
+            except Exception:
+                pass
 
     # Paralelizare apeluri OSINT
     t_gen = reg_scraper.fetch_company_general(clean_cui)

@@ -12,11 +12,40 @@ class RegistryScraper:
         # Noua cheie pentru Termene.ro (pentru Caracatița Asociaților)
         self.termene_api_key = os.getenv("TERMENE_API_KEY", "YOUR_TERMENE_API_KEY_HERE")
 
+    def _get_cached_evaluation_data(self, cui: str) -> Optional[Dict]:
+        """Verifică dacă există deja evaluare salvată în DB pentru acest CUI pentru a evita interogările externe duplicate"""
+        clean_cui = "".join(filter(str.isdigit, str(cui)))
+        if not clean_cui:
+            return None
+        try:
+            import json
+            from ...database import SessionLocal
+            from ...models.client import Client, Evaluation
+            with SessionLocal() as db:
+                eval_row = (
+                    db.query(Evaluation)
+                    .join(Client, Evaluation.client_id == Client.id)
+                    .filter(Client.cui_cnp.like(f"%{clean_cui}%"))
+                    .order_by(Evaluation.created_at.desc())
+                    .first()
+                )
+                if eval_row and eval_row.raw_financial_data:
+                    d = json.loads(eval_row.raw_financial_data) if isinstance(eval_row.raw_financial_data, str) else eval_row.raw_financial_data
+                    return d
+        except Exception:
+            pass
+        return None
+
     async def fetch_company_general(self, cui: str) -> Dict:
-        """Extrage date generale firmă (stare, adresă, CAEN, e-factura, TVA, etc.) via FirmeAPI"""
+        """Extrage date generale firmă (stare, adresă, CAEN, e-factura, TVA, etc.) via FirmeAPI, cu cache DB"""
         clean_cui = "".join(filter(str.isdigit, str(cui)))
         if not clean_cui:
             return {}
+
+        cached = self._get_cached_evaluation_data(clean_cui)
+        if cached and cached.get("anaf"):
+            print(f"[DB CACHE HIT] Date generale pentru CUI {clean_cui} încărcate din baza de date.")
+            return cached.get("anaf")
 
         try:
             firmeapi_key = os.getenv("FIRMEAPI_KEY", "ebs9r1lk-3muzkfx6-hketjiwp-ofnjiu7f")
@@ -48,6 +77,13 @@ class RegistryScraper:
         clean_cui = "".join(filter(str.isdigit, str(cui)))
         if not clean_cui:
             return []
+
+        cached = self._get_cached_evaluation_data(clean_cui)
+        if cached:
+            p = cached.get("personnel") or cached.get("holdings")
+            if p and len(p) > 0:
+                print(f"[DB CACHE HIT] Personnel pentru CUI {clean_cui} încărcat din baza de date.")
+                return p
 
         try:
             firmeapi_key = os.getenv("FIRMEAPI_KEY", "ebs9r1lk-3muzkfx6-hketjiwp-ofnjiu7f")
@@ -162,7 +198,11 @@ class RegistryScraper:
         clean_cui = "".join(filter(str.isdigit, str(cui)))
         if not clean_cui:
             return {"has_insolvency": False, "count": 0, "records": []}
-            
+
+        cached = self._get_cached_evaluation_data(clean_cui)
+        if cached and cached.get("bpi"):
+            return cached.get("bpi")
+
         try:
             firmeapi_key = os.getenv("FIRMEAPI_KEY", "ebs9r1lk-3muzkfx6-hketjiwp-ofnjiu7f")
             headers = {"Authorization": f"Bearer {firmeapi_key}", "Accept": "application/json"}
@@ -478,6 +518,11 @@ class RegistryScraper:
         clean_cui = "".join(filter(str.isdigit, str(cui)))
         if not clean_cui:
             return {}
+
+        cached = self._get_cached_evaluation_data(clean_cui)
+        if cached and cached.get("balance"):
+            print(f"[DB CACHE HIT] Bilanț pentru CUI {clean_cui} încărcat din baza de date.")
+            return cached.get("balance")
 
         try:
             firmeapi_key = os.getenv("FIRMEAPI_KEY", "ebs9r1lk-3muzkfx6-hketjiwp-ofnjiu7f")

@@ -108,11 +108,11 @@ export const FinancialPerformanceCard = ({ balance = {}, title = "Performanță 
             <span className="text-xs text-gray-500 dark:text-gray-400 font-medium block">
               Cifră de Afaceri Netă ({latestYear})
             </span>
-            <div className="text-xl sm:text-2xl font-black font-mono tracking-tight text-gray-900 dark:text-white mt-1">
+            <div className="text-xl sm:text-2xl font-black tracking-tight text-gray-900 dark:text-white mt-1">
               {fmt(latest.cifra_afaceri)} <span className="text-xs font-semibold text-gray-400">RON</span>
             </div>
           </div>
-          <div className="text-xs text-gray-400 dark:text-gray-500 mt-2 font-mono">
+          <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
             Venituri: {fmt(latest.venituri_totale || latest.cifra_afaceri)} RON
           </div>
         </div>
@@ -123,10 +123,13 @@ export const FinancialPerformanceCard = ({ balance = {}, title = "Performanță 
             <span className="text-xs text-gray-500 dark:text-gray-400 font-medium block">
               Rezultat Net ({latestYear})
             </span>
-            <div className={`text-xl sm:text-2xl font-black font-mono tracking-tight mt-1 ${
-              (latest.profit_net || 0) >= 0 ? 'text-emerald-500' : 'text-rose-500'
+            <div className={`text-xl sm:text-2xl font-black tracking-tight mt-1 ${
+              (latest.profit_net != null && latest.profit_net !== 0 ? latest.profit_net : (latest.pierdere_neta ? -latest.pierdere_neta : 0)) >= 0 ? 'text-emerald-500' : 'text-rose-500'
             }`}>
-              {(latest.profit_net || 0) >= 0 ? '+' : ''}{fmt(latest.profit_net || -latest.pierdere_neta)} <span className="text-xs font-semibold opacity-75">RON</span>
+              {(() => {
+                const val = latest.profit_net != null && latest.profit_net !== 0 ? latest.profit_net : (latest.pierdere_neta ? -latest.pierdere_neta : 0);
+                return <>{val > 0 ? '+' : ''}{fmt(val)} <span className="text-xs font-semibold opacity-75">RON</span></>;
+              })()}
             </div>
           </div>
           <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
@@ -142,7 +145,7 @@ export const FinancialPerformanceCard = ({ balance = {}, title = "Performanță 
             </span>
             <div className="flex items-center gap-2 mt-1">
               <Users size={22} className="text-gray-700 dark:text-gray-300 shrink-0" />
-              <div className="text-xl sm:text-2xl font-black font-mono tracking-tight text-gray-900 dark:text-white">
+              <div className="text-xl sm:text-2xl font-black tracking-tight text-gray-900 dark:text-white">
                 {latest.salariati || latest.angajati || 0}{' '}
                 <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 font-sans">salariați</span>
               </div>
@@ -159,18 +162,18 @@ export const FinancialPerformanceCard = ({ balance = {}, title = "Performanță 
             <span className="text-xs text-gray-500 dark:text-gray-400 font-medium block">
               Datorii Totale
             </span>
-            <div className="text-xl sm:text-2xl font-black font-mono tracking-tight text-amber-500 mt-1">
+            <div className="text-xl sm:text-2xl font-black tracking-tight text-amber-500 mt-1">
               {fmt(latest.datorii)} <span className="text-xs font-semibold text-gray-400">RON</span>
             </div>
           </div>
-          <div className="text-xs text-gray-400 dark:text-gray-500 mt-2 font-mono">
+          <div className="text-xs text-gray-400 dark:text-gray-500 mt-2">
             Creanțe: {fmt(latest.creante)} RON
           </div>
         </div>
       </div>
 
       {/* 3. Bar Chart Section: Evoluție Financiară Multianuală */}
-      <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700/60">
+      <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700/60 overflow-hidden">
         <div className="flex items-center gap-2 mb-4">
           <TrendingUp size={16} className="text-emerald-500" />
           <h4 className="text-sm font-bold text-gray-900 dark:text-white">
@@ -179,12 +182,12 @@ export const FinancialPerformanceCard = ({ balance = {}, title = "Performanță 
         </div>
 
         {/* Chart Container */}
-        <div className="relative pt-6 pb-2 px-2 bg-gray-50/30 dark:bg-gray-900/20 rounded-2xl border border-gray-100 dark:border-gray-700/40">
+        <div className="relative pt-6 pb-2 px-2 bg-gray-50/30 dark:bg-gray-900/20 rounded-2xl border border-gray-100 dark:border-gray-700/40 overflow-hidden">
           {/* Y Axis Guide Lines */}
           <div className="h-56 relative w-full flex flex-col justify-between pointer-events-none select-none">
             {[1, 0.75, 0.5, 0.25, 0].map((step, idx) => (
               <div key={idx} className="relative w-full border-b border-gray-200/50 dark:border-gray-700/40 flex items-center">
-                <span className="absolute -top-2.5 left-0 text-[10px] text-gray-400 font-mono">
+                <span className="absolute -top-2.5 left-0 text-[10px] text-gray-400">
                   {formatShortValue(maxVal * step)}
                 </span>
               </div>
@@ -213,27 +216,27 @@ export const FinancialPerformanceCard = ({ balance = {}, title = "Performanță 
                   {/* Tooltip on hover */}
                   {isHovered && (
                     <div className="absolute -top-24 z-30 p-2.5 rounded-xl bg-gray-900/95 dark:bg-gray-800 text-white shadow-xl text-[11px] whitespace-nowrap border border-gray-700 pointer-events-none animate-in fade-in zoom-in-95">
-                      <div className="font-bold text-center border-b border-gray-700 pb-1 mb-1 font-mono text-emerald-400">
+                      <div className="font-bold text-center border-b border-gray-700 pb-1 mb-1 text-emerald-400">
                         Anul {d.an}
                       </div>
                       <div className="flex items-center gap-1.5 justify-between">
                         <span className="text-emerald-400">C.A.:</span>
-                        <span className="font-mono font-bold">{fmt(d.cifra_afaceri)} RON</span>
+                        <span className="font-bold">{fmt(d.cifra_afaceri)} RON</span>
                       </div>
                       <div className="flex items-center gap-1.5 justify-between">
                         <span className="text-blue-400">Venituri:</span>
-                        <span className="font-mono">{fmt(d.venituri_totale || d.cifra_afaceri)} RON</span>
+                        <span className="">{fmt(d.venituri_totale || d.cifra_afaceri)} RON</span>
                       </div>
                       {pNet > 0 && (
                         <div className="flex items-center gap-1.5 justify-between text-emerald-400">
                           <span>Profit Net:</span>
-                          <span className="font-mono font-bold">+{fmt(pNet)} RON</span>
+                          <span className="font-bold">+{fmt(pNet)} RON</span>
                         </div>
                       )}
                       {lNet > 0 && (
                         <div className="flex items-center gap-1.5 justify-between text-rose-400">
                           <span>Pierdere:</span>
-                          <span className="font-mono font-bold">-{fmt(lNet)} RON</span>
+                          <span className="font-bold">-{fmt(lNet)} RON</span>
                         </div>
                       )}
                     </div>
@@ -272,7 +275,7 @@ export const FinancialPerformanceCard = ({ balance = {}, title = "Performanță 
                   </div>
 
                   {/* Year Label */}
-                  <span className="text-[11px] font-mono text-gray-500 dark:text-gray-400 mt-1 font-semibold group-hover:text-emerald-500 transition-colors">
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400 mt-1 font-semibold group-hover:text-emerald-500 transition-colors">
                     {d.an}
                   </span>
                 </div>
@@ -338,24 +341,24 @@ export const FinancialPerformanceCard = ({ balance = {}, title = "Performanță 
                   <tr key={row.an} className="hover:bg-gray-50/60 dark:hover:bg-gray-700/40 transition-colors">
                     {/* An Badge */}
                     <td className="px-4 py-3 whitespace-nowrap">
-                      <span className="inline-block px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-bold font-mono text-xs bg-emerald-50/60 dark:bg-emerald-950/20">
+                      <span className="inline-block px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 font-bold text-xs bg-emerald-50/60 dark:bg-emerald-950/20">
                         {row.an}
                       </span>
                     </td>
                     {/* Cifra Afaceri */}
-                    <td className="px-4 py-3 font-bold font-mono text-gray-900 dark:text-white whitespace-nowrap">
+                    <td className="px-4 py-3 font-bold text-gray-900 dark:text-white whitespace-nowrap">
                       {fmt(row.cifra_afaceri)}
                     </td>
                     {/* Venituri Totale */}
-                    <td className="px-4 py-3 font-mono text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">
                       {fmt(venituri)}
                     </td>
                     {/* Cheltuieli */}
-                    <td className="px-4 py-3 font-mono text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">
                       {fmt(row.cheltuieli)}
                     </td>
                     {/* Profit Net */}
-                    <td className="px-4 py-3 font-mono whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       {profitNet > 0 ? (
                         <span className="font-bold text-emerald-600 dark:text-emerald-400">{fmt(profitNet)}</span>
                       ) : (
@@ -363,7 +366,7 @@ export const FinancialPerformanceCard = ({ balance = {}, title = "Performanță 
                       )}
                     </td>
                     {/* Pierdere Neta */}
-                    <td className="px-4 py-3 font-mono whitespace-nowrap">
+                    <td className="px-4 py-3 whitespace-nowrap">
                       {pierdereNeta > 0 ? (
                         <span className="font-bold text-rose-600 dark:text-rose-400">{fmt(pierdereNeta)}</span>
                       ) : (
@@ -371,23 +374,23 @@ export const FinancialPerformanceCard = ({ balance = {}, title = "Performanță 
                       )}
                     </td>
                     {/* Salariati */}
-                    <td className="px-4 py-3 font-bold font-mono text-center text-gray-900 dark:text-white whitespace-nowrap">
+                    <td className="px-4 py-3 font-bold text-center text-gray-900 dark:text-white whitespace-nowrap">
                       {row.salariati || row.angajati || 0}
                     </td>
                     {/* Active Imobilizate */}
-                    <td className="px-4 py-3 font-mono text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">
                       {fmt(row.active_imobilizate)}
                     </td>
                     {/* Creante */}
-                    <td className="px-4 py-3 font-mono text-gray-600 dark:text-gray-300 whitespace-nowrap">
+                    <td className="px-4 py-3 text-gray-600 dark:text-gray-300 whitespace-nowrap">
                       {fmt(row.creante)}
                     </td>
                     {/* Casa & Banci */}
-                    <td className="px-4 py-3 font-bold font-mono text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
+                    <td className="px-4 py-3 font-bold text-emerald-600 dark:text-emerald-400 whitespace-nowrap">
                       {fmt(row.casa_banci || row.disponibil_bancar)}
                     </td>
                     {/* Datorii Totale */}
-                    <td className="px-4 py-3 font-bold font-mono text-amber-500 whitespace-nowrap">
+                    <td className="px-4 py-3 font-bold text-amber-500 whitespace-nowrap">
                       {fmt(row.datorii)}
                     </td>
                   </tr>

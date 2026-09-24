@@ -650,10 +650,10 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
                                   type="button"
                                   onClick={() => onOpenPerson && onOpenPerson(p.nume, cui)}
                                   className="inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] rounded-lg bg-primary/10 hover:bg-primary text-primary hover:text-white font-medium transition-colors cursor-pointer"
-                                  title="Lansează investigația Rețea & Caracatița"
+                                  title="Lansează investigația Rețea Asociați"
                                 >
                                   <Network size={12} />
-                                  <span>Caracatița</span>
+                                  <span>Rețea</span>
                                 </button>
                               </td>
                             </tr>

@@ -954,7 +954,7 @@ const ClientsList = () => {
 
                   {newClient.caen && (
                     <div className="p-3 rounded-2xl bg-gradient-to-r from-blue-50/80 to-indigo-50/50 dark:from-blue-950/30 dark:to-indigo-950/20 border border-blue-200/70 dark:border-blue-800/60 shadow-xs flex items-start gap-2.5">
-                      <div className="px-2 py-1 rounded-lg bg-blue-600 text-white font-mono font-bold text-xs shrink-0 shadow-xs">
+                      <div className="px-2 py-1 rounded-lg bg-blue-600 text-white font-bold text-xs shrink-0 shadow-xs">
                         CAEN {newClient.caen}
                       </div>
                       <div className="flex-1">
@@ -1387,7 +1387,7 @@ const ClientsList = () => {
                     </span>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                    Client: <strong className="text-gray-800 dark:text-gray-200">{analysisModal.client?.name}</strong> • CUI/CNP: <span className="font-mono">{analysisModal.client?.cui_cnp}</span> • {analysisModal.client?.type}
+                    Client: <strong className="text-gray-800 dark:text-gray-200">{analysisModal.client?.name}</strong> • CUI/CNP: <span className="">{analysisModal.client?.cui_cnp}</span> • {analysisModal.client?.type}
                   </p>
                 </div>
               </div>
@@ -1433,7 +1433,7 @@ const ClientsList = () => {
                       { step: 1, title: "Interogare servere ANAF & Registrul Comerțului", desc: "Verificare CIF, plătitor TVA, TVA la încasare, stare inactivitate fiscală." },
                       { step: 2, title: "Scanare Portal Just.ro & Insolvențe (BPI)", desc: "Căutare automată litigii civile, executări silite, dosare de faliment." },
                       { step: 3, title: "Analiză Bilanț Financiar & Indicatori Solvabilitate", desc: "Calcul cifră afaceri, profit net, marjă de profit și datorii restante." },
-                      { step: 4, title: "Cartografiere Rețea Asociați (\"Caracatița\")", desc: "Identificare administratori, asociați și conectare companii înrudite." },
+                      { step: 4, title: "Cartografiere Rețea Asociați", desc: "Identificare administratori, asociați și conectare companii înrudite." },
                       { step: 5, title: "Sinteză Algoritm Neuronal AI & Calcul Matrice Risc", desc: "Ponderare riscuri, clasificare scor de bonitate 0-100 și recomandare." },
                     ].map((item) => {
                       const isDone = analysisModal.currentStep > item.step;
@@ -1749,11 +1749,11 @@ const ClientsList = () => {
                             </div>
                           </div>
 
-                          {/* 4. Caracatița & Rețea */}
+                          {/* 4. Rețea Asociați */}
                           <div className="p-4 bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-2xl space-y-2">
                             <div className="flex items-center justify-between border-b border-gray-200/60 dark:border-gray-700/60 pb-2">
                               <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                                <Activity size={14} className="text-purple-500" /> Rețea "Caracatița"
+                                <Activity size={14} className="text-purple-500" /> Rețea Asociați
                               </span>
                               <span className="text-[10px] font-semibold text-gray-500">
                                 Conexiuni OSINT
