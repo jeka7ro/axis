@@ -2685,6 +2685,8 @@ const ClientDetails = () => {
             rawData={enrichedRawData || rawDataObj}
             clientName={client?.name}
             clientCui={client?.cui_cnp}
+            onOpenCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}
+            onOpenPerson={(personName, ctxCui) => openPersonIntel(personName, ctxCui || client?.cui_cnp)}
           />
         </div>
       )}

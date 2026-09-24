@@ -2,7 +2,7 @@ import React, { useRef, useMemo, useState, useEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
 import { forceCollide } from 'd3-force-3d';
 import { jsPDF } from 'jspdf';
-import { X, Maximize2, Minimize2, ZoomIn, ZoomOut, Target, Shield, FileDown } from 'lucide-react';
+import { X, Maximize2, Minimize2, ZoomIn, ZoomOut, Target, Shield, FileDown, Search, Building2, User, ExternalLink } from 'lucide-react';
 
 const THEMES = {
   dark: {
@@ -1063,12 +1063,15 @@ function drawLinkLabel(link, ctx, isDark = true) {
   ctx.restore();
 }
 
-export default function InvestigationBoard({ rawData, clientName, clientCui, onClose }) {
+export default function InvestigationBoard({ rawData, clientName, clientCui, onClose, onOpenCompany, onOpenPerson }) {
   const graphRef = useRef();
   const containerRef = useRef();
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [hoveredNode, setHoveredNode] = useState(null);
+  const [selectedNode, setSelectedNode] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   // Synchronized theme detection with documentElement & localStorage
@@ -1111,6 +1114,51 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
     () => buildGraph(rawData || {}, clientName || 'Firma', clientCui || ''),
     [rawData, clientName, clientCui]
   );
+
+  // Search filtering in the active graph
+  const filteredNodes = useMemo(() => {
+    if (!searchQuery.trim() || !graphData?.nodes) return [];
+    const q = searchQuery.trim().toLowerCase();
+    const qClean = q.replace(/\D/g, '');
+    return graphData.nodes.filter(n => {
+      const name = (n.fullName || n.label || '').toLowerCase();
+      const cui = (n.cui || '').toString().toLowerCase();
+      return name.includes(q) || (qClean && cui.includes(qClean));
+    }).slice(0, 8);
+  }, [searchQuery, graphData]);
+
+  const handleSelectSearchResult = (node) => {
+    setSelectedNode(node);
+    if (graphRef.current && node.x !== undefined && node.y !== undefined) {
+      graphRef.current.centerAt(node.x, node.y, 500);
+      graphRef.current.zoom(2.2, 500);
+    }
+    setSearchQuery('');
+    setIsSearchFocused(false);
+  };
+
+  const handleDirectSearchSubmit = () => {
+    const q = searchQuery.trim();
+    if (!q) return;
+    const cleanCui = q.replace(/\D/g, '');
+    if (filteredNodes.length > 0) {
+      handleSelectSearchResult(filteredNodes[0]);
+      return;
+    }
+    if (cleanCui && cleanCui.length >= 3) {
+      if (onOpenCompany) {
+        onOpenCompany(cleanCui, q);
+      }
+      setSearchQuery('');
+      setIsSearchFocused(false);
+      return;
+    }
+    if (onOpenCompany) {
+      onOpenCompany(q, q);
+    }
+    setSearchQuery('');
+    setIsSearchFocused(false);
+  };
 
   useEffect(() => {
     const updateSize = () => {
@@ -1654,7 +1702,148 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             CUI: {clientCui}
           </span>
         </div>
-        <div className="flex items-center gap-1.5">
+
+        {/* Interactive Search Bar */}
+        <div className="relative flex-1 max-w-xs sm:max-w-sm md:max-w-md mx-2">
+          <div
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-xl border transition-all ${
+              isDark
+                ? isSearchFocused
+                  ? 'bg-gray-800 border-primary ring-2 ring-primary/20'
+                  : 'bg-gray-800/90 border-gray-700/60'
+                : isSearchFocused
+                ? 'bg-white border-primary ring-2 ring-primary/20 shadow-sm'
+                : 'bg-white/90 border-gray-200 shadow-xs'
+            }`}
+          >
+            <Search size={14} className={isSearchFocused ? 'text-primary' : 'text-gray-400'} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onFocus={() => setIsSearchFocused(true)}
+              onBlur={() => setTimeout(() => setIsSearchFocused(false), 250)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleDirectSearchSubmit();
+                }
+              }}
+              placeholder="Caută CUI sau firmă din rețea / ReCom..."
+              className={`w-full bg-transparent text-xs outline-none ${
+                isDark ? 'text-white placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+              }`}
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="p-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full cursor-pointer"
+              >
+                <X size={12} />
+              </button>
+            )}
+          </div>
+
+          {/* Search Autocomplete Dropdown */}
+          {isSearchFocused && (
+            <div
+              className={`absolute left-0 right-0 top-full mt-1.5 rounded-2xl border shadow-2xl z-50 overflow-hidden divide-y ${
+                isDark
+                  ? 'bg-slate-900/98 border-gray-700 text-white divide-gray-800'
+                  : 'bg-white/98 border-gray-200 text-gray-900 divide-gray-100'
+              }`}
+              style={{ backdropFilter: 'blur(16px)' }}
+            >
+              {filteredNodes.length > 0 ? (
+                <div className="p-1.5 max-h-64 overflow-y-auto space-y-1">
+                  {filteredNodes.map((node) => {
+                    const isComp = node.type === 'company' || node.type === 'related_company';
+                    const isPers = node.type === 'person' || node.type === 'person_historical';
+                    return (
+                      <div
+                        key={node.id}
+                        onMouseDown={() => handleSelectSearchResult(node)}
+                        className={`p-2.5 rounded-xl cursor-pointer flex items-center justify-between gap-2 transition-all ${
+                          isDark ? 'hover:bg-gray-800/80' : 'hover:bg-gray-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span
+                            className="text-[9px] font-black px-1.5 py-0.5 rounded text-white shrink-0"
+                            style={{ background: activeConfig[node.type]?.badge }}
+                          >
+                            {activeConfig[node.type]?.abbr}
+                          </span>
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold truncate">
+                              {node.fullName || node.label}
+                            </div>
+                            <div className="text-[10px] text-gray-400 flex items-center gap-2">
+                              {node.cui && <span>CUI: {node.cui}</span>}
+                              {node.roles && <span>• {node.roles}</span>}
+                              {node.relation && <span>• {node.relation}</span>}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Action quick buttons */}
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isComp && node.cui && onOpenCompany && (
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                onOpenCompany(node.cui, node.fullName || node.label);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+                              title="Deschide dosar complet firmă"
+                            >
+                              <Building2 size={11} />
+                              <span>Dosar</span>
+                            </button>
+                          )}
+                          {isPers && onOpenPerson && (
+                            <button
+                              type="button"
+                              onMouseDown={(e) => {
+                                e.stopPropagation();
+                                onOpenPerson(node.fullName || node.label, clientCui);
+                              }}
+                              className="px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+                              title="Deschide dosar persoană"
+                            >
+                              <User size={11} />
+                              <span>Dosar</span>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : searchQuery.trim() ? (
+                <div className="p-3 text-xs">
+                  <div className="text-gray-400 text-center py-1">
+                    Nu s-au găsit noduri corespondente în graful curent.
+                  </div>
+                  {onOpenCompany && (
+                    <button
+                      type="button"
+                      onMouseDown={handleDirectSearchSubmit}
+                      className="mt-2 w-full p-2.5 rounded-xl bg-primary/10 hover:bg-primary/20 text-primary border border-primary/30 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    >
+                      <Building2 size={14} />
+                      <span>Investighează CUI / Firmă: "{searchQuery.trim()}"</span>
+                      <ExternalLink size={12} />
+                    </button>
+                  )}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={handleZoomIn}
             title="Zoom In"
@@ -1728,117 +1917,166 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
         </div>
       </div>
 
-      {/* Floating Node Details Card on Hover */}
-      {hoveredNode && (
+      {/* Floating Node Details Card on Select / Hover */}
+      {(selectedNode || hoveredNode) && (
         <div className="absolute top-16 right-4 z-20 max-w-sm animate-in fade-in" style={{ animationDuration: '120ms' }}>
           <div
-            className={`p-4 rounded-2xl border shadow-2xl transition-colors ${
+            className={`p-4 rounded-2xl border shadow-2xl transition-colors pointer-events-auto ${
               isDark
                 ? 'bg-slate-900/95 border-gray-700/80 text-white'
                 : 'bg-white/95 border-gray-200 text-gray-900'
             }`}
             style={{ backdropFilter: 'blur(16px)' }}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <span
-                className="text-[10px] font-bold px-2 py-0.5 rounded text-white"
-                style={{ background: activeConfig[hoveredNode.type]?.badge }}
-              >
-                {hoveredNode.type === 'person' && hoveredNode.percent > 0 ? 'ASOC' : activeConfig[hoveredNode.type]?.abbr}
-              </span>
-              <span className={`text-sm font-bold leading-tight ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                {hoveredNode.fullName || hoveredNode.label}
-              </span>
-            </div>
-            <div
-              className="text-[10px] font-bold uppercase tracking-wider mb-2"
-              style={{ color: activeConfig[hoveredNode.type]?.border }}
-            >
-              {hoveredNode.type === 'person'
-                ? (hoveredNode.percent === 100 ? 'ASOCIAT UNIC (100%)' : hoveredNode.percent > 0 ? `ASOCIAT (${hoveredNode.percent}%)` : 'ADMINISTRATOR')
-                : activeConfig[hoveredNode.type]?.label}
-            </div>
-            {hoveredNode.roles && (
-              <div className={`text-xs font-medium ${isDark ? 'text-amber-300' : 'text-amber-800'}`}>
-                Calitate oficială: {hoveredNode.roles}
-              </div>
-            )}
-            {hoveredNode.percent > 0 && (
-              <div className={`text-xs font-bold ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
-                Cota deținută: {hoveredNode.percent}% părți sociale
-              </div>
-            )}
-            {hoveredNode.cui && (
-              <div className={`text-xs mt-0.5 ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                Cod Fiscal (CUI): {hoveredNode.cui}
-              </div>
-            )}
-            {hoveredNode.an_infiintare && (
-              <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                An Înființare: {hoveredNode.an_infiintare}
-              </div>
-            )}
-            {hoveredNode.telefon && (
-              <div className={`text-xs mt-1 font-medium ${isDark ? 'text-cyan-300' : 'text-cyan-700'}`}>
-                Tel. Oficial Contact: {hoveredNode.telefon}
-              </div>
-            )}
-            {hoveredNode.stare && (
-              <div className="text-xs mt-1 flex items-center gap-1.5">
-                <span
-                  className={`w-2 h-2 rounded-full ${
-                    hoveredNode.stare === 'Activ' ? 'bg-emerald-500' : 'bg-rose-500'
-                  }`}
-                />
-                <span
-                  className={
-                    hoveredNode.stare === 'Activ'
-                      ? isDark
-                        ? 'text-emerald-300'
-                        : 'text-emerald-700'
-                      : isDark
-                      ? 'text-rose-300'
-                      : 'text-rose-700'
-                  }
-                >
-                  {hoveredNode.stare}
-                </span>
-              </div>
-            )}
-            {hoveredNode.relation && (
-              <div className={`text-xs mt-1 ${isDark ? 'text-purple-300' : 'text-purple-700'}`}>
-                Conexiune: {hoveredNode.relation}
-              </div>
-            )}
-            {hoveredNode.full && (
-              <div
-                className={`text-[11px] mt-1 border-t pt-1.5 ${
-                  isDark ? 'text-gray-300 border-gray-700/60' : 'text-gray-700 border-gray-200'
-                }`}
-              >
-                {hoveredNode.full}
-              </div>
-            )}
-            {hoveredNode.fullAddr && (
-              <div
-                className={`text-[11px] mt-1 border-t pt-1.5 ${
-                  isDark ? 'text-gray-400 border-gray-700/60' : 'text-gray-600 border-gray-200'
-                }`}
-              >
-                {hoveredNode.fullAddr}
-              </div>
-            )}
-            {hoveredNode.fullText && (
-              <div
-                className={`text-xs mt-1 p-2 rounded-lg border ${
-                  isDark
-                    ? 'bg-red-950/40 text-rose-300 border-red-800/40'
-                    : 'bg-red-50 text-red-800 border-red-200'
-                }`}
-              >
-                {hoveredNode.fullText}
-              </div>
-            )}
+            {(() => {
+              const activeNode = selectedNode || hoveredNode;
+              const isComp = activeNode.type === 'company' || activeNode.type === 'related_company';
+              const isPers = activeNode.type === 'person' || activeNode.type === 'person_historical';
+
+              return (
+                <>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span
+                        className="text-[10px] font-bold px-2 py-0.5 rounded text-white shrink-0"
+                        style={{ background: activeConfig[activeNode.type]?.badge }}
+                      >
+                        {activeNode.type === 'person' && activeNode.percent > 0 ? 'ASOC' : activeConfig[activeNode.type]?.abbr}
+                      </span>
+                      <span className={`text-sm font-bold leading-tight truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>
+                        {activeNode.fullName || activeNode.label}
+                      </span>
+                    </div>
+                    {selectedNode && (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedNode(null)}
+                        className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full cursor-pointer shrink-0"
+                        title="Închide card"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+                  <div
+                    className="text-[10px] font-bold uppercase tracking-wider mb-2"
+                    style={{ color: activeConfig[activeNode.type]?.border }}
+                  >
+                    {activeNode.type === 'person'
+                      ? (activeNode.percent === 100 ? 'ASOCIAT UNIC (100%)' : activeNode.percent > 0 ? `ASOCIAT (${activeNode.percent}%)` : 'ADMINISTRATOR')
+                      : activeConfig[activeNode.type]?.label}
+                  </div>
+                  {activeNode.roles && (
+                    <div className={`text-xs font-medium ${isDark ? 'text-amber-300' : 'text-amber-800'}`}>
+                      Calitate oficială: {activeNode.roles}
+                    </div>
+                  )}
+                  {activeNode.percent > 0 && (
+                    <div className={`text-xs font-bold ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
+                      Cota deținută: {activeNode.percent}% părți sociale
+                    </div>
+                  )}
+                  {activeNode.cui && (
+                    <div className={`text-xs mt-0.5 font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Cod Fiscal (CUI): <span className="font-mono">{activeNode.cui}</span>
+                    </div>
+                  )}
+                  {activeNode.an_infiintare && (
+                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
+                      An Înființare: {activeNode.an_infiintare}
+                    </div>
+                  )}
+                  {activeNode.telefon && (
+                    <div className={`text-xs mt-1 font-medium ${isDark ? 'text-cyan-300' : 'text-cyan-700'}`}>
+                      Tel. Oficial Contact: {activeNode.telefon}
+                    </div>
+                  )}
+                  {activeNode.stare && (
+                    <div className="text-xs mt-1 flex items-center gap-1.5">
+                      <span
+                        className={`w-2 h-2 rounded-full ${
+                          activeNode.stare === 'Activ' ? 'bg-emerald-500' : 'bg-rose-500'
+                        }`}
+                      />
+                      <span
+                        className={
+                          activeNode.stare === 'Activ'
+                            ? isDark
+                              ? 'text-emerald-300'
+                              : 'text-emerald-700'
+                            : isDark
+                            ? 'text-rose-300'
+                            : 'text-rose-700'
+                        }
+                      >
+                        {activeNode.stare}
+                      </span>
+                    </div>
+                  )}
+                  {activeNode.relation && (
+                    <div className={`text-xs mt-1 font-medium ${isDark ? 'text-purple-300' : 'text-purple-700'}`}>
+                      Conexiune: {activeNode.relation}
+                    </div>
+                  )}
+                  {activeNode.full && (
+                    <div
+                      className={`text-[11px] mt-1 border-t pt-1.5 ${
+                        isDark ? 'text-gray-300 border-gray-700/60' : 'text-gray-700 border-gray-200'
+                      }`}
+                    >
+                      {activeNode.full}
+                    </div>
+                  )}
+                  {activeNode.fullAddr && (
+                    <div
+                      className={`text-[11px] mt-1 border-t pt-1.5 ${
+                        isDark ? 'text-gray-400 border-gray-700/60' : 'text-gray-600 border-gray-200'
+                      }`}
+                    >
+                      {activeNode.fullAddr}
+                    </div>
+                  )}
+                  {activeNode.fullText && (
+                    <div
+                      className={`text-xs mt-1 p-2 rounded-lg border ${
+                        isDark
+                          ? 'bg-red-950/40 text-rose-300 border-red-800/40'
+                          : 'bg-red-50 text-red-800 border-red-200'
+                      }`}
+                    >
+                      {activeNode.fullText}
+                    </div>
+                  )}
+
+                  {/* Direct Action Button to Open Dossier */}
+                  {(activeNode.cui || isComp) && onOpenCompany && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenCompany(activeNode.cui, activeNode.fullName || activeNode.label)}
+                      className="mt-3 w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer"
+                      title="Deschide dosar complet ANAF, bilanț, insolvență, asociați și istoric"
+                    >
+                      <Building2 size={15} />
+                      <span>Deschide Dosar &amp; Verifică Firma</span>
+                      <ExternalLink size={13} />
+                    </button>
+                  )}
+
+                  {isPers && onOpenPerson && (
+                    <button
+                      type="button"
+                      onClick={() => onOpenPerson(activeNode.fullName || activeNode.label, clientCui)}
+                      className="mt-3 w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer"
+                      title="Deschide dosar persoană cu companii deținute și dosare pe Portal Just.ro"
+                    >
+                      <User size={15} />
+                      <span>Dosar Persoană (Portal Just &amp; Firme)</span>
+                      <ExternalLink size={13} />
+                    </button>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -1900,11 +2138,13 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
           }}
           onNodeHover={setHoveredNode}
           onNodeClick={(node) => {
+            setSelectedNode(node);
             if (graphRef.current) {
               graphRef.current.centerAt(node.x, node.y, 400);
               graphRef.current.zoom(2.2, 400);
             }
           }}
+          onBackgroundClick={() => setSelectedNode(null)}
           cooldownTicks={160}
           warmupTicks={80}
           d3AlphaDecay={0.02}
