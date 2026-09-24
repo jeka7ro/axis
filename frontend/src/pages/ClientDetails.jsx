@@ -719,6 +719,818 @@ const ClientDetails = () => {
                     </>
                   )}
                 </div>
+              </div>
+
+            {/* Verificare Sediu & Geografie (Google Maps & Cluster Firme) */}
+            {latestEval?.raw_financial_data && JSON.parse(latestEval.raw_financial_data)?.address_check && (() => {
+              const addrCheck = JSON.parse(latestEval.raw_financial_data).address_check;
+              const companies = addrCheck.companies || [];
+              const totalItems = companies.length;
+              const totalPages = Math.max(1, Math.ceil(totalItems / addressPageSize));
+              const paginatedCompanies = companies.slice((addressPage - 1) * addressPageSize, addressPage * addressPageSize);
+
+              // 3-4 unghiuri Street View reale de la adresa respectivă + Satelit
+              const isCdgAddress = Boolean(addrCheck.address && /CHARLES DE GAULLE|PIATA CHARLES|PŢA CHARLES|PTA CHARLES/i.test(addrCheck.address));
+              const isPopaSavu = Boolean(addrCheck.address && /POPA SAVU/i.test(addrCheck.address));
+              const isCerchez = Boolean(addrCheck.address && /MIHAIL CERCHEZ|CERCHEZ/i.test(addrCheck.address));
+
+              const fallbackLat = isCdgAddress ? 44.466012 : isPopaSavu ? 44.465538 : isCerchez ? 44.409828 : 44.4323;
+              const fallbackLon = isCdgAddress ? 26.085136 : isPopaSavu ? 26.085005 : isCerchez ? 26.099498 : 26.1063;
+
+              const coordinates = (addrCheck.coordinates?.lat && addrCheck.coordinates?.lon) 
+                ? addrCheck.coordinates 
+                : { lat: fallbackLat, lon: fallbackLon };
+
+              const googleMapsUrl = addrCheck.google_maps_url || `https://www.google.com/maps/search/?api=1&query=${coordinates.lat},${coordinates.lon}`;
+              const streetViewUrl = addrCheck.street_view_url || `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${coordinates.lat},${coordinates.lon}`;
+
+              const GOOGLE_MAPS_KEY = "AIzaSyC0K3Je-Wg4PQ68BltbA5xtz_zbbp3qPG4";
+
+              const googleStreetViewPhotos = [
+                {
+                  id: "gsv_front",
+                  title: "Google Street View: Fațadă Principală (0° Nord)",
+                  angle: "Nivel Stradal — Fațadă Clădire",
+                  heading: 0,
+                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=0&pitch=0&key=${GOOGLE_MAPS_KEY}`,
+                  type: "street_view"
+                },
+                {
+                  id: "gsv_east",
+                  title: "Google Street View: Unghi Lateral (90° Est)",
+                  angle: "Nivel Stradal — Ax Stradă Est",
+                  heading: 90,
+                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=90&pitch=0&key=${GOOGLE_MAPS_KEY}`,
+                  type: "street_view"
+                },
+                {
+                  id: "gsv_south",
+                  title: "Google Street View: Perspectivă Stradă (180° Sud)",
+                  angle: "Nivel Stradal — Ansamblu Sud",
+                  heading: 180,
+                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=180&pitch=0&key=${GOOGLE_MAPS_KEY}`,
+                  type: "street_view"
+                },
+                {
+                  id: "gsv_west",
+                  title: "Google Street View: Unghi Lateral (270° Vest)",
+                  angle: "Nivel Stradal — Ax Stradă Vest",
+                  heading: 270,
+                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=270&pitch=0&key=${GOOGLE_MAPS_KEY}`,
+                  type: "street_view"
+                }
+              ];
+
+              const photos = (addrCheck.photos && addrCheck.photos.length > 0 && addrCheck.photos.some(p => p.url?.includes('maps.googleapis.com')))
+                ? addrCheck.photos
+                : googleStreetViewPhotos;
+
+              const activePhoto = photos[selectedPhotoIndex] || photos[0];
+
+              const allCurrentPageSelected = paginatedCompanies.length > 0 && paginatedCompanies.every(c => selectedAddressRows.includes(c.cui));
+
+              const handleSelectAll = () => {
+                if (allCurrentPageSelected) {
+                  const currentKeys = paginatedCompanies.map(c => c.cui);
+                  setSelectedAddressRows(prev => prev.filter(k => !currentKeys.includes(k)));
+                } else {
+                  const currentKeys = paginatedCompanies.map(c => c.cui);
+                  setSelectedAddressRows(prev => Array.from(new Set([...prev, ...currentKeys])));
+                }
+              };
+
+              const handleToggleRow = (cui) => {
+                setSelectedAddressRows(prev => 
+                  prev.includes(cui) ? prev.filter(k => k !== cui) : [...prev, cui]
+                );
+              };
+
+              const handleCopySelected = () => {
+                navigator.clipboard.writeText(selectedAddressRows.join(', '));
+                alert(`Au fost copiate ${selectedAddressRows.length} CUI-uri în clipboard!`);
+              };
+
+              return (
+                <>
+                  {/* CARD 1: Verificare Sediu, Imagini Clădire & Hartă Live (Direct Deschise Simultan) */}
+                  <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6 animate-in fade-in">
+                    {/* Card Header - Clean Executive Styling */}
+                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-gray-100 dark:border-gray-700">
+                      <div className="flex items-start gap-3.5">
+                        <div className="w-11 h-11 rounded-2xl bg-gray-900 text-white dark:bg-white dark:text-gray-900 flex items-center justify-center shrink-0 shadow-xs">
+                          <Building2 size={20} />
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2.5 flex-wrap">
+                            <h3 className="text-base font-bold text-gray-900 dark:text-white tracking-tight">
+                              Verificare Sediu Social &amp; Clădire
+                            </h3>
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
+                              <span className={`w-1.5 h-1.5 rounded-full ${addrCheck.cluster_count >= 10 ? 'bg-rose-500 animate-pulse' : addrCheck.cluster_count >= 4 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
+                              {addrCheck.cluster_count >= 10 ? `Sediu Aglomerat (${addrCheck.cluster_count} firme)` : `Sediu Normal (${addrCheck.cluster_count} firme)`}
+                            </span>
+                          </div>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 break-words">
+                            <MapPin size={13} className="shrink-0 text-gray-400" /> {addrCheck.address}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Action Buttons */}
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <a
+                          href={streetViewUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs font-semibold shadow-xs transition-colors"
+                        >
+                          <Eye size={13} /> Street View 360° <ExternalLink size={11} className="opacity-50" />
+                        </a>
+                        <a
+                          href={googleMapsUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 text-xs font-semibold shadow-xs transition-colors"
+                        >
+                          <MapPin size={13} /> Deschide Google Maps <ExternalLink size={11} className="opacity-50" />
+                        </a>
+                      </div>
+                    </div>
+
+                    {/* Attention-Drawing Alert */}
+                    {addrCheck.cluster_count >= 4 && (
+                      <div className="mt-5 p-4 rounded-2xl bg-gray-950 text-white dark:bg-gray-900 dark:border dark:border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                        <div className="flex items-start gap-3.5">
+                          <div className="p-2 rounded-xl bg-white/10 text-white shrink-0 mt-0.5">
+                            <AlertTriangle size={18} className="text-rose-400" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold uppercase tracking-wider text-rose-400">
+                                Avertisment Densitate Sediu
+                              </span>
+                              <span className="text-gray-400 text-xs">•</span>
+                              <span className="text-xs font-medium text-gray-200">
+                                {addrCheck.cluster_count} entități juridice identificate la această adresă
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-300 mt-1 leading-relaxed max-w-3xl">
+                              Densitate ridicată de firme: specifică sediilor virtuale, căsuțelor poștale sau cabinetelor de avocatură cu găzduire de sediu fără spațiu operațional dedicat.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="shrink-0 flex items-center sm:self-center">
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                            Risc Sediu: {addrCheck.risk_level}
+                          </span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* GOOGLE STREET VIEW (STÂNGA) ȘI GOOGLE MAPS (DREAPTA) - DIRECT DESCHISE SIMULTAN */}
+                    <div className="mt-6 pt-5 border-t border-gray-100 dark:border-gray-700">
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
+                        
+                        {/* STÂNGA: GOOGLE STREET VIEW (POZĂ DESCHISĂ MEREU CU 4 UNGHIURI + COMUTARE 360°) */}
+                        <div className="flex flex-col rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4 shadow-xs">
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                                <Camera size={15} />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900 dark:text-white">
+                                  Google Street View
+                                </h4>
+                                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                  Nivel Stradal Real — Perspectivă Clădire &amp; Fațadă
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setStreetView360Mode(prev => !prev)}
+                                className="text-[11px] px-2.5 py-1 rounded-full font-semibold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300 cursor-pointer shadow-2xs"
+                              >
+                                {streetView360Mode ? "Poze Nativ HD" : "Mod 360° Live"}
+                              </button>
+                              <a
+                                href={streetViewUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-primary hover:underline inline-flex items-center gap-1 font-semibold"
+                              >
+                                Street View Full <ExternalLink size={10} />
+                              </a>
+                            </div>
+                          </div>
+
+                          {streetView360Mode ? (
+                            /* Mod Interactiv 360° Iframe */
+                            <div className="relative w-full h-[360px] rounded-xl overflow-hidden border border-gray-300 dark:border-gray-700 bg-gray-950 shadow-sm flex flex-col">
+                              <iframe
+                                title="Google Street View 360"
+                                className="w-full h-full flex-1 border-0"
+                                loading="lazy"
+                                allowFullScreen
+                                src={`https://maps.google.com/maps?layer=c&cbll=${coordinates.lat},${coordinates.lon}&cbp=12,0,0,0,0&output=svembed`}
+                              />
+                              <div className="p-2 bg-white/95 dark:bg-gray-900/95 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs">
+                                <span className="text-[11px] text-gray-600 dark:text-gray-300">
+                                  {coordinates.lat.toFixed(6)}° N, {coordinates.lon.toFixed(6)}° E
+                                </span>
+                                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
+                                  Vedere 360° Activă
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            /* Poza Oficială Google Street View Static API (Direct Deschisă Mereu) */
+                            <div className="flex flex-col">
+                              <div 
+                                onClick={() => setPreviewModalOpen(true)}
+                                className="relative w-full h-[280px] sm:h-[300px] overflow-hidden border border-gray-300 dark:border-gray-700 rounded-xl bg-gray-950 group shadow-sm cursor-zoom-in"
+                              >
+                                <img
+                                  src={activePhoto.url}
+                                  alt={activePhoto.title}
+                                  className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
+                                />
+
+                                {/* Săgeți Navigare între cele 4 Unghiuri Google Street View */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedPhotoIndex((prev) => (prev - 1 + photos.length) % photos.length);
+                                  }}
+                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 w-9 h-9 bg-black/75 hover:bg-black text-white flex items-center justify-center rounded-full border border-white/20 transition-all z-20 shadow-md cursor-pointer"
+                                  title="Unghiul anterior"
+                                >
+                                  <ChevronLeft size={20} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedPhotoIndex((prev) => (prev + 1) % photos.length);
+                                  }}
+                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-9 h-9 bg-black/75 hover:bg-black text-white flex items-center justify-center rounded-full border border-white/20 transition-all z-20 shadow-md cursor-pointer"
+                                  title="Unghiul următor"
+                                >
+                                  <ChevronRight size={20} />
+                                </button>
+
+                                {/* Etichetă Unghi */}
+                                <div className="absolute top-2.5 left-2.5 px-3 py-1 bg-black/85 text-white text-xs rounded-full border border-white/10 shadow-sm z-10">
+                                  {activePhoto.title}
+                                </div>
+
+                                {/* Data Captură Google Street View din Metadata */}
+                                <div className="absolute top-2.5 right-24 px-2.5 py-1 bg-black/85 text-emerald-400 text-xs rounded-full border border-emerald-500/30 shadow-sm z-10 flex items-center gap-1">
+                                  <span>Captură: {addrCheck.streetview_metadata?.date || "2024-05"}</span>
+                                </div>
+
+                                <div className="absolute top-2.5 right-2.5 px-3 py-1 bg-black/85 text-white text-xs font-medium rounded-full border border-white/20 shadow-sm z-10 flex items-center gap-1.5">
+                                  <Maximize2 size={12} />
+                                  <span>Mărește</span>
+                                </div>
+
+                                <div className="absolute bottom-2.5 left-2.5 px-3 py-1 bg-black/85 text-gray-300 text-xs rounded-full border border-white/10 shadow-sm z-10 flex items-center gap-1.5">
+                                  <Compass size={12} className="text-gray-400" />
+                                  {coordinates.lat.toFixed(4)}° N, {coordinates.lon.toFixed(4)}° E
+                                </div>
+                              </div>
+
+                              {/* Thumbnail-uri orizontale cu cele 4 unghiuri Street View */}
+                              <div className="flex items-center gap-2 overflow-x-auto pt-2.5">
+                                {photos.map((p, idx) => {
+                                  const isCurrent = selectedPhotoIndex === idx;
+                                  return (
+                                    <button
+                                      key={p.id || idx}
+                                      type="button"
+                                      onClick={() => setSelectedPhotoIndex(idx)}
+                                      className={`relative rounded-lg overflow-hidden cursor-pointer transition-all shrink-0 ${
+                                        isCurrent
+                                          ? 'p-0.5 border-2 border-emerald-500 ring-2 ring-emerald-500/25 shadow-sm'
+                                          : 'border border-gray-200 dark:border-gray-700 opacity-70 hover:opacity-100 hover:scale-[1.02]'
+                                      }`}
+                                      title={p.title}
+                                    >
+                                      <div className="w-20 h-14 sm:w-24 sm:h-16 rounded-md overflow-hidden bg-gray-900 relative">
+                                        <img
+                                          src={p.url}
+                                          alt={p.title}
+                                          className="w-full h-full object-cover"
+                                        />
+                                        <div className="absolute bottom-0 inset-x-0 bg-black/85 px-1 py-0.5 text-[8px] text-white truncate text-center font-medium">
+                                          {p.title?.split(':')[1]?.trim() || p.title}
+                                        </div>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* DREAPTA: HARTA GOOGLE MAPS (CU PIN PE LOCAȚIE) */}
+                        <div className="flex flex-col rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4 shadow-xs">
+                          {/* Card Header cu Switcher Mod */}
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                                <MapPin size={15} />
+                              </div>
+                              <div>
+                                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900 dark:text-white">
+                                  Harta Google Maps
+                                </h4>
+                                <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                                  Plan Stradal &amp; Localizare Exactă cu Pin
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-2">
+                              {/* Switcher Mod: Google Maps HD vs Leaflet Interactiv */}
+                              <div className="flex items-center bg-gray-200/80 dark:bg-gray-800 p-0.5 rounded-lg border border-gray-200 dark:border-gray-700 text-xs">
+                                <button
+                                  type="button"
+                                  onClick={() => setMapMode('google')}
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                                    mapMode === 'google'
+                                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs'
+                                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
+                                  }`}
+                                >
+                                  Google Maps HD
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setMapMode('leaflet')}
+                                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
+                                    mapMode === 'leaflet'
+                                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs'
+                                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
+                                  }`}
+                                >
+                                  Interactiv
+                                </button>
+                              </div>
+
+                              <a
+                                href={googleMapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-primary hover:underline inline-flex items-center gap-1 font-semibold"
+                                title="Deschide în Google Maps complet"
+                              >
+                                Google Maps <ExternalLink size={10} />
+                              </a>
+                            </div>
+                          </div>
+
+                          {/* Map Display Viewport */}
+                          <div className="relative w-full h-[280px] sm:h-[300px] rounded-xl overflow-hidden border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 shadow-sm flex flex-col group">
+                            {mapMode === 'google' ? (
+                              /* 1. Google Maps Static HD Roadmap */
+                              <div className="relative w-full h-full">
+                                <img
+                                  src={`https://maps.googleapis.com/maps/api/staticmap?center=${coordinates.lat},${coordinates.lon}&zoom=${mapZoom}&size=800x500&scale=2&maptype=roadmap&markers=color:red%7C${coordinates.lat},${coordinates.lon}&key=${GOOGLE_MAPS_KEY}`}
+                                  alt={`Harta Google Maps - ${addrCheck.address}`}
+                                  className="w-full h-full object-cover transition-opacity duration-200"
+                                  loading="eager"
+                                />
+
+                                {/* Coordinates Badge */}
+                                <div className="absolute top-2.5 left-2.5 px-3 py-1 bg-black/80 backdrop-blur-xs text-white text-xs font-sans rounded-full border border-white/10 shadow-sm z-10 flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
+                                  <span>{coordinates.lat.toFixed(4)}° N, {coordinates.lon.toFixed(4)}° E</span>
+                                </div>
+
+                                {/* Zoom Controls Overlay (+ / -) */}
+                                <div className="absolute top-2.5 right-2.5 flex flex-col gap-1 z-10 shadow-md">
+                                  <button
+                                    type="button"
+                                    onClick={() => setMapZoom(prev => Math.min(prev + 1, 20))}
+                                    className="w-8 h-8 bg-white/95 dark:bg-gray-800/95 hover:bg-white dark:hover:bg-gray-800 text-gray-800 dark:text-white rounded-t-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center font-bold text-base transition-colors active:scale-95 cursor-pointer"
+                                    title="Mărește zoom (+)"
+                                  >
+                                    <Plus size={16} />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setMapZoom(prev => Math.max(prev - 1, 12))}
+                                    className="w-8 h-8 bg-white/95 dark:bg-gray-800/95 hover:bg-white dark:hover:bg-gray-800 text-gray-800 dark:text-white rounded-b-lg border-t-0 border border-gray-200 dark:border-gray-700 flex items-center justify-center font-bold text-base transition-colors active:scale-95 cursor-pointer"
+                                    title="Micșorează zoom (-)"
+                                  >
+                                    <Minus size={16} />
+                                  </button>
+                                </div>
+
+                                {/* Zoom Level Pill */}
+                                <div className="absolute bottom-2.5 right-2.5 px-2.5 py-1 bg-black/80 backdrop-blur-xs text-white text-[11px] font-sans rounded-full border border-white/10 shadow-sm z-10">
+                                  Zoom {mapZoom}x
+                                </div>
+                              </div>
+                            ) : (
+                              /* 2. Leaflet Interactive Map */
+                              <div className="w-full h-full relative z-0">
+                                <MapContainer
+                                  center={[coordinates.lat, coordinates.lon]}
+                                  zoom={mapZoom}
+                                  className="w-full h-full z-0"
+                                  scrollWheelZoom={true}
+                                >
+                                  <TileLayer
+                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                                  />
+                                  <Marker 
+                                    position={[coordinates.lat, coordinates.lon]}
+                                    icon={customMapPinIcon || undefined}
+                                  >
+                                    <Popup>
+                                      <div className="text-xs p-1">
+                                        <div className="font-bold text-gray-900 mb-1">{client?.name || 'Sediu Companie'}</div>
+                                        <div className="text-gray-600 mb-1">{addrCheck.address}</div>
+                                        <div className="text-gray-400 text-[10px]">{coordinates.lat.toFixed(6)}, {coordinates.lon.toFixed(6)}</div>
+                                      </div>
+                                    </Popup>
+                                  </Marker>
+                                </MapContainer>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Zoom Presets & Perspectives (Symmetric with Left Card Thumbnails) */}
+                          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700/60">
+                            <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center justify-between">
+                              <span>Perspective Zoom Plan Stradal:</span>
+                              <span className="text-gray-400 font-normal">Nivel detaliu</span>
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                              {[
+                                { zoom: 18, label: 'Detaliu Clădire', sub: 'Zoom 18x' },
+                                { zoom: 16, label: 'Plan Stradal', sub: 'Zoom 16x' },
+                                { zoom: 14, label: 'Vedere Zonă', sub: 'Zoom 14x' },
+                              ].map((preset) => {
+                                const isCurrent = mapZoom === preset.zoom;
+                                return (
+                                  <button
+                                    key={preset.zoom}
+                                    type="button"
+                                    onClick={() => {
+                                      setMapZoom(preset.zoom);
+                                    }}
+                                    className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
+                                      isCurrent
+                                        ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-900/30 ring-1 ring-blue-500/30'
+                                        : 'border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800'
+                                    }`}
+                                  >
+                                    <div className="flex items-center justify-between mb-0.5">
+                                      <span className={`text-xs font-semibold ${isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-gray-800 dark:text-gray-200'}`}>
+                                        {preset.label}
+                                      </span>
+                                      {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>}
+                                    </div>
+                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
+                                      {preset.sub}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          {/* Address Footer Bar */}
+                          <div className="mt-3 p-2.5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs gap-2">
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <MapPin size={13} className="text-rose-500 shrink-0" />
+                              <span className="truncate font-medium text-gray-800 dark:text-gray-200 text-[11px]" title={addrCheck.address}>
+                                {addrCheck.address}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0">
+                              <a
+                                href={`https://www.google.com/maps/dir/?api=1&destination=${coordinates.lat},${coordinates.lon}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="px-2.5 py-1 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 text-[11px] font-semibold rounded-full transition-colors inline-flex items-center gap-1"
+                              >
+                                Rută Google Maps <ExternalLink size={10} />
+                              </a>
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* CARD 2: Firme Înregistrate la Această Clădire / Adresă - RÂND SEPARAT, FULL WIDTH */}
+                  <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6 animate-in fade-in">
+                    {/* Card Header */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-gray-100 dark:border-gray-700">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white flex items-center justify-center shrink-0">
+                          <Building2 size={19} />
+                        </div>
+                        <div>
+                          <h4 className="text-base font-bold text-gray-900 dark:text-white tracking-tight">
+                            Firme Înregistrate la Această Clădire / Adresă
+                          </h4>
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            Verificare cluster firme pe baza evidenței fiscale și a numărului poștal
+                          </p>
+                        </div>
+                      </div>
+                      <span className="self-start sm:self-center text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold border border-gray-200 dark:border-gray-600">
+                        Total: {totalItems} {totalItems === 1 ? 'firmă' : 'firme'}
+                      </span>
+                    </div>
+
+                    {/* Bulk Actions Bar */}
+                    {selectedAddressRows.length > 0 && (
+                      <div className="my-4 p-3 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-between gap-2 animate-in fade-in">
+                        <span className="text-xs font-semibold text-gray-800 dark:text-gray-200 ml-1">
+                          {selectedAddressRows.length} {selectedAddressRows.length === 1 ? 'firmă selectată' : 'firme selectate'}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={handleCopySelected}
+                            className="px-3.5 py-1 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 rounded-full text-xs font-medium transition-colors"
+                          >
+                            Copiază CUI-uri
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSelectedAddressRows([])}
+                            className="px-3.5 py-1 border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-xs font-medium transition-colors"
+                          >
+                            Anulează
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Evaluating Status Banner */}
+                    {evaluatingCui && (
+                      <div className="mb-4 p-3 rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 text-xs text-gray-900 dark:text-white animate-pulse">
+                        <div className="flex items-center gap-2">
+                          <RefreshCw size={14} className="animate-spin text-gray-900 dark:text-white" />
+                          <span className="font-semibold">
+                            Se rulează evaluarea pentru CUI: <span className="underline">{evaluatingCui}</span>...
+                          </span>
+                        </div>
+                        <span className="text-[11px] opacity-70 hidden sm:inline">Interogare ANAF &amp; indicatori financiari</span>
+                      </div>
+                    )}
+
+                    {/* Table Container conforming to all 5 rules */}
+                    <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-2xl bg-white dark:bg-gray-800 shadow-xs mt-4">
+                      <table className="w-full text-left text-xs">
+                        <thead className="text-gray-500 uppercase bg-gray-50/80 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 text-[11px] tracking-wider">
+                          <tr>
+                            {/* Rule 1: Checkbox */}
+                            <th className="px-4 py-3 w-12 text-center">
+                              <input
+                                type="checkbox"
+                                checked={allCurrentPageSelected}
+                                onChange={handleSelectAll}
+                                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                              />
+                            </th>
+                            {/* Rule 2: Nr. Crt. */}
+                            <th className="px-3 py-3 w-14 text-center font-medium">Nr.</th>
+                            <th className="px-4 py-3 font-medium">Denumire Firmă</th>
+                            <th className="px-4 py-3 font-medium">CUI</th>
+                            <th className="px-4 py-3 font-medium text-center">An Înființare</th>
+                            <th className="px-4 py-3 font-medium">Etaj / Detalii Sediu</th>
+                            {/* Rule 4: Action icon header */}
+                            <th className="px-4 py-3 text-center font-medium w-28">Acțiuni</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60 text-gray-700 dark:text-gray-300">
+                          {paginatedCompanies.length > 0 ? (
+                            paginatedCompanies.map((c, idx) => {
+                              const isSelected = selectedAddressRows.includes(c.cui);
+                              const rowNumber = (addressPage - 1) * addressPageSize + idx + 1;
+                              const compName = c.denumire || c.nume || c.name || 'N/A';
+                              const yearEstablished = c.an_infiintare || (c.data_inregistrare ? c.data_inregistrare.slice(0, 4) : '—');
+                              const isEvaluatingThis = evaluatingCui === String(c.cui).replace(/^RO/, '').trim();
+
+                              return (
+                                <tr
+                                  key={c.cui || idx}
+                                  className={`hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors ${isSelected ? 'bg-primary/5 dark:bg-primary/10' : ''}`}
+                                >
+                                  {/* Rule 1: Row Checkbox */}
+                                  <td className="px-4 py-3 text-center">
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      onChange={() => handleToggleRow(c.cui)}
+                                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
+                                    />
+                                  </td>
+                                  {/* Rule 2: Nr. Crt. */}
+                                  <td className="px-3 py-3 text-center text-gray-400 font-sans text-xs">
+                                    {rowNumber}
+                                  </td>
+                                  {/* Rule 3: Denumire Firmă (Clickable to evaluate) */}
+                                  <td className="px-4 py-3 font-sans font-semibold text-gray-900 dark:text-white">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleEvaluateCompany(c.cui, compName)}
+                                      disabled={Boolean(evaluatingCui)}
+                                      className="text-left hover:text-primary dark:hover:text-primary-light hover:underline transition-colors cursor-pointer inline-flex items-center gap-1.5 group font-semibold"
+                                      title="Click pentru a evalua automat această companie"
+                                    >
+                                      <span>{compName}</span>
+                                      {isEvaluatingThis ? (
+                                        <RefreshCw size={12} className="text-primary animate-spin shrink-0" />
+                                      ) : (
+                                        <ChevronRight size={13} className="text-gray-400 group-hover:text-primary transition-transform group-hover:translate-x-0.5 shrink-0 opacity-0 group-hover:opacity-100" />
+                                      )}
+                                    </button>
+                                  </td>
+                                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
+                                    {c.cui}
+                                  </td>
+                                  {/* An Înființare Column */}
+                                  <td className="px-4 py-3 text-center">
+                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
+                                      {yearEstablished}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 font-sans text-gray-500 dark:text-gray-400 text-[11px] max-w-xs truncate">
+                                    {c.adresa || c.detalii || 'La adresa selectată'}
+                                  </td>
+                                  {/* Rule 4: Circular rounded-full action icons */}
+                                  <td className="px-4 py-3 text-center">
+                                    <div className="inline-flex items-center gap-1.5 justify-center">
+                                      <button
+                                        type="button"
+                                        title="Evaluează această companie"
+                                        disabled={Boolean(evaluatingCui)}
+                                        onClick={() => handleEvaluateCompany(c.cui, compName)}
+                                        className={`p-2 border rounded-full transition-colors inline-flex items-center justify-center cursor-pointer ${
+                                          isEvaluatingThis
+                                            ? 'border-gray-900 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs'
+                                            : 'border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
+                                        }`}
+                                      >
+                                        <RefreshCw size={13} className={isEvaluatingThis ? "animate-spin text-gray-900 dark:text-white" : ""} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        title="Deschide locație pe hartă"
+                                        onClick={() => window.open(addrCheck.google_maps_url, '_blank')}
+                                        className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors inline-flex items-center justify-center text-gray-500 hover:text-gray-900 dark:hover:text-white cursor-pointer"
+                                      >
+                                        <MapPin size={13} />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          ) : (
+                            <tr>
+                              <td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-xs font-sans">
+                                Nicio altă firmă identificată la această adresă.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+
+                      {/* Rule 5: Pagination & Footer */}
+                      <div className="px-4 py-3 bg-gray-50/60 dark:bg-gray-900/30 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
+                        <div className="flex items-center gap-2">
+                          <span>Afișează</span>
+                          <select
+                            value={addressPageSize}
+                            onChange={(e) => {
+                              setAddressPageSize(Number(e.target.value));
+                              setAddressPage(1);
+                            }}
+                            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 text-xs focus:ring-primary focus:border-primary cursor-pointer"
+                          >
+                            <option value={5}>5</option>
+                            <option value={10}>10</option>
+                            <option value={20}>20</option>
+                          </select>
+                          <span>/ pagină</span>
+                          <span className="ml-2 font-medium">Total: {totalItems}</span>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span>Pagină {addressPage} din {totalPages}</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={addressPage === 1}
+                              onClick={() => setAddressPage(p => Math.max(1, p - 1))}
+                              className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                            >
+                              <ChevronLeft size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={addressPage >= totalPages}
+                              onClick={() => setAddressPage(p => Math.min(totalPages, p + 1))}
+                              className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                            >
+                              <ChevronRight size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Full-Screen Street View Lightbox Modal - EXACT MATCH TO USER'S IMAGE 2 */}
+                  {previewModalOpen && activePhoto && (
+                    <div 
+                      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in"
+                      onClick={() => setPreviewModalOpen(false)}
+                    >
+                      {/* Circular Close Button (X) at Top Right - Exactly like Image 2 */}
+                      <button
+                        type="button"
+                        onClick={() => setPreviewModalOpen(false)}
+                        className="absolute top-6 right-6 w-11 h-11 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center border border-white/20 transition-all z-50 cursor-pointer shadow-lg hover:scale-105"
+                        title="Închide (Esc)"
+                      >
+                        <X size={22} />
+                      </button>
+
+                      {/* Left Screen Navigation Arrow (<) - Exactly like Image 2 */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPhotoIndex((prev) => (prev - 1 + photos.length) % photos.length);
+                        }}
+                        className="absolute left-4 sm:left-8 top-1/2 -translate-y-1/2 w-14 h-14 flex items-center justify-center text-white/75 hover:text-white transition-all z-50 cursor-pointer hover:scale-125"
+                        title="Unghiul anterior (←)"
+                      >
+                        <ChevronLeft size={44} strokeWidth={2.5} />
+                      </button>
+
+                      {/* Right Screen Navigation Arrow (>) - Exactly like Image 2 */}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedPhotoIndex((prev) => (prev + 1) % photos.length);
+                        }}
+                        className="absolute right-4 sm:right-8 top-1/2 -translate-y-1/2 w-14 h-14 flex items-center justify-center text-white/75 hover:text-white transition-all z-50 cursor-pointer hover:scale-125"
+                        title="Unghiul următor (→)"
+                      >
+                        <ChevronRight size={44} strokeWidth={2.5} />
+                      </button>
+
+                      {/* Centered Large Street View Photo Container */}
+                      <div 
+                        className="relative max-h-[82vh] max-w-[88vw] flex items-center justify-center rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-black"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <img
+                          src={activePhoto.url}
+                          alt={activePhoto.title}
+                          className="max-h-[80vh] w-auto max-w-full object-contain rounded-xl select-none"
+                        />
+
+                        {/* Google Street View Watermarks - Exactly matching Image 2 */}
+                        <div className="absolute bottom-3 left-4 text-white font-bold text-sm tracking-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] select-none pointer-events-none opacity-90">
+                          Google
+                        </div>
+                        <div className="absolute bottom-3 right-4 text-white/80 text-[10px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] select-none pointer-events-none">
+                          © Google
+                        </div>
+                      </div>
+
+                      {/* Floating Pill Badge at Bottom Center - Exactly matching Image 2: "Adresse Exacte (Fațade) (1 / 2)" */}
+                      <div 
+                        className="absolute bottom-6 left-1/2 -translate-x-1/2 px-6 py-2.5 bg-black/80 backdrop-blur-md text-white rounded-full text-xs font-semibold border border-white/15 shadow-xl flex items-center gap-2 z-50 tracking-wide select-none"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <span>Adresse Exacte ({selectedPhotoIndex + 1} / {photos.length}) • Google Street View {addrCheck.streetview_metadata?.date ? `(${addrCheck.streetview_metadata.date})` : ''}</span>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
 
                 {/* 1. Official Financial Performance & Multi-Annual Balance (Screenshot 1) */}
                 {latestEval.raw_financial_data && (() => {
@@ -777,7 +1589,7 @@ const ClientDetails = () => {
 
                 {/* Rețea Asociați OSINT Section */}
                 {latestEval.raw_financial_data && JSON.parse(latestEval.raw_financial_data) && JSON.parse(latestEval.raw_financial_data).personnel && (
-                  <div className="mt-8 border-t border-gray-100 dark:border-gray-800 pt-6">
+                  <div className="w-full bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6 animate-in fade-in">
                     {/* BPI Insolvency Alert if active */}
                     {JSON.parse(latestEval.raw_financial_data).bpi?.has_insolvency && (
                       <div className="p-4 rounded-2xl border border-red-200 dark:border-red-900 bg-red-50/70 dark:bg-red-950/20 flex items-start gap-3.5 shadow-sm mb-6">
@@ -1623,818 +2435,6 @@ const ClientDetails = () => {
                     </div>
                   </div>
                 )}
-              </div>
-
-            {/* Verificare Sediu & Geografie (Google Maps & Cluster Firme) */}
-            {latestEval?.raw_financial_data && JSON.parse(latestEval.raw_financial_data)?.address_check && (() => {
-              const addrCheck = JSON.parse(latestEval.raw_financial_data).address_check;
-              const companies = addrCheck.companies || [];
-              const totalItems = companies.length;
-              const totalPages = Math.max(1, Math.ceil(totalItems / addressPageSize));
-              const paginatedCompanies = companies.slice((addressPage - 1) * addressPageSize, addressPage * addressPageSize);
-
-              // 3-4 unghiuri Street View reale de la adresa respectivă + Satelit
-              const isCdgAddress = Boolean(addrCheck.address && /CHARLES DE GAULLE|PIATA CHARLES|PŢA CHARLES|PTA CHARLES/i.test(addrCheck.address));
-              const isPopaSavu = Boolean(addrCheck.address && /POPA SAVU/i.test(addrCheck.address));
-              const isCerchez = Boolean(addrCheck.address && /MIHAIL CERCHEZ|CERCHEZ/i.test(addrCheck.address));
-
-              const fallbackLat = isCdgAddress ? 44.466012 : isPopaSavu ? 44.465538 : isCerchez ? 44.409828 : 44.4323;
-              const fallbackLon = isCdgAddress ? 26.085136 : isPopaSavu ? 26.085005 : isCerchez ? 26.099498 : 26.1063;
-
-              const coordinates = (addrCheck.coordinates?.lat && addrCheck.coordinates?.lon) 
-                ? addrCheck.coordinates 
-                : { lat: fallbackLat, lon: fallbackLon };
-
-              const googleMapsUrl = addrCheck.google_maps_url || `https://www.google.com/maps/search/?api=1&query=${coordinates.lat},${coordinates.lon}`;
-              const streetViewUrl = addrCheck.street_view_url || `https://www.google.com/maps/@?api=1&map_action=pano&viewpoint=${coordinates.lat},${coordinates.lon}`;
-
-              const GOOGLE_MAPS_KEY = "AIzaSyC0K3Je-Wg4PQ68BltbA5xtz_zbbp3qPG4";
-
-              const googleStreetViewPhotos = [
-                {
-                  id: "gsv_front",
-                  title: "Google Street View: Fațadă Principală (0° Nord)",
-                  angle: "Nivel Stradal — Fațadă Clădire",
-                  heading: 0,
-                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=0&pitch=0&key=${GOOGLE_MAPS_KEY}`,
-                  type: "street_view"
-                },
-                {
-                  id: "gsv_east",
-                  title: "Google Street View: Unghi Lateral (90° Est)",
-                  angle: "Nivel Stradal — Ax Stradă Est",
-                  heading: 90,
-                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=90&pitch=0&key=${GOOGLE_MAPS_KEY}`,
-                  type: "street_view"
-                },
-                {
-                  id: "gsv_south",
-                  title: "Google Street View: Perspectivă Stradă (180° Sud)",
-                  angle: "Nivel Stradal — Ansamblu Sud",
-                  heading: 180,
-                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=180&pitch=0&key=${GOOGLE_MAPS_KEY}`,
-                  type: "street_view"
-                },
-                {
-                  id: "gsv_west",
-                  title: "Google Street View: Unghi Lateral (270° Vest)",
-                  angle: "Nivel Stradal — Ax Stradă Vest",
-                  heading: 270,
-                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=270&pitch=0&key=${GOOGLE_MAPS_KEY}`,
-                  type: "street_view"
-                }
-              ];
-
-              const photos = (addrCheck.photos && addrCheck.photos.length > 0 && addrCheck.photos.some(p => p.url?.includes('maps.googleapis.com')))
-                ? addrCheck.photos
-                : googleStreetViewPhotos;
-
-              const activePhoto = photos[selectedPhotoIndex] || photos[0];
-
-              const allCurrentPageSelected = paginatedCompanies.length > 0 && paginatedCompanies.every(c => selectedAddressRows.includes(c.cui));
-
-              const handleSelectAll = () => {
-                if (allCurrentPageSelected) {
-                  const currentKeys = paginatedCompanies.map(c => c.cui);
-                  setSelectedAddressRows(prev => prev.filter(k => !currentKeys.includes(k)));
-                } else {
-                  const currentKeys = paginatedCompanies.map(c => c.cui);
-                  setSelectedAddressRows(prev => Array.from(new Set([...prev, ...currentKeys])));
-                }
-              };
-
-              const handleToggleRow = (cui) => {
-                setSelectedAddressRows(prev => 
-                  prev.includes(cui) ? prev.filter(k => k !== cui) : [...prev, cui]
-                );
-              };
-
-              const handleCopySelected = () => {
-                navigator.clipboard.writeText(selectedAddressRows.join(', '));
-                alert(`Au fost copiate ${selectedAddressRows.length} CUI-uri în clipboard!`);
-              };
-
-              return (
-                <>
-                  {/* CARD 1: Verificare Sediu, Imagini Clădire & Hartă Live (Direct Deschise Simultan) */}
-                  <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6 animate-in fade-in">
-                    {/* Card Header - Clean Executive Styling */}
-                    <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-5 border-b border-gray-100 dark:border-gray-700">
-                      <div className="flex items-start gap-3.5">
-                        <div className="w-11 h-11 rounded-2xl bg-gray-900 text-white dark:bg-white dark:text-gray-900 flex items-center justify-center shrink-0 shadow-xs">
-                          <Building2 size={20} />
-                        </div>
-                        <div>
-                          <div className="flex items-center gap-2.5 flex-wrap">
-                            <h3 className="text-base font-bold text-gray-900 dark:text-white tracking-tight">
-                              Verificare Sediu Social &amp; Clădire
-                            </h3>
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
-                              <span className={`w-1.5 h-1.5 rounded-full ${addrCheck.cluster_count >= 10 ? 'bg-rose-500 animate-pulse' : addrCheck.cluster_count >= 4 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                              {addrCheck.cluster_count >= 10 ? `Sediu Aglomerat (${addrCheck.cluster_count} firme)` : `Sediu Normal (${addrCheck.cluster_count} firme)`}
-                            </span>
-                          </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 break-words">
-                            <MapPin size={13} className="shrink-0 text-gray-400" /> {addrCheck.address}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Action Buttons */}
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <a
-                          href={streetViewUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 text-xs font-semibold shadow-xs transition-colors"
-                        >
-                          <Eye size={13} /> Street View 360° <ExternalLink size={11} className="opacity-50" />
-                        </a>
-                        <a
-                          href={googleMapsUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-full bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 text-xs font-semibold shadow-xs transition-colors"
-                        >
-                          <MapPin size={13} /> Deschide Google Maps <ExternalLink size={11} className="opacity-50" />
-                        </a>
-                      </div>
-                    </div>
-
-                    {/* Attention-Drawing Alert */}
-                    {addrCheck.cluster_count >= 4 && (
-                      <div className="mt-5 p-4 rounded-2xl bg-gray-950 text-white dark:bg-gray-900 dark:border dark:border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
-                        <div className="flex items-start gap-3.5">
-                          <div className="p-2 rounded-xl bg-white/10 text-white shrink-0 mt-0.5">
-                            <AlertTriangle size={18} className="text-rose-400" />
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-bold uppercase tracking-wider text-rose-400">
-                                Avertisment Densitate Sediu
-                              </span>
-                              <span className="text-gray-400 text-xs">•</span>
-                              <span className="text-xs font-medium text-gray-200">
-                                {addrCheck.cluster_count} entități juridice identificate la această adresă
-                              </span>
-                            </div>
-                            <p className="text-xs text-gray-300 mt-1 leading-relaxed max-w-3xl">
-                              Densitate ridicată de firme: specifică sediilor virtuale, căsuțelor poștale sau cabinetelor de avocatură cu găzduire de sediu fără spațiu operațional dedicat.
-                            </p>
-                          </div>
-                        </div>
-                        <div className="shrink-0 flex items-center sm:self-center">
-                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                            Risc Sediu: {addrCheck.risk_level}
-                          </span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* GOOGLE STREET VIEW (STÂNGA) ȘI GOOGLE MAPS (DREAPTA) - DIRECT DESCHISE SIMULTAN */}
-                    <div className="mt-6 pt-5 border-t border-gray-100 dark:border-gray-700">
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-stretch">
-                        
-                        {/* STÂNGA: GOOGLE STREET VIEW (POZĂ DESCHISĂ MEREU CU 4 UNGHIURI + COMUTARE 360°) */}
-                        <div className="flex flex-col rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4 shadow-xs">
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs">
-                                <Camera size={15} />
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900 dark:text-white">
-                                  Google Street View
-                                </h4>
-                                <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                                  Nivel Stradal Real — Perspectivă Clădire &amp; Fațadă
-                                </p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                type="button"
-                                onClick={() => setStreetView360Mode(prev => !prev)}
-                                className="text-[11px] px-2.5 py-1 rounded-full font-semibold border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors text-gray-700 dark:text-gray-300 cursor-pointer shadow-2xs"
-                              >
-                                {streetView360Mode ? "Poze Nativ HD" : "Mod 360° Live"}
-                              </button>
-                              <a
-                                href={streetViewUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-primary hover:underline inline-flex items-center gap-1 font-semibold"
-                              >
-                                Street View Full <ExternalLink size={10} />
-                              </a>
-                            </div>
-                          </div>
-
-                          {streetView360Mode ? (
-                            /* Mod Interactiv 360° Iframe */
-                            <div className="relative w-full h-[360px] rounded-xl overflow-hidden border border-gray-300 dark:border-gray-700 bg-gray-950 shadow-sm flex flex-col">
-                              <iframe
-                                title="Google Street View 360"
-                                className="w-full h-full flex-1 border-0"
-                                loading="lazy"
-                                allowFullScreen
-                                src={`https://maps.google.com/maps?layer=c&cbll=${coordinates.lat},${coordinates.lon}&cbp=12,0,0,0,0&output=svembed`}
-                              />
-                              <div className="p-2 bg-white/95 dark:bg-gray-900/95 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs">
-                                <span className="text-[11px] text-gray-600 dark:text-gray-300">
-                                  {coordinates.lat.toFixed(6)}° N, {coordinates.lon.toFixed(6)}° E
-                                </span>
-                                <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400">
-                                  Vedere 360° Activă
-                                </span>
-                              </div>
-                            </div>
-                          ) : (
-                            /* Poza Oficială Google Street View Static API (Direct Deschisă Mereu) */
-                            <div className="flex flex-col">
-                              <div 
-                                onClick={() => setPreviewModalOpen(true)}
-                                className="relative w-full h-[280px] sm:h-[300px] overflow-hidden border border-gray-300 dark:border-gray-700 rounded-xl bg-gray-950 group shadow-sm cursor-zoom-in"
-                              >
-                                <img
-                                  src={activePhoto.url}
-                                  alt={activePhoto.title}
-                                  className="w-full h-full object-cover group-hover:scale-[1.02] transition-transform duration-300"
-                                />
-
-                                {/* Săgeți Navigare între cele 4 Unghiuri Google Street View */}
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedPhotoIndex((prev) => (prev - 1 + photos.length) % photos.length);
-                                  }}
-                                  className="absolute left-2.5 top-1/2 -translate-y-1/2 w-9 h-9 bg-black/75 hover:bg-black text-white flex items-center justify-center rounded-full border border-white/20 transition-all z-20 shadow-md cursor-pointer"
-                                  title="Unghiul anterior"
-                                >
-                                  <ChevronLeft size={20} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedPhotoIndex((prev) => (prev + 1) % photos.length);
-                                  }}
-                                  className="absolute right-2.5 top-1/2 -translate-y-1/2 w-9 h-9 bg-black/75 hover:bg-black text-white flex items-center justify-center rounded-full border border-white/20 transition-all z-20 shadow-md cursor-pointer"
-                                  title="Unghiul următor"
-                                >
-                                  <ChevronRight size={20} />
-                                </button>
-
-                                {/* Etichetă Unghi */}
-                                <div className="absolute top-2.5 left-2.5 px-3 py-1 bg-black/85 text-white text-xs rounded-full border border-white/10 shadow-sm z-10">
-                                  {activePhoto.title}
-                                </div>
-
-                                {/* Data Captură Google Street View din Metadata */}
-                                <div className="absolute top-2.5 right-24 px-2.5 py-1 bg-black/85 text-emerald-400 text-xs rounded-full border border-emerald-500/30 shadow-sm z-10 flex items-center gap-1">
-                                  <span>Captură: {addrCheck.streetview_metadata?.date || "2024-05"}</span>
-                                </div>
-
-                                <div className="absolute top-2.5 right-2.5 px-3 py-1 bg-black/85 text-white text-xs font-medium rounded-full border border-white/20 shadow-sm z-10 flex items-center gap-1.5">
-                                  <Maximize2 size={12} />
-                                  <span>Mărește</span>
-                                </div>
-
-                                <div className="absolute bottom-2.5 left-2.5 px-3 py-1 bg-black/85 text-gray-300 text-xs rounded-full border border-white/10 shadow-sm z-10 flex items-center gap-1.5">
-                                  <Compass size={12} className="text-gray-400" />
-                                  {coordinates.lat.toFixed(4)}° N, {coordinates.lon.toFixed(4)}° E
-                                </div>
-                              </div>
-
-                              {/* Thumbnail-uri orizontale cu cele 4 unghiuri Street View */}
-                              <div className="flex items-center gap-2 overflow-x-auto pt-2.5">
-                                {photos.map((p, idx) => {
-                                  const isCurrent = selectedPhotoIndex === idx;
-                                  return (
-                                    <button
-                                      key={p.id || idx}
-                                      type="button"
-                                      onClick={() => setSelectedPhotoIndex(idx)}
-                                      className={`relative rounded-lg overflow-hidden cursor-pointer transition-all shrink-0 ${
-                                        isCurrent
-                                          ? 'p-0.5 border-2 border-emerald-500 ring-2 ring-emerald-500/25 shadow-sm'
-                                          : 'border border-gray-200 dark:border-gray-700 opacity-70 hover:opacity-100 hover:scale-[1.02]'
-                                      }`}
-                                      title={p.title}
-                                    >
-                                      <div className="w-20 h-14 sm:w-24 sm:h-16 rounded-md overflow-hidden bg-gray-900 relative">
-                                        <img
-                                          src={p.url}
-                                          alt={p.title}
-                                          className="w-full h-full object-cover"
-                                        />
-                                        <div className="absolute bottom-0 inset-x-0 bg-black/85 px-1 py-0.5 text-[8px] text-white truncate text-center font-medium">
-                                          {p.title?.split(':')[1]?.trim() || p.title}
-                                        </div>
-                                      </div>
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* DREAPTA: HARTA GOOGLE MAPS (CU PIN PE LOCAȚIE) */}
-                        <div className="flex flex-col rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50 p-4 shadow-xs">
-                          {/* Card Header cu Switcher Mod */}
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <div className="w-7 h-7 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
-                                <MapPin size={15} />
-                              </div>
-                              <div>
-                                <h4 className="text-xs font-bold uppercase tracking-wider text-gray-900 dark:text-white">
-                                  Harta Google Maps
-                                </h4>
-                                <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                                  Plan Stradal &amp; Localizare Exactă cu Pin
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-2">
-                              {/* Switcher Mod: Google Maps HD vs Leaflet Interactiv */}
-                              <div className="flex items-center bg-gray-200/80 dark:bg-gray-800 p-0.5 rounded-lg border border-gray-200 dark:border-gray-700 text-xs">
-                                <button
-                                  type="button"
-                                  onClick={() => setMapMode('google')}
-                                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                                    mapMode === 'google'
-                                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs'
-                                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
-                                  }`}
-                                >
-                                  Google Maps HD
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setMapMode('leaflet')}
-                                  className={`px-2.5 py-1 rounded-md text-[11px] font-semibold transition-all cursor-pointer ${
-                                    mapMode === 'leaflet'
-                                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs'
-                                      : 'text-gray-500 hover:text-gray-900 dark:hover:text-gray-200'
-                                  }`}
-                                >
-                                  Interactiv
-                                </button>
-                              </div>
-
-                              <a
-                                href={googleMapsUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-xs text-primary hover:underline inline-flex items-center gap-1 font-semibold"
-                                title="Deschide în Google Maps complet"
-                              >
-                                Google Maps <ExternalLink size={10} />
-                              </a>
-                            </div>
-                          </div>
-
-                          {/* Map Display Viewport */}
-                          <div className="relative w-full h-[280px] sm:h-[300px] rounded-xl overflow-hidden border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900 shadow-sm flex flex-col group">
-                            {mapMode === 'google' ? (
-                              /* 1. Google Maps Static HD Roadmap */
-                              <div className="relative w-full h-full">
-                                <img
-                                  src={`https://maps.googleapis.com/maps/api/staticmap?center=${coordinates.lat},${coordinates.lon}&zoom=${mapZoom}&size=800x500&scale=2&maptype=roadmap&markers=color:red%7C${coordinates.lat},${coordinates.lon}&key=${GOOGLE_MAPS_KEY}`}
-                                  alt={`Harta Google Maps - ${addrCheck.address}`}
-                                  className="w-full h-full object-cover transition-opacity duration-200"
-                                  loading="eager"
-                                />
-
-                                {/* Coordinates Badge */}
-                                <div className="absolute top-2.5 left-2.5 px-3 py-1 bg-black/80 backdrop-blur-xs text-white text-xs font-sans rounded-full border border-white/10 shadow-sm z-10 flex items-center gap-1.5">
-                                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></span>
-                                  <span>{coordinates.lat.toFixed(4)}° N, {coordinates.lon.toFixed(4)}° E</span>
-                                </div>
-
-                                {/* Zoom Controls Overlay (+ / -) */}
-                                <div className="absolute top-2.5 right-2.5 flex flex-col gap-1 z-10 shadow-md">
-                                  <button
-                                    type="button"
-                                    onClick={() => setMapZoom(prev => Math.min(prev + 1, 20))}
-                                    className="w-8 h-8 bg-white/95 dark:bg-gray-800/95 hover:bg-white dark:hover:bg-gray-800 text-gray-800 dark:text-white rounded-t-lg border border-gray-200 dark:border-gray-700 flex items-center justify-center font-bold text-base transition-colors active:scale-95 cursor-pointer"
-                                    title="Mărește zoom (+)"
-                                  >
-                                    <Plus size={16} />
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => setMapZoom(prev => Math.max(prev - 1, 12))}
-                                    className="w-8 h-8 bg-white/95 dark:bg-gray-800/95 hover:bg-white dark:hover:bg-gray-800 text-gray-800 dark:text-white rounded-b-lg border-t-0 border border-gray-200 dark:border-gray-700 flex items-center justify-center font-bold text-base transition-colors active:scale-95 cursor-pointer"
-                                    title="Micșorează zoom (-)"
-                                  >
-                                    <Minus size={16} />
-                                  </button>
-                                </div>
-
-                                {/* Zoom Level Pill */}
-                                <div className="absolute bottom-2.5 right-2.5 px-2.5 py-1 bg-black/80 backdrop-blur-xs text-white text-[11px] font-sans rounded-full border border-white/10 shadow-sm z-10">
-                                  Zoom {mapZoom}x
-                                </div>
-                              </div>
-                            ) : (
-                              /* 2. Leaflet Interactive Map */
-                              <div className="w-full h-full relative z-0">
-                                <MapContainer
-                                  center={[coordinates.lat, coordinates.lon]}
-                                  zoom={mapZoom}
-                                  className="w-full h-full z-0"
-                                  scrollWheelZoom={true}
-                                >
-                                  <TileLayer
-                                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
-                                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                                  />
-                                  <Marker 
-                                    position={[coordinates.lat, coordinates.lon]}
-                                    icon={customMapPinIcon || undefined}
-                                  >
-                                    <Popup>
-                                      <div className="text-xs p-1">
-                                        <div className="font-bold text-gray-900 mb-1">{client?.name || 'Sediu Companie'}</div>
-                                        <div className="text-gray-600 mb-1">{addrCheck.address}</div>
-                                        <div className="text-gray-400 text-[10px]">{coordinates.lat.toFixed(6)}, {coordinates.lon.toFixed(6)}</div>
-                                      </div>
-                                    </Popup>
-                                  </Marker>
-                                </MapContainer>
-                              </div>
-                            )}
-                          </div>
-
-                          {/* Zoom Presets & Perspectives (Symmetric with Left Card Thumbnails) */}
-                          <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700/60">
-                            <div className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 flex items-center justify-between">
-                              <span>Perspective Zoom Plan Stradal:</span>
-                              <span className="text-gray-400 font-normal">Nivel detaliu</span>
-                            </div>
-                            <div className="grid grid-cols-3 gap-2">
-                              {[
-                                { zoom: 18, label: 'Detaliu Clădire', sub: 'Zoom 18x' },
-                                { zoom: 16, label: 'Plan Stradal', sub: 'Zoom 16x' },
-                                { zoom: 14, label: 'Vedere Zonă', sub: 'Zoom 14x' },
-                              ].map((preset) => {
-                                const isCurrent = mapZoom === preset.zoom;
-                                return (
-                                  <button
-                                    key={preset.zoom}
-                                    type="button"
-                                    onClick={() => {
-                                      setMapZoom(preset.zoom);
-                                    }}
-                                    className={`p-2 rounded-xl border text-left transition-all cursor-pointer ${
-                                      isCurrent
-                                        ? 'border-blue-600 bg-blue-50/60 dark:bg-blue-900/30 ring-1 ring-blue-500/30'
-                                        : 'border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800'
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between mb-0.5">
-                                      <span className={`text-xs font-semibold ${isCurrent ? 'text-blue-600 dark:text-blue-400' : 'text-gray-800 dark:text-gray-200'}`}>
-                                        {preset.label}
-                                      </span>
-                                      {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-blue-600"></span>}
-                                    </div>
-                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                                      {preset.sub}
-                                    </div>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-
-                          {/* Address Footer Bar */}
-                          <div className="mt-3 p-2.5 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs gap-2">
-                            <div className="flex items-center gap-1.5 min-w-0">
-                              <MapPin size={13} className="text-rose-500 shrink-0" />
-                              <span className="truncate font-medium text-gray-800 dark:text-gray-200 text-[11px]" title={addrCheck.address}>
-                                {addrCheck.address}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0">
-                              <a
-                                href={`https://www.google.com/maps/dir/?api=1&destination=${coordinates.lat},${coordinates.lon}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="px-2.5 py-1 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 text-[11px] font-semibold rounded-full transition-colors inline-flex items-center gap-1"
-                              >
-                                Rută Google Maps <ExternalLink size={10} />
-                              </a>
-                            </div>
-                          </div>
-                        </div>
-
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* CARD 2: Firme Înregistrate la Această Clădire / Adresă - RÂND SEPARAT, FULL WIDTH */}
-                  <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6 animate-in fade-in">
-                    {/* Card Header */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-5 border-b border-gray-100 dark:border-gray-700">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-2xl bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white flex items-center justify-center shrink-0">
-                          <Building2 size={19} />
-                        </div>
-                        <div>
-                          <h4 className="text-base font-bold text-gray-900 dark:text-white tracking-tight">
-                            Firme Înregistrate la Această Clădire / Adresă
-                          </h4>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            Verificare cluster firme pe baza evidenței fiscale și a numărului poștal
-                          </p>
-                        </div>
-                      </div>
-                      <span className="self-start sm:self-center text-xs px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 font-semibold border border-gray-200 dark:border-gray-600">
-                        Total: {totalItems} {totalItems === 1 ? 'firmă' : 'firme'}
-                      </span>
-                    </div>
-
-                    {/* Bulk Actions Bar */}
-                    {selectedAddressRows.length > 0 && (
-                      <div className="my-4 p-3 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-between gap-2 animate-in fade-in">
-                        <span className="text-xs font-semibold text-gray-800 dark:text-gray-200 ml-1">
-                          {selectedAddressRows.length} {selectedAddressRows.length === 1 ? 'firmă selectată' : 'firme selectate'}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={handleCopySelected}
-                            className="px-3.5 py-1 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 rounded-full text-xs font-medium transition-colors"
-                          >
-                            Copiază CUI-uri
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSelectedAddressRows([])}
-                            className="px-3.5 py-1 border border-gray-300 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-full text-xs font-medium transition-colors"
-                          >
-                            Anulează
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Evaluating Status Banner */}
-                    {evaluatingCui && (
-                      <div className="mb-4 p-3 rounded-2xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 text-xs text-gray-900 dark:text-white animate-pulse">
-                        <div className="flex items-center gap-2">
-                          <RefreshCw size={14} className="animate-spin text-gray-900 dark:text-white" />
-                          <span className="font-semibold">
-                            Se rulează evaluarea pentru CUI: <span className="underline">{evaluatingCui}</span>...
-                          </span>
-                        </div>
-                        <span className="text-[11px] opacity-70 hidden sm:inline">Interogare ANAF &amp; indicatori financiari</span>
-                      </div>
-                    )}
-
-                    {/* Table Container conforming to all 5 rules */}
-                    <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-2xl bg-white dark:bg-gray-800 shadow-xs mt-4">
-                      <table className="w-full text-left text-xs">
-                        <thead className="text-gray-500 uppercase bg-gray-50/80 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700 text-[11px] tracking-wider">
-                          <tr>
-                            {/* Rule 1: Checkbox */}
-                            <th className="px-4 py-3 w-12 text-center">
-                              <input
-                                type="checkbox"
-                                checked={allCurrentPageSelected}
-                                onChange={handleSelectAll}
-                                className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
-                              />
-                            </th>
-                            {/* Rule 2: Nr. Crt. */}
-                            <th className="px-3 py-3 w-14 text-center font-medium">Nr.</th>
-                            <th className="px-4 py-3 font-medium">Denumire Firmă</th>
-                            <th className="px-4 py-3 font-medium">CUI</th>
-                            <th className="px-4 py-3 font-medium text-center">An Înființare</th>
-                            <th className="px-4 py-3 font-medium">Etaj / Detalii Sediu</th>
-                            {/* Rule 4: Action icon header */}
-                            <th className="px-4 py-3 text-center font-medium w-28">Acțiuni</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60 text-gray-700 dark:text-gray-300">
-                          {paginatedCompanies.length > 0 ? (
-                            paginatedCompanies.map((c, idx) => {
-                              const isSelected = selectedAddressRows.includes(c.cui);
-                              const rowNumber = (addressPage - 1) * addressPageSize + idx + 1;
-                              const compName = c.denumire || c.nume || c.name || 'N/A';
-                              const yearEstablished = c.an_infiintare || (c.data_inregistrare ? c.data_inregistrare.slice(0, 4) : '—');
-                              const isEvaluatingThis = evaluatingCui === String(c.cui).replace(/^RO/, '').trim();
-
-                              return (
-                                <tr
-                                  key={c.cui || idx}
-                                  className={`hover:bg-gray-50/80 dark:hover:bg-gray-700/40 transition-colors ${isSelected ? 'bg-primary/5 dark:bg-primary/10' : ''}`}
-                                >
-                                  {/* Rule 1: Row Checkbox */}
-                                  <td className="px-4 py-3 text-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={isSelected}
-                                      onChange={() => handleToggleRow(c.cui)}
-                                      className="w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary cursor-pointer"
-                                    />
-                                  </td>
-                                  {/* Rule 2: Nr. Crt. */}
-                                  <td className="px-3 py-3 text-center text-gray-400 font-sans text-xs">
-                                    {rowNumber}
-                                  </td>
-                                  {/* Rule 3: Denumire Firmă (Clickable to evaluate) */}
-                                  <td className="px-4 py-3 font-sans font-semibold text-gray-900 dark:text-white">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleEvaluateCompany(c.cui, compName)}
-                                      disabled={Boolean(evaluatingCui)}
-                                      className="text-left hover:text-primary dark:hover:text-primary-light hover:underline transition-colors cursor-pointer inline-flex items-center gap-1.5 group font-semibold"
-                                      title="Click pentru a evalua automat această companie"
-                                    >
-                                      <span>{compName}</span>
-                                      {isEvaluatingThis ? (
-                                        <RefreshCw size={12} className="text-primary animate-spin shrink-0" />
-                                      ) : (
-                                        <ChevronRight size={13} className="text-gray-400 group-hover:text-primary transition-transform group-hover:translate-x-0.5 shrink-0 opacity-0 group-hover:opacity-100" />
-                                      )}
-                                    </button>
-                                  </td>
-                                  <td className="px-4 py-3 text-gray-600 dark:text-gray-300">
-                                    {c.cui}
-                                  </td>
-                                  {/* An Înființare Column */}
-                                  <td className="px-4 py-3 text-center">
-                                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
-                                      {yearEstablished}
-                                    </span>
-                                  </td>
-                                  <td className="px-4 py-3 font-sans text-gray-500 dark:text-gray-400 text-[11px] max-w-xs truncate">
-                                    {c.adresa || c.detalii || 'La adresa selectată'}
-                                  </td>
-                                  {/* Rule 4: Circular rounded-full action icons */}
-                                  <td className="px-4 py-3 text-center">
-                                    <div className="inline-flex items-center gap-1.5 justify-center">
-                                      <button
-                                        type="button"
-                                        title="Evaluează această companie"
-                                        disabled={Boolean(evaluatingCui)}
-                                        onClick={() => handleEvaluateCompany(c.cui, compName)}
-                                        className={`p-2 border rounded-full transition-colors inline-flex items-center justify-center cursor-pointer ${
-                                          isEvaluatingThis
-                                            ? 'border-gray-900 bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white shadow-xs'
-                                            : 'border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'
-                                        }`}
-                                      >
-                                        <RefreshCw size={13} className={isEvaluatingThis ? "animate-spin text-gray-900 dark:text-white" : ""} />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        title="Deschide locație pe hartă"
-                                        onClick={() => window.open(addrCheck.google_maps_url, '_blank')}
-                                        className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors inline-flex items-center justify-center text-gray-500 hover:text-gray-900 dark:hover:text-white cursor-pointer"
-                                      >
-                                        <MapPin size={13} />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          ) : (
-                            <tr>
-                              <td colSpan={7} className="px-4 py-8 text-center text-gray-400 text-xs font-sans">
-                                Nicio altă firmă identificată la această adresă.
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-
-                      {/* Rule 5: Pagination & Footer */}
-                      <div className="px-4 py-3 bg-gray-50/60 dark:bg-gray-900/30 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500">
-                        <div className="flex items-center gap-2">
-                          <span>Afișează</span>
-                          <select
-                            value={addressPageSize}
-                            onChange={(e) => {
-                              setAddressPageSize(Number(e.target.value));
-                              setAddressPage(1);
-                            }}
-                            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1 text-xs focus:ring-primary focus:border-primary cursor-pointer"
-                          >
-                            <option value={5}>5</option>
-                            <option value={10}>10</option>
-                            <option value={20}>20</option>
-                          </select>
-                          <span>/ pagină</span>
-                          <span className="ml-2 font-medium">Total: {totalItems}</span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span>Pagină {addressPage} din {totalPages}</span>
-                          <div className="flex items-center gap-1">
-                            <button
-                              type="button"
-                              disabled={addressPage === 1}
-                              onClick={() => setAddressPage(p => Math.max(1, p - 1))}
-                              className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                            >
-                              <ChevronLeft size={13} />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={addressPage >= totalPages}
-                              onClick={() => setAddressPage(p => Math.min(totalPages, p + 1))}
-                              className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer"
-                            >
-                              <ChevronRight size={13} />
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Full-Screen Street View Lightbox Modal - EXACT MATCH TO USER'S IMAGE 2 */}
-                  {previewModalOpen && activePhoto && (
-                    <div 
-                      className="fixed inset-0 z-50 bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in"
-                      onClick={() => setPreviewModalOpen(false)}
-                    >
-                      {/* Circular Close Button (X) at Top Right - Exactly like Image 2 */}
-                      <button
-                        type="button"
-                        onClick={() => setPreviewModalOpen(false)}
-                        className="absolute top-6 right-6 w-11 h-11 rounded-full bg-black/60 hover:bg-black text-white flex items-center justify-center border border-white/20 transition-all z-50 cursor-pointer shadow-lg hover:scale-105"
-                        title="Închide (Esc)"
-                      >
-                        <X size={22} />
-                      </button>
-
-                      {/* Left Screen Navigation Arrow (<) - Exactly like Image 2 */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPhotoIndex((prev) => (prev - 1 + photos.length) % photos.length);
-                        }}
-                        className="absolute left-4 sm:left-8 top-1/2 -translate-y-1/2 w-14 h-14 flex items-center justify-center text-white/75 hover:text-white transition-all z-50 cursor-pointer hover:scale-125"
-                        title="Unghiul anterior (←)"
-                      >
-                        <ChevronLeft size={44} strokeWidth={2.5} />
-                      </button>
-
-                      {/* Right Screen Navigation Arrow (>) - Exactly like Image 2 */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedPhotoIndex((prev) => (prev + 1) % photos.length);
-                        }}
-                        className="absolute right-4 sm:right-8 top-1/2 -translate-y-1/2 w-14 h-14 flex items-center justify-center text-white/75 hover:text-white transition-all z-50 cursor-pointer hover:scale-125"
-                        title="Unghiul următor (→)"
-                      >
-                        <ChevronRight size={44} strokeWidth={2.5} />
-                      </button>
-
-                      {/* Centered Large Street View Photo Container */}
-                      <div 
-                        className="relative max-h-[82vh] max-w-[88vw] flex items-center justify-center rounded-2xl overflow-hidden shadow-2xl border border-white/10 bg-black"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <img
-                          src={activePhoto.url}
-                          alt={activePhoto.title}
-                          className="max-h-[80vh] w-auto max-w-full object-contain rounded-xl select-none"
-                        />
-
-                        {/* Google Street View Watermarks - Exactly matching Image 2 */}
-                        <div className="absolute bottom-3 left-4 text-white font-bold text-sm tracking-tight drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] select-none pointer-events-none opacity-90">
-                          Google
-                        </div>
-                        <div className="absolute bottom-3 right-4 text-white/80 text-[10px] drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] select-none pointer-events-none">
-                          © Google
-                        </div>
-                      </div>
-
-                      {/* Floating Pill Badge at Bottom Center - Exactly matching Image 2: "Adresse Exacte (Fațade) (1 / 2)" */}
-                      <div 
-                        className="absolute bottom-6 left-1/2 -translate-x-1/2 px-6 py-2.5 bg-black/80 backdrop-blur-md text-white rounded-full text-xs font-semibold border border-white/15 shadow-xl flex items-center gap-2 z-50 tracking-wide select-none"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <span>Adresse Exacte ({selectedPhotoIndex + 1} / {photos.length}) • Google Street View {addrCheck.streetview_metadata?.date ? `(${addrCheck.streetview_metadata.date})` : ''}</span>
-                      </div>
-                    </div>
-                  )}
-                </>
-              );
-            })()}
             </>
           )}
         </>
