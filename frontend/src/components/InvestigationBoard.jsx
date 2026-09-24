@@ -4,7 +4,7 @@ import { forceCollide } from 'd3-force-3d';
 import { jsPDF } from 'jspdf';
 import { 
   X, Maximize2, Minimize2, ZoomIn, ZoomOut, Target, Shield, FileDown, 
-  Search, Building2, User, ExternalLink, GitBranch, Plus, Loader2 
+  Search, Building2, User, ExternalLink, GitBranch, Plus, Loader2, RotateCcw 
 } from 'lucide-react';
 import { fetchCompanyFullIntel, fetchPersonFullIntel } from '../services/api';
 
@@ -1486,6 +1486,20 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
     }
   };
 
+  const handleResetLayout = () => {
+    if (graphData && graphData.nodes) {
+      graphData.nodes.forEach((node) => {
+        node.fx = undefined;
+        node.fy = undefined;
+      });
+      if (graphRef.current) {
+        graphRef.current.d3ReheatSimulation();
+        graphRef.current.centerAt(0, 0, 400);
+        graphRef.current.zoomToFit(500, 85);
+      }
+    }
+  };
+
   const handleExportPDF = async () => {
     if (!containerRef.current || isExporting) return;
     setIsExporting(true);
@@ -2166,6 +2180,17 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             <Target size={13} />
           </button>
           <button
+            onClick={handleResetLayout}
+            title="Deblochează și rearanjează automat nodurile"
+            className={`p-2 rounded-lg transition-all border cursor-pointer ${
+              isDark
+                ? 'bg-gray-800/90 hover:bg-gray-700 text-gray-300 hover:text-white border-gray-700/60'
+                : 'bg-white hover:bg-gray-100 text-gray-700 hover:text-gray-900 border-gray-200 shadow-xs'
+            }`}
+          >
+            <RotateCcw size={13} />
+          </button>
+          <button
             onClick={handleExportPDF}
             disabled={isExporting}
             title="Exportă Panoul de Investigație în format PDF"
@@ -2457,6 +2482,21 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             if (graphRef.current) {
               graphRef.current.centerAt(node.x, node.y, 400);
               graphRef.current.zoom(2.2, 400);
+            }
+          }}
+          onNodeDrag={(node) => {
+            node.fx = node.x;
+            node.fy = node.y;
+          }}
+          onNodeDragEnd={(node) => {
+            node.fx = node.x;
+            node.fy = node.y;
+          }}
+          onNodeRightClick={(node) => {
+            node.fx = undefined;
+            node.fy = undefined;
+            if (graphRef.current) {
+              graphRef.current.d3ReheatSimulation();
             }
           }}
           onBackgroundClick={() => setSelectedNode(null)}
