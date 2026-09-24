@@ -43,6 +43,21 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
     return () => { isMounted = false; };
   }, [isOpen, cui]);
 
+  const handleRefreshApi = () => {
+    if (!cui || loading) return;
+    setLoading(true);
+    fetchCompanyFullIntel(cui, initialName || '', true)
+      .then(res => {
+        setData(res);
+      })
+      .catch(err => {
+        console.error('Eroare reîmprospătare API:', err);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  };
+
   if (!isOpen) return null;
 
   const general = data?.general || {};
@@ -100,6 +115,26 @@ const CompanyIntelModal = ({ isOpen, onClose, cui, initialName, onEvaluate, onOp
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {data?.cached ? (
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-800 shadow-2xs">
+                Baza Axis (0 credite)
+              </span>
+            ) : data && !loading && (
+              <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-400 dark:border-blue-800 shadow-2xs">
+                Salvat în Baza Axis
+              </span>
+            )}
+
+            <button
+              type="button"
+              onClick={handleRefreshApi}
+              disabled={loading}
+              title="Re-interoghează sursele externe API (consumă 1 credit)"
+              className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors cursor-pointer"
+            >
+              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+            </button>
+
             {data?.existing_client_id ? (
               <Link
                 to={`/clients/${data.existing_client_id}`}

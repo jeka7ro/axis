@@ -187,11 +187,12 @@ async def get_portal_just_cases(query: str, limit: int = 25):
     return await scraper.search_court_cases(query.strip(), limit=limit)
 
 @router.get("/company-full-intel")
-async def get_company_full_intel(cui: str, name: str = "", db: Session = Depends(get_db)):
+async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool = False, db: Session = Depends(get_db)):
     """
     Super-Smart Full Intelligence:
-    Preia simultan din FirmeAPI (date generale, asociați, bilanț, BPI, MOF) + Portal Just.ro (dosare/litigii),
-    și verifică dacă firma este deja în baza locală de date.
+    Verifică întâi dacă firma și datele OSINT există deja în baza locală de date Axis (0 credite consumate).
+    Doar dacă firma nu există sau dacă force_refresh=True, interoghează sursele externe API (FirmeAPI, Just.ro),
+    și SALVEAZĂ automat firma și evaluarea în baza noastră de date pentru viitor.
     """
     clean_cui = "".join(filter(str.isdigit, str(cui)))
     if not clean_cui:
@@ -202,16 +203,17 @@ async def get_company_full_intel(cui: str, name: str = "", db: Session = Depends
     cross_checker = CrossChecker()
     search_name = name.strip() or f"CUI {clean_cui}"
 
-    # Verificare dacă este client existent în DB cu evaluare anterioară
+    # 1. Verificare DB Cache Axis (Dacă nu este forțată o re-interogare cu credite)
     existing_client = db.query(Client).filter(Client.cui_cnp == clean_cui).first()
     existing_client_id = existing_client.id if existing_client else None
-    if existing_client:
+    
+    if existing_client and not force_refresh:
         prev_eval = db.query(Evaluation).filter(Evaluation.client_id == existing_client.id).order_by(Evaluation.created_at.desc()).first()
         if prev_eval and prev_eval.raw_financial_data:
             try:
                 prev_d = json.loads(prev_eval.raw_financial_data) if isinstance(prev_eval.raw_financial_data, str) else prev_eval.raw_financial_data
                 if prev_d and (prev_d.get("personnel") or prev_d.get("holdings")):
-                    print(f"[CACHE HIT] Full Intel pentru CUI {clean_cui} ({existing_client.name}) extras din baza de date.")
+                    print(f"[DB CACHE HIT - 0 CREDITE] Full Intel pentru CUI {clean_cui} ({existing_client.name}) extras din baza locală Axis.")
                     smart_ownership = prev_d.get("smart_ownership") or cross_checker.analyze_ownership_structure(
                         prev_d.get("personnel") or prev_d.get("holdings") or [],
                         prev_d.get("admin_networks") or []
@@ -230,12 +232,16 @@ async def get_company_full_intel(cui: str, name: str = "", db: Session = Depends
                         "balance": prev_d.get("balance", {}),
                         "bpi": prev_d.get("bpi", {}),
                         "mof": prev_d.get("mof", []),
-                        "cached": True
+                        "court_cases": prev_d.get("court_cases", []),
+                        "total_dosare": len(prev_d.get("court_cases", [])),
+                        "cached": True,
+                        "credits_used": 0
                     }
             except Exception:
                 pass
 
-    # Paralelizare apeluri OSINT
+    # 2. Interogare externă API (Consumă 1 credit API)
+    print(f"[API EXTERNAL CALL] Interogare surse externe pentru CUI {clean_cui} (force_refresh={force_refresh})")
     t_gen = reg_scraper.fetch_company_general(clean_cui)
     t_pers = reg_scraper.fetch_company_personnel(clean_cui)
     t_bal = reg_scraper.fetch_company_balance(clean_cui)
@@ -279,6 +285,50 @@ async def get_company_full_intel(cui: str, name: str = "", db: Session = Depends
 
     smart_ownership = cross_checker.analyze_ownership_structure(personnel, admin_networks)
 
+    # 3. AUTO-SALVARE în baza locală de date Axis pentru a nu mai consuma credite în viitor!
+    try:
+        if not existing_client:
+            new_client = Client(
+                name=official_name,
+                cui_cnp=clean_cui,
+                type=ClientType.PJ,
+                address=gen_data.get("adresa") or "",
+                phone=gen_data.get("telefon") or None
+            )
+            db.add(new_client)
+            db.commit()
+            db.refresh(new_client)
+            existing_client = new_client
+            existing_client_id = new_client.id
+
+        saved_intel_payload = {
+            "anaf": gen_data,
+            "personnel": personnel,
+            "holdings": holdings,
+            "administrators": administrators,
+            "admin_networks": admin_networks,
+            "caen_activities": caen_act,
+            "smart_ownership": smart_ownership,
+            "balance": balance,
+            "bpi": bpi,
+            "mof": mof,
+            "court_cases": court_cases
+        }
+        
+        # Salvare snapshot evaluare asociat în DB
+        new_eval = Evaluation(
+            client_id=existing_client.id,
+            score=85,
+            risk_level=RiskLevel.low,
+            ai_summary=f"Snapshot inteligență OSINT stocat local pentru {official_name}",
+            raw_financial_data=json.dumps(saved_intel_payload, default=str)
+        )
+        db.add(new_eval)
+        db.commit()
+        print(f"[DB PROPRIETARY BASE] CUI {clean_cui} ({official_name}) salvat permanent în baza Axis.")
+    except Exception as save_err:
+        print(f"[DB SAVE WARNING] Nu s-a putut salva snapshot-ul pentru CUI {clean_cui}: {save_err}")
+
     return {
         "cui": clean_cui,
         "denumire": official_name,
@@ -294,7 +344,9 @@ async def get_company_full_intel(cui: str, name: str = "", db: Session = Depends
         "bpi": bpi,
         "mof": mof,
         "court_cases": court_cases,
-        "total_dosare": len(court_cases)
+        "total_dosare": len(court_cases),
+        "cached": False,
+        "credits_used": 1
     }
 
 @router.get("/person-full-intel")
@@ -354,15 +406,40 @@ async def verify_client_address(client_id: int, db: Session = Depends(get_db)):
 
 @router.post("/{client_id}/evaluate")
 @router.post("/{client_id}/evaluate/")
-async def evaluate_client(client_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+async def evaluate_client(client_id: int, force_refresh: bool = False, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
     import traceback
     from fastapi.responses import JSONResponse
     try:
         client = db.query(Client).filter(Client.id == client_id).first()
         if not client:
             raise HTTPException(status_code=404, detail="Client not found")
+
+        # 0. Verificare CACHE local Axis dacă nu se cere expres re-verificare externă cu credite
+        if not force_refresh:
+            existing_eval = (
+                db.query(Evaluation)
+                .filter(Evaluation.client_id == client.id)
+                .order_by(Evaluation.created_at.desc())
+                .first()
+            )
+            if existing_eval and existing_eval.raw_financial_data:
+                print(f"[DB CACHE HIT - 0 CREDITE] Evaluare existentă pentru clientul {client.name} (CUI {client.cui_cnp}) preluată direct din baza Axis.")
+                risk_str = existing_eval.risk_level.value if hasattr(existing_eval.risk_level, 'value') else str(existing_eval.risk_level)
+                return JSONResponse(content={
+                    "id": existing_eval.id,
+                    "client_id": existing_eval.client_id,
+                    "score": existing_eval.score,
+                    "risk_level": risk_str,
+                    "ai_summary": existing_eval.ai_summary,
+                    "raw_financial_data": existing_eval.raw_financial_data,
+                    "created_at": existing_eval.created_at.isoformat() if existing_eval.created_at else None,
+                    "created_by_user_id": existing_eval.created_by_user_id,
+                    "cached": True,
+                    "credits_used": 0
+                })
             
-        # 1. OSINT Data Collection (Caracatița & Sediu)
+        # 1. OSINT Data Collection (Caracatița & Sediu) — Apel surse externe (Consumă credit)
+        print(f"[API EXTERNAL CALL] Re-evaluare completă declanșată pentru Client {client_id} ({client.name}) — Consum credit API...")
         osint_data = {}
         
         if client.type == ClientType.PJ:
@@ -495,7 +572,9 @@ async def evaluate_client(client_id: int, db: Session = Depends(get_db), current
             "ai_summary": new_evaluation.ai_summary,
             "raw_financial_data": new_evaluation.raw_financial_data,
             "created_at": new_evaluation.created_at.isoformat() if new_evaluation.created_at else None,
-            "created_by_user_id": new_evaluation.created_by_user_id
+            "created_by_user_id": new_evaluation.created_by_user_id,
+            "cached": False,
+            "credits_used": 1
         })
     
     except HTTPException:
@@ -511,15 +590,31 @@ async def evaluate_client(client_id: int, db: Session = Depends(get_db), current
 
 @router.post("/evaluate-by-cui/{cui}")
 @router.post("/evaluate-by-cui/{cui}/")
-async def evaluate_company_by_cui(cui: str, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+async def evaluate_company_by_cui(cui: str, force_refresh: bool = False, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
     """
     Evaluează orice companie după CUI.
-    Dacă nu există deja în baza de date, preia datele oficiale ANAF și o creează automat.
+    Dacă există deja în baza de date și nu se cere force_refresh, returnează datele din cache local (0 credite consumate).
+    Dacă nu există, preia datele oficiale ANAF/FirmeAPI, o creează și o salvează automat în baza Axis.
     """
     cui_clean = str(cui).strip().upper().replace("RO", "").strip()
     
-    # 1. Căutare client existent
+    # 1. Căutare client existent în DB
     client = db.query(Client).filter(Client.cui_cnp == cui_clean).first()
+    if client and not force_refresh:
+        existing_eval = db.query(Evaluation).filter(Evaluation.client_id == client.id).order_by(Evaluation.created_at.desc()).first()
+        if existing_eval and existing_eval.raw_financial_data:
+            print(f"[DB CACHE HIT - 0 CREDITE] evaluate_company_by_cui pentru {client.name} ({cui_clean}) returnat din baza Axis.")
+            risk_str = existing_eval.risk_level.value if hasattr(existing_eval.risk_level, 'value') else str(existing_eval.risk_level)
+            return {
+                "client_id": client.id,
+                "name": client.name,
+                "cui": client.cui_cnp,
+                "score": existing_eval.score,
+                "risk_level": risk_str,
+                "cached": True,
+                "credits_used": 0
+            }
+            
     if not client:
         anaf_scraper = AnafScraper()
         anaf_data = await anaf_scraper.fetch_company_data(cui_clean)
@@ -536,14 +631,18 @@ async def evaluate_company_by_cui(cui: str, db: Session = Depends(get_db), curre
         db.commit()
         db.refresh(client)
         
-    # 2. Rulare pipeline complet de evaluare
-    new_eval = await evaluate_client(client.id, db, current_user)
+    # 2. Rulare pipeline evaluare cu force_refresh=True pentru a forța interogarea dacă s-a cerut expres
+    new_eval_resp = await evaluate_client(client.id, force_refresh=True, db=db, current_user=current_user)
+    import json
+    data = json.loads(new_eval_resp.body.decode('utf-8'))
     return {
         "client_id": client.id,
         "name": client.name,
         "cui": client.cui_cnp,
-        "score": new_eval.score,
-        "risk_level": new_eval.risk_level
+        "score": data.get("score"),
+        "risk_level": data.get("risk_level"),
+        "cached": False,
+        "credits_used": 1
     }
 
 class MofPdfRequest(BaseModel):

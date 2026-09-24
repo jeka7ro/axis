@@ -1210,29 +1210,59 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
 
       // Render the graph canvas
       expCtx.drawImage(rawCanvas, 0, 0);
-      const canvasImgData = exportCanvas.toDataURL('image/png', 1.0);
 
-      // Initialize A4 Landscape document
-      const doc = new jsPDF({ orientation: 'landscape', format: 'a4', unit: 'mm' });
+      // Helper for clean rounded rectangles on offscreen canvas
+      const drawCanvasRoundRect = (ctx, x, y, w, h, r, fill, stroke, lineWidth = 1) => {
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(x, y, w, h, r);
+        } else {
+          ctx.moveTo(x + r, y);
+          ctx.lineTo(x + w - r, y);
+          ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+          ctx.lineTo(x + w, y + h - r);
+          ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+          ctx.lineTo(x + r, y + h);
+          ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+          ctx.lineTo(x, y + r);
+          ctx.quadraticCurveTo(x, y, x + r, y);
+        }
+        ctx.closePath();
+        if (fill) {
+          ctx.fillStyle = fill;
+          ctx.fill();
+        }
+        if (stroke) {
+          ctx.strokeStyle = stroke;
+          ctx.lineWidth = lineWidth;
+          ctx.stroke();
+        }
+      };
 
-      // PAGE 1: EXECUTIVE VISUAL DOSSIER
-      doc.setFillColor(10, 17, 33);
-      doc.rect(0, 0, 297, 24, 'F');
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
-      doc.text('AXIS PREMIUM MOBILITY', 14, 11);
-
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(147, 197, 253);
-      doc.text('PLATFORMA DE INTELIGENTA OPERATIONALA • OSINT INVESTIGATION ENGINE', 14, 18);
-
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.5);
-      doc.setTextColor(255, 255, 255);
-      doc.text('RAPORT INVESTIGATIE & STRUCTURA AFILIERE', 283, 11, { align: 'right' });
+      // Helper for clean multiline text wrapping on offscreen canvas
+      const drawCanvasWrappedText = (ctx, text, x, y, maxWidth, lineHeight, maxLines = 3) => {
+        const words = String(text || '').split(' ');
+        let line = '';
+        let lineCount = 0;
+        for (let n = 0; n < words.length; n++) {
+          const testLine = line + words[n] + ' ';
+          const metrics = ctx.measureText(testLine);
+          if (metrics.width > maxWidth && n > 0) {
+            ctx.fillText(line.trim(), x, y);
+            line = words[n] + ' ';
+            y += lineHeight;
+            lineCount++;
+            if (lineCount >= maxLines - 1 && n < words.length - 1) {
+              ctx.fillText((line + words.slice(n + 1).join(' ')).slice(0, 80) + '...', x, y);
+              return y + lineHeight;
+            }
+          } else {
+            line = testLine;
+          }
+        }
+        ctx.fillText(line.trim(), x, y);
+        return y + lineHeight;
+      };
 
       const nowStr = new Date().toLocaleDateString('ro-RO', {
         day: '2-digit',
@@ -1241,250 +1271,296 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
         hour: '2-digit',
         minute: '2-digit',
       });
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(203, 213, 225);
-      doc.text(`Generat: ${nowStr} • Confidential Axis Rent`, 283, 18, { align: 'right' });
 
-      // Sub-header Info Bar (Metadata)
-      doc.setFillColor(241, 245, 249);
-      doc.roundedRect(12, 27, 273, 16, 2, 2, 'F');
-      doc.setDrawColor(203, 213, 225);
-      doc.setLineWidth(0.3);
-      doc.roundedRect(12, 27, 273, 16, 2, 2, 'S');
+      // ==========================================
+      // PAGE 1: EXECUTIVE VISUAL DOSSIER CANVAS (2376 x 1680)
+      // ==========================================
+      const p1Canvas = document.createElement('canvas');
+      p1Canvas.width = 2376;
+      p1Canvas.height = 1680;
+      const p1Ctx = p1Canvas.getContext('2d');
 
-      doc.setTextColor(15, 23, 42);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.text(`Subiect: ${clientName || 'Companie Investigata'}`, 16, 33);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(71, 85, 105);
-      const cleanAddr = (rawData.anaf?.adresa || rawData.address_check?.address || '-').slice(0, 75);
-      doc.text(`Cod Fiscal (CUI): ${clientCui || '-'} • Sediu: ${cleanAddr}`, 16, 39);
+      // Base background
+      p1Ctx.fillStyle = isDark ? '#070b14' : '#f8fafc';
+      p1Ctx.fillRect(0, 0, p1Canvas.width, p1Canvas.height);
 
-      doc.setTextColor(15, 23, 42);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(8.5);
-      doc.text(`Retea: ${graphData.nodes.length} Entitati • ${graphData.links.length} Conexiuni`, 281, 33, { align: 'right' });
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(71, 85, 105);
-      doc.text(`Status ANAF: ${rawData.anaf?.status || 'Activ'} • Telefon: ${rawData.anaf?.telefon || 'Nespecificat'}`, 281, 39, { align: 'right' });
+      // Top Navy Header Bar
+      p1Ctx.fillStyle = '#0a1121';
+      p1Ctx.fillRect(0, 0, 2376, 170);
 
-      // Canvas Image Placement
-      const boxX = 12;
-      const boxY = 46;
-      const boxW = 273;
-      const boxH = 150;
+      // Header Left: Brand & Engine
+      p1Ctx.font = 'bold 26px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p1Ctx.fillStyle = '#ffffff';
+      p1Ctx.fillText('AXIS PREMIUM MOBILITY', 90, 80);
 
-      const cAspect = rawCanvas.width / rawCanvas.height;
-      let imgW = boxW;
-      let imgH = boxW / cAspect;
-      if (imgH > boxH) {
-        imgH = boxH;
-        imgW = boxH * cAspect;
+      p1Ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p1Ctx.fillStyle = '#93c5fd';
+      p1Ctx.fillText('PLATFORMA DE INTELIGENȚĂ OPERAȚIONALĂ • OSINT INVESTIGATION ENGINE', 90, 122);
+
+      // Header Right: Dossier Type & Date
+      p1Ctx.textAlign = 'right';
+      p1Ctx.font = 'bold 21px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p1Ctx.fillStyle = '#ffffff';
+      p1Ctx.fillText('RAPORT INVESTIGAȚIE & STRUCTURĂ AFILIERE', 2286, 80);
+
+      p1Ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p1Ctx.fillStyle = '#cbd5e1';
+      p1Ctx.fillText(`Generat: ${nowStr} • Confidențial Axis Rent`, 2286, 122);
+      p1Ctx.textAlign = 'left';
+
+      // Metadata Info Bar
+      drawCanvasRoundRect(p1Ctx, 90, 200, 2196, 115, 14, '#f1f5f9', '#cbd5e1', 2);
+
+      // Subject & CUI Left
+      p1Ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p1Ctx.fillStyle = '#0f172a';
+      p1Ctx.fillText(`Subiect: ${clientName || 'Companie Investigată'}`, 120, 245);
+
+      p1Ctx.font = '14.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p1Ctx.fillStyle = '#475569';
+      const cleanAddr = (rawData.anaf?.adresa || rawData.address_check?.address || '-').slice(0, 95);
+      p1Ctx.fillText(`Cod Fiscal (CUI): ${clientCui || '-'}  •  Sediu: ${cleanAddr}`, 120, 285);
+
+      // Network Stats Right
+      p1Ctx.textAlign = 'right';
+      p1Ctx.font = 'bold 18px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p1Ctx.fillStyle = '#0f172a';
+      p1Ctx.fillText(`Rețea: ${graphData.nodes.length} Entități  •  ${graphData.links.length} Conexiuni`, 2256, 245);
+
+      p1Ctx.font = '14.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p1Ctx.fillStyle = '#475569';
+      p1Ctx.fillText(`Status ANAF: ${rawData.anaf?.status || 'Activ'}  •  Telefon: ${rawData.anaf?.telefon || 'Nespecificat'}`, 2256, 285);
+      p1Ctx.textAlign = 'left';
+
+      // Graph Visual Canvas Box Placement
+      const graphBoxX = 90;
+      const graphBoxY = 345;
+      const graphBoxW = 2196;
+      const graphBoxH = 1250;
+
+      drawCanvasRoundRect(p1Ctx, graphBoxX, graphBoxY, graphBoxW, graphBoxH, 16, isDark ? '#070b14' : '#f8fafc', isDark ? '#334155' : '#e2e8f0', 2);
+
+      const gAspect = exportCanvas.width / exportCanvas.height;
+      let gW = graphBoxW - 16;
+      let gH = gW / gAspect;
+      if (gH > graphBoxH - 16) {
+        gH = graphBoxH - 16;
+        gW = gH * gAspect;
       }
-      const imgX = boxX + (boxW - imgW) / 2;
-      const imgY = boxY + (boxH - imgH) / 2;
+      const gX = graphBoxX + (graphBoxW - gW) / 2;
+      const gY = graphBoxY + (graphBoxH - gH) / 2;
 
-      doc.setFillColor(isDark ? 7 : 248, isDark ? 11 : 250, isDark ? 20 : 252);
-      doc.roundedRect(imgX, imgY, imgW, imgH, 2, 2, 'F');
-      doc.addImage(canvasImgData, 'PNG', imgX, imgY, imgW, imgH);
-      doc.setDrawColor(isDark ? 51 : 226, isDark ? 65 : 232, isDark ? 85 : 240);
-      doc.roundedRect(imgX, imgY, imgW, imgH, 2, 2, 'S');
+      p1Ctx.save();
+      p1Ctx.beginPath();
+      if (p1Ctx.roundRect) {
+        p1Ctx.roundRect(graphBoxX, graphBoxY, graphBoxW, graphBoxH, 16);
+      } else {
+        p1Ctx.rect(graphBoxX, graphBoxY, graphBoxW, graphBoxH);
+      }
+      p1Ctx.clip();
+      p1Ctx.drawImage(exportCanvas, gX, gY, gW, gH);
+      p1Ctx.restore();
 
       // Page 1 Footer
-      doc.setFontSize(6.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text('Axis Cloud Platform • Raport de Evaluare si Investigare Retea Afiliere • Confidential • Pagina 1 / 2', 14, 203);
+      p1Ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p1Ctx.fillStyle = '#94a3b8';
+      p1Ctx.fillText('Axis Cloud Platform • Raport de Evaluare și Investigare Rețea Afiliere • Confidențial • Pagina 1 / 2', 90, 1640);
 
-      // PAGE 2: DETAILED FINDINGS & ENTITIES
-      doc.addPage();
+      // ==========================================
+      // PAGE 2: DETAILED INVENTORY & ENTITIES CANVAS (2376 x 1680)
+      // ==========================================
+      const p2Canvas = document.createElement('canvas');
+      p2Canvas.width = 2376;
+      p2Canvas.height = 1680;
+      const p2Ctx = p2Canvas.getContext('2d');
 
-      doc.setFillColor(10, 17, 33);
-      doc.rect(0, 0, 297, 18, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(10.5);
-      doc.text(`ANEXA DETALIATA: ${clientName || 'Companie Investigata'} (CUI: ${clientCui || '-'})`, 14, 11);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(203, 213, 225);
-      doc.text('Inventar noduri si relatii identificate • Pagina 2 / 2', 283, 11, { align: 'right' });
+      p2Ctx.fillStyle = '#f8fafc';
+      p2Ctx.fillRect(0, 0, p2Canvas.width, p2Canvas.height);
 
-      let col1Y = 25;
-      let col2Y = 25;
+      // Top Navy Header Bar
+      p2Ctx.fillStyle = '#0a1121';
+      p2Ctx.fillRect(0, 0, 2376, 140);
 
-      // Col 1: Conducere & Asociați
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('1. ASOCIATI, CONDUCERE SI MANDATE ISTORICE', 14, col1Y);
-      col1Y += 5;
+      p2Ctx.font = 'bold 22px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p2Ctx.fillStyle = '#ffffff';
+      p2Ctx.fillText(`ANEXĂ DETALIATĂ: ${clientName || 'Companie Investigată'} (CUI: ${clientCui || '-'})`, 90, 80);
+
+      p2Ctx.textAlign = 'right';
+      p2Ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p2Ctx.fillStyle = '#cbd5e1';
+      p2Ctx.fillText('Inventar noduri și relații identificate • Pagina 2 / 2', 2286, 80);
+      p2Ctx.textAlign = 'left';
+
+      // 2 Columns Layout
+      const c1X = 90;
+      const c1W = 1060;
+      const c2X = 1226;
+      const c2W = 1060;
+
+      let c1Y = 185;
+      let c2Y = 185;
+
+      // Col 1 Section 1: Conducere & Asociați
+      p2Ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p2Ctx.fillStyle = '#0f172a';
+      p2Ctx.fillText('1. ASOCIAȚI, CONDUCERE ȘI MANDATE ISTORICE', c1X, c1Y);
+      c1Y += 28;
 
       const personNodes = graphData.nodes.filter((n) => n.type === 'person');
       if (personNodes.length === 0) {
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(7.5);
-        doc.setTextColor(100, 116, 139);
-        doc.text('Nu au fost identificate persoane fizice inregistrate oficial.', 14, col1Y);
-        col1Y += 5;
+        p2Ctx.font = 'italic 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        p2Ctx.fillStyle = '#64748b';
+        p2Ctx.fillText('Nu au fost identificate persoane fizice înregistrate oficial.', c1X + 10, c1Y + 15);
+        c1Y += 40;
       } else {
-        personNodes.forEach((p) => {
-          doc.setFillColor(248, 250, 252);
-          doc.roundedRect(14, col1Y, 130, 14, 1.5, 1.5, 'F');
-          doc.setDrawColor(226, 232, 240);
-          doc.roundedRect(14, col1Y, 130, 14, 1.5, 1.5, 'S');
+        personNodes.slice(0, 4).forEach((p) => {
+          drawCanvasRoundRect(p2Ctx, c1X, c1Y, c1W, 90, 12, '#ffffff', '#e2e8f0', 1.5);
 
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(8);
-          doc.setTextColor(15, 23, 42);
-          doc.text(p.fullName || p.label, 17, col1Y + 5);
+          p2Ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          p2Ctx.fillStyle = '#0f172a';
+          p2Ctx.fillText(p.fullName || p.label, c1X + 22, c1Y + 34);
 
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(7);
-          doc.setTextColor(71, 85, 105);
+          p2Ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          p2Ctx.fillStyle = '#475569';
           const rolesText = p.roles || (p.isHistorical ? 'Fost Administrator' : 'Conducere');
-          doc.text(`Rol: ${rolesText} ${p.percent > 0 ? `(${p.percent}%)` : ''}`, 17, col1Y + 10);
+          p2Ctx.fillText(`Rol: ${rolesText} ${p.percent > 0 ? `(${p.percent}%)` : ''}`, c1X + 22, c1Y + 64);
 
+          // Status Badge Pill
           if (p.isHistorical) {
-            doc.setTextColor(100, 116, 139);
-            doc.text(`[FOST - Mandat Incheiat ${p.mandatPeriod ? p.mandatPeriod : ''}]`, 140, col1Y + 5, { align: 'right' });
+            const badgeW = 240;
+            const badgeX = c1X + c1W - badgeW - 20;
+            drawCanvasRoundRect(p2Ctx, badgeX, c1Y + 28, badgeW, 32, 16, '#f1f5f9', '#cbd5e1', 1.5);
+            p2Ctx.textAlign = 'center';
+            p2Ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            p2Ctx.fillStyle = '#475569';
+            p2Ctx.fillText(`FOST - Mandat Încheiat ${p.mandatPeriod || ''}`.trim(), badgeX + badgeW / 2, c1Y + 49);
+            p2Ctx.textAlign = 'left';
           } else {
-            doc.setTextColor(5, 150, 105);
-            doc.text('[ACTIV]', 140, col1Y + 5, { align: 'right' });
+            const badgeW = 90;
+            const badgeX = c1X + c1W - badgeW - 20;
+            drawCanvasRoundRect(p2Ctx, badgeX, c1Y + 28, badgeW, 32, 16, '#ecfdf5', '#a7f3d0', 1.5);
+            p2Ctx.textAlign = 'center';
+            p2Ctx.font = 'bold 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+            p2Ctx.fillStyle = '#059669';
+            p2Ctx.fillText('ACTIV', badgeX + badgeW / 2, c1Y + 49);
+            p2Ctx.textAlign = 'left';
           }
 
-          col1Y += 16;
+          c1Y += 105;
         });
       }
 
-      col1Y += 4;
-      // Col 1 Part 2: Firme Conexe din Rețeaua Asociaților
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('2. FIRME AFILIATE (RETEA ASOCIATI)', 14, col1Y);
-      col1Y += 5;
+      c1Y += 15;
+      // Col 1 Section 2: Firme Afiliate
+      p2Ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p2Ctx.fillStyle = '#0f172a';
+      p2Ctx.fillText('2. FIRME AFILIATE (REȚEA ASOCIAȚI)', c1X, c1Y);
+      c1Y += 28;
 
       const netFirme = graphData.nodes.filter((n) => n.type === 'related_company' && n.relation !== 'Sediu Comun');
       if (netFirme.length === 0) {
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(7.5);
-        doc.setTextColor(100, 116, 139);
-        doc.text('Nu au fost detectate firme externe in reteaua asociatilor.', 14, col1Y);
-        col1Y += 5;
+        p2Ctx.font = 'italic 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        p2Ctx.fillStyle = '#64748b';
+        p2Ctx.fillText('Nu au fost detectate firme externe în rețeaua asociaților.', c1X + 10, c1Y + 15);
+        c1Y += 40;
       } else {
         netFirme.slice(0, 6).forEach((f) => {
-          doc.setFillColor(248, 250, 252);
-          doc.roundedRect(14, col1Y, 130, 12, 1.5, 1.5, 'F');
-          doc.setDrawColor(226, 232, 240);
-          doc.roundedRect(14, col1Y, 130, 12, 1.5, 1.5, 'S');
+          drawCanvasRoundRect(p2Ctx, c1X, c1Y, c1W, 80, 10, '#ffffff', '#e2e8f0', 1.5);
 
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(7.5);
-          doc.setTextColor(15, 23, 42);
-          doc.text(f.fullName || f.label, 17, col1Y + 5);
+          p2Ctx.font = 'bold 14.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          p2Ctx.fillStyle = '#0f172a';
+          p2Ctx.fillText(f.fullName || f.label, c1X + 22, c1Y + 32);
 
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(6.5);
-          doc.setTextColor(71, 85, 105);
-          doc.text(`CUI: ${f.cui || '-'} • Relatie: ${f.relation || 'Afiliata'} • Stare: ${f.stare || 'Activ'}`, 17, col1Y + 9.5);
+          p2Ctx.font = '12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          p2Ctx.fillStyle = '#64748b';
+          p2Ctx.fillText(`CUI: ${f.cui || '-'}   •   Relație: ${f.relation || 'Afiliată'}   •   Stare: ${f.stare || 'Activă'}`, c1X + 22, c1Y + 58);
 
-          col1Y += 14;
+          c1Y += 92;
         });
       }
 
-      // Col 2: Sediu Social & Clustere Co-locare
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(15, 23, 42);
-      doc.text('3. SEDIU SOCIAL & CLUSTER CO-LOCARE', 152, col2Y);
-      col2Y += 5;
+      // Col 2 Section 3: Sediu Social & Clustere
+      p2Ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p2Ctx.fillStyle = '#0f172a';
+      p2Ctx.fillText('3. SEDIU SOCIAL & CLUSTER CO-LOCARE', c2X, c2Y);
+      c2Y += 28;
 
       const addressNode = graphData.nodes.find((n) => n.type === 'address');
       if (addressNode) {
-        doc.setFillColor(240, 253, 244);
-        doc.roundedRect(152, col2Y, 132, 16, 1.5, 1.5, 'F');
-        doc.setDrawColor(187, 247, 208);
-        doc.roundedRect(152, col2Y, 132, 16, 1.5, 1.5, 'S');
+        drawCanvasRoundRect(p2Ctx, c2X, c2Y, c2W, 110, 12, '#f0fdf4', '#bbf7d0', 1.5);
 
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(20, 83, 45);
-        doc.text(addressNode.addrLine1 || addressNode.label || 'Sediu Social', 155, col2Y + 5);
+        p2Ctx.font = 'bold 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        p2Ctx.fillStyle = '#14532d';
+        p2Ctx.fillText(addressNode.addrLine1 || addressNode.label || 'Sediu Social', c2X + 22, c2Y + 34);
 
-        doc.setFont('helvetica', 'normal');
-        doc.setFontSize(6.5);
-        doc.setTextColor(22, 101, 52);
-        doc.text(addressNode.addrLine2 || 'Adresa oficiala ANAF', 155, col2Y + 9.5);
-        doc.text(`Entitati identificate la acest sediu: ${addressNode.clusterCount || 1}`, 155, col2Y + 13.5);
+        p2Ctx.font = '13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        p2Ctx.fillStyle = '#166534';
+        p2Ctx.fillText(addressNode.addrLine2 || 'Adresă oficială ANAF', c2X + 22, c2Y + 62);
+        p2Ctx.fillText(`Entități identificate la acest sediu: ${addressNode.clusterCount || 1}`, c2X + 22, c2Y + 90);
 
-        col2Y += 19;
+        c2Y += 128;
       }
 
       // Firme co-locate la sediu
       const clusterNodes = graphData.nodes.filter((n) => n.type === 'related_company' && n.relation === 'Sediu Comun');
       if (clusterNodes.length > 0) {
-        doc.setFont('helvetica', 'bold');
-        doc.setFontSize(7.5);
-        doc.setTextColor(71, 85, 105);
-        doc.text(`Firme la acelasi sediu (${clusterNodes.length}):`, 152, col2Y);
-        col2Y += 4;
+        p2Ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        p2Ctx.fillStyle = '#475569';
+        p2Ctx.fillText(`Firme la același sediu (${clusterNodes.length}):`, c2X, c2Y);
+        c2Y += 24;
 
         clusterNodes.slice(0, 7).forEach((cf) => {
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(6.5);
-          doc.setTextColor(51, 65, 85);
+          p2Ctx.font = '12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          p2Ctx.fillStyle = '#334155';
           const loc = cf.room ? ` (${cf.room})` : '';
-          doc.text(`• ${cf.fullName || cf.label}${loc} - CUI: ${cf.cui || '-'} [${cf.stare || 'Activ'}]`, 155, col2Y);
-          col2Y += 4;
+          p2Ctx.fillText(`• ${cf.fullName || cf.label}${loc}  -  CUI: ${cf.cui || '-'} [${cf.stare || 'Activ'}]`, c2X + 12, c2Y);
+          c2Y += 24;
         });
-        col2Y += 3;
+        c2Y += 15;
       }
 
-      // Factori de Risc Identificați
-      col2Y = Math.max(col2Y, col1Y - 20);
-      doc.setFont('helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(185, 28, 28);
-      doc.text('4. FACTORI DE RISC & ALERTE DETECTATE', 152, col2Y);
-      col2Y += 5;
+      // Col 2 Section 4: Factori de Risc & Alerte
+      c2Y = Math.max(c2Y, c1Y - 260);
+      p2Ctx.font = 'bold 16px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p2Ctx.fillStyle = '#dc2626';
+      p2Ctx.fillText('4. FACTORI DE RISC & ALERTE DETECTATE', c2X, c2Y);
+      c2Y += 28;
 
       const riskNodes = graphData.nodes.filter((n) => n.type === 'risk');
       if (riskNodes.length === 0) {
-        doc.setFont('helvetica', 'italic');
-        doc.setFontSize(7.5);
-        doc.setTextColor(22, 101, 52);
-        doc.text('Nu au fost identificate semnale majore de risc fiscal sau juridic.', 152, col2Y);
-        col2Y += 5;
+        p2Ctx.font = 'italic 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        p2Ctx.fillStyle = '#166534';
+        p2Ctx.fillText('Nu au fost identificate semnale majore de risc fiscal sau juridic.', c2X + 10, c2Y + 15);
+        c2Y += 40;
       } else {
-        riskNodes.forEach((r) => {
-          doc.setFillColor(254, 242, 242);
-          doc.roundedRect(152, col2Y, 132, 14, 1.5, 1.5, 'F');
-          doc.setDrawColor(254, 202, 202);
-          doc.roundedRect(152, col2Y, 132, 14, 1.5, 1.5, 'S');
+        riskNodes.slice(0, 4).forEach((r) => {
+          drawCanvasRoundRect(p2Ctx, c2X, c2Y, c2W, 95, 10, '#fef2f2', '#fecaca', 1.5);
 
-          doc.setFont('helvetica', 'bold');
-          doc.setFontSize(7.5);
-          doc.setTextColor(153, 27, 27);
-          doc.text(r.label || 'Alerta de risc', 155, col2Y + 5);
+          p2Ctx.font = 'bold 14px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          p2Ctx.fillStyle = '#991b1b';
+          p2Ctx.fillText(r.label || 'Alertă de risc', c2X + 20, c2Y + 32);
 
-          doc.setFont('helvetica', 'normal');
-          doc.setFontSize(6.5);
-          doc.setTextColor(185, 28, 28);
-          const desc = (r.fullText || 'Verificati detaliile in dosarul de analiza').slice(0, 85);
-          doc.text(desc, 155, col2Y + 10);
+          p2Ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+          p2Ctx.fillStyle = '#b91c1c';
+          const desc = r.fullText || 'Verificați detaliile în dosarul de analiză';
+          drawCanvasWrappedText(p2Ctx, desc, c2X + 20, c2Y + 56, c2W - 40, 18, 2);
 
-          col2Y += 16;
+          c2Y += 108;
         });
       }
 
       // Page 2 Footer
-      doc.setFontSize(6.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text('Axis Cloud Platform • Raport de Evaluare si Investigare Retea Afiliere • Confidential • Pagina 2 / 2', 14, 203);
+      p2Ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif';
+      p2Ctx.fillStyle = '#94a3b8';
+      p2Ctx.fillText('Axis Cloud Platform • Raport de Evaluare și Investigare Rețea Afiliere • Confidențial • Pagina 2 / 2', 90, 1640);
+
+      // ==========================================
+      // ASSEMBLE EXECUTIVE 2-PAGE PDF DOCUMENT
+      // ==========================================
+      const doc = new jsPDF({ orientation: 'landscape', format: 'a4', unit: 'mm' });
+      doc.addImage(p1Canvas.toDataURL('image/png', 0.95), 'PNG', 0, 0, 297, 210);
+      doc.addPage();
+      doc.addImage(p2Canvas.toDataURL('image/png', 0.95), 'PNG', 0, 0, 297, 210);
 
       const cleanFileName = (clientName || 'Investigatie_OSINT').replace(/[^a-zA-Z0-9_-]/g, '_');
       doc.save(`Raport_Investigatie_${cleanFileName}_${clientCui || 'OSINT'}.pdf`);

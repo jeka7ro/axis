@@ -62,8 +62,8 @@ export const fetchAdminNetwork = async (name, contextCui = '') => {
   return response.json();
 };
 
-export const fetchCompanyFullIntel = async (cui, name = '') => {
-  const response = await fetch(`${API_URL}/clients/company-full-intel?cui=${encodeURIComponent(cui)}&name=${encodeURIComponent(name)}`);
+export const fetchCompanyFullIntel = async (cui, name = '', forceRefresh = false) => {
+  const response = await fetch(`${API_URL}/clients/company-full-intel?cui=${encodeURIComponent(cui)}&name=${encodeURIComponent(name)}&force_refresh=${Boolean(forceRefresh)}`);
   if (!response.ok) throw new Error('Failed to fetch company full intel');
   return response.json();
 };
@@ -154,8 +154,8 @@ export const deleteClient = async (id) => {
   return response.json();
 };
 
-export const evaluateClient = async (id) => {
-  const response = await fetch(`${API_URL}/clients/${id}/evaluate`, {
+export const evaluateClient = async (id, forceRefresh = false) => {
+  const response = await fetch(`${API_URL}/clients/${id}/evaluate?force_refresh=${Boolean(forceRefresh)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });
@@ -166,8 +166,8 @@ export const evaluateClient = async (id) => {
   return response.json();
 };
 
-export const evaluateCompanyByCui = async (cui) => {
-  const response = await fetch(`${API_URL}/clients/evaluate-by-cui/${cui}`, {
+export const evaluateCompanyByCui = async (cui, forceRefresh = false) => {
+  const response = await fetch(`${API_URL}/clients/evaluate-by-cui/${cui}?force_refresh=${Boolean(forceRefresh)}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' }
   });

@@ -66,6 +66,7 @@ const ClientDetails = () => {
   const [personIntelTarget, setPersonIntelTarget] = useState({ isOpen: false, name: '', contextCui: null });
   const [selectedMofPub, setSelectedMofPub] = useState(null);
   const [expandedMofIndices, setExpandedMofIndices] = useState([]);
+  const [showConfirmReevalModal, setShowConfirmReevalModal] = useState(false);
 
   const toggleMofExpand = (idx) => {
     setExpandedMofIndices(prev => 
@@ -121,10 +122,16 @@ const ClientDetails = () => {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [previewModalOpen]);
 
-  const handleEvaluate = async () => {
+  const handleEvaluate = async (forceRefresh = false) => {
+    // Dacă există deja evaluare și nu a fost confirmat explicit forceRefresh, cerem confirmare
+    if (client?.evaluations?.length > 0 && !forceRefresh) {
+      setShowConfirmReevalModal(true);
+      return;
+    }
+    setShowConfirmReevalModal(false);
     setEvaluating(true);
     try {
-      await evaluateClient(id);
+      await evaluateClient(id, forceRefresh);
       await loadClient(); // Reload to get new evaluation
     } catch (error) {
       console.error("OSINT API Error:", error);
@@ -138,7 +145,8 @@ const ClientDetails = () => {
     const cleanCui = String(cui).trim().toUpperCase().replace(/^RO/, '').trim();
     setEvaluatingCui(cleanCui);
     try {
-      const res = await evaluateCompanyByCui(cleanCui);
+      // Verifică întâi în baza de date proprie (forceRefresh=false) pentru a nu consuma credite dacă există deja
+      const res = await evaluateCompanyByCui(cleanCui, false);
       if (res?.client_id) {
         navigate(`/clients/${res.client_id}`);
       }
@@ -384,6 +392,9 @@ const ClientDetails = () => {
                   Actualizat: {new Date(latestEval.created_at).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                 </span>
               </div>
+              <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
+                Baza Locală (0 credite)
+              </span>
             </div>
           ) : (
             <span className="text-xs text-gray-400 font-medium px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
@@ -391,15 +402,21 @@ const ClientDetails = () => {
             </span>
           )}
 
-          {/* Clean Evaluate Button (No "AI", Tahoe Rounded-Full, RefreshCw Icon) */}
+          {/* Clean Evaluate / Re-verify Button */}
           <button 
-            onClick={handleEvaluate}
+            onClick={() => handleEvaluate(false)}
             disabled={evaluating}
             className="inline-flex items-center gap-2 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 px-5 py-2.5 rounded-full text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 cursor-pointer shrink-0"
-            title="Actualizează și generează evaluarea companiei"
+            title={latestEval ? "Interoghează sursele externe ANAF/FirmeAPI/Just.ro (consumă 1 credit API)" : "Generează prima evaluare (consumă 1 credit API)"}
           >
             <RefreshCw size={14} className={evaluating ? "animate-spin" : ""} />
-            <span>{evaluating ? "Se evaluează..." : "Generare Evaluare"}</span>
+            <span>
+              {evaluating 
+                ? "Se interoghează..." 
+                : latestEval 
+                  ? "Reverifică date API" 
+                  : "Generare Evaluare (1 Credit)"}
+            </span>
           </button>
         </div>
       </div>
@@ -2366,6 +2383,49 @@ const ClientDetails = () => {
         onClose={() => setSelectedMofPub(null)}
         publication={selectedMofPub}
       />
+
+      {/* Modal Confirmare Reverificare API (Consum Credite) */}
+      {showConfirmReevalModal && (
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-gray-900/70 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-md p-6 border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200">
+            <div className="flex items-center gap-3 mb-4 text-amber-600 dark:text-amber-400">
+              <div className="p-2.5 rounded-full bg-amber-50 dark:bg-amber-950/60 border border-amber-200 dark:border-amber-800/80">
+                <AlertTriangle size={22} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-gray-900 dark:text-white">Confirmare Reverificare API</h3>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Consum din creditele de interogare externe</p>
+              </div>
+            </div>
+
+            <div className="space-y-3 text-xs text-gray-600 dark:text-gray-300 leading-relaxed mb-6">
+              <p>
+                Datele actuale ale acestui client sunt salvate în baza de date locală Axis și sunt accesate gratuit, fără niciun consum de credite.
+              </p>
+              <div className="p-3 bg-amber-50/70 dark:bg-amber-950/30 rounded-2xl border border-amber-200/80 dark:border-amber-800/50 text-amber-900 dark:text-amber-200 font-medium">
+                Reverificarea va efectua interogări live la ANAF, FirmeAPI și Portal Just.ro și va consuma <span className="font-bold underline">1 credit API</span> din abonament.
+              </div>
+              <p>Sigur doriți să forțați o nouă interogare externă?</p>
+            </div>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                onClick={() => setShowConfirmReevalModal(false)}
+                className="px-4 py-2 text-xs font-semibold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors cursor-pointer"
+              >
+                Anulează
+              </button>
+              <button
+                onClick={() => handleEvaluate(true)}
+                className="inline-flex items-center gap-2 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 px-5 py-2.5 rounded-full text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+              >
+                <RefreshCw size={13} />
+                <span>Confirmă și Consumă 1 Credit</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
