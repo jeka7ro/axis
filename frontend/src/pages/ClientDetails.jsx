@@ -2398,6 +2398,11 @@ const ClientDetails = () => {
                 </div>
                 <div className="text-[11px] text-gray-500 mt-2">
                   Ieșiri din țară fără procură
+                  {telemetryReport?.colocation_alerts_count > 0 && (
+                    <span className="text-red-600 dark:text-red-400 font-semibold block mt-0.5">
+                      {telemetryReport.colocation_alerts_count} alerte co-locare terți
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -2518,7 +2523,7 @@ const ClientDetails = () => {
                         <td className="px-4 py-3 font-mono text-xs">{idx + 1}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
-                            alert.type === 'UNAUTHORIZED_EXIT' || alert.type === 'DEBT_BORDER_RISK'
+                            alert.type === 'UNAUTHORIZED_EXIT' || alert.type === 'DEBT_BORDER_RISK' || alert.type === 'SUSPICIOUS_COLOCATION'
                               ? 'border-red-300 text-red-700 dark:border-red-800 dark:text-red-400 bg-red-50/50 dark:bg-red-950/20'
                               : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
                           }`}>

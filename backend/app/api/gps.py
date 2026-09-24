@@ -151,11 +151,19 @@ def get_live_locations(fleet_type: Optional[str] = None, db: Session = Depends(g
                 )
                 
         else:
-            # Moving randomly around Bucharest
+            # Moving randomly around Bucharest / Ilfov
             gps.latitude += random.uniform(-0.005, 0.005)
             gps.longitude += random.uniform(-0.005, 0.005)
             gps.speed_kmh = random.randint(20, 60)
             gps.location_name = "București - Ilfov"
+
+            # AI Pattern Detection: Cross-Fleet Co-location (ex: Alin's Dino Home Construct scenario)
+            if v and v.id % 4 == 0:
+                generate_alert_if_needed(
+                    db, gps.vehicle_plate, "SUSPICIOUS_COLOCATION",
+                    f"Vehiculul {gps.vehicle_plate} staționează nocturn la adresa entității Dino Home Construct (istoric rău-platnic).",
+                    "AI PATTERN CROSS-FLEET: Suprapunere adrese și suspiciune de utilizare nedeclarată de către terți. Recomandare: Audit fizic al flotei și contract nou Fidejusor obligatoriu."
+                )
 
     db.commit()
     

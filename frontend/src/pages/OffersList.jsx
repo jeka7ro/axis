@@ -412,8 +412,8 @@ const OffersList = () => {
                     <td className="px-6 py-4">
                       <span className={`px-2.5 py-1 rounded-full text-xs font-medium border whitespace-nowrap inline-flex items-center justify-center ${
                         offer.status === 'Draft' ? 'bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600' :
-                        offer.status === 'În Aprobare' ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-400 dark:border-amber-800' :
-                        offer.status === 'Aprobat' ? 'bg-gray-100 text-gray-800 border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600' :
+                        (offer.status === 'În Aprobare' || offer.status === 'În Așteptare (Axis)') ? 'bg-amber-50/60 text-amber-800 border-amber-300 dark:bg-amber-950/30 dark:text-amber-400 dark:border-amber-800' :
+                        offer.status === 'Aprobat' ? 'bg-emerald-50/60 text-emerald-800 border-emerald-300 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800' :
                         'bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 border-transparent'
                       }`}>
                         {offer.status === 'Transformat în Contract' ? 'Contract Generat' : offer.status}
@@ -424,9 +424,9 @@ const OffersList = () => {
                         <button
                           onClick={() => handleOpenEsignModal(offer)}
                           className={`px-2.5 py-1 rounded-full text-xs font-medium border flex items-center gap-1.5 transition-colors ${
-                            offer.contract.status === 'Semnat Axis' ? 'bg-emerald-50 text-emerald-700 border-emerald-300 dark:bg-emerald-950/40 dark:text-emerald-400 dark:border-emerald-800' :
-                            offer.contract.status === 'Semnat Client' ? 'bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950/40 dark:text-blue-400 dark:border-blue-800' :
-                            offer.contract.status === 'Trimis la Semnat' ? 'bg-purple-50 text-purple-700 border-purple-300 dark:bg-purple-950/40 dark:text-purple-400 dark:border-purple-800' :
+                            offer.contract.status === 'Semnat Axis' ? 'bg-emerald-50/60 text-emerald-700 border-emerald-300 dark:bg-emerald-950/30 dark:text-emerald-400 dark:border-emerald-800' :
+                            offer.contract.status === 'Semnat Client' ? 'bg-blue-50/60 text-blue-700 border-blue-300 dark:bg-blue-950/30 dark:text-blue-400 dark:border-blue-800' :
+                            offer.contract.status === 'Trimis la Semnat' ? 'bg-gray-100 text-gray-700 border-gray-300 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700' :
                             'bg-gray-100 text-gray-600 border-gray-200 dark:bg-gray-700 dark:text-gray-300'
                           }`}
                         >
@@ -478,7 +478,13 @@ const OffersList = () => {
                           </button>
                         )}
 
-                        {offer.status === 'Draft' && user?.role !== 'Dealer Sales' && (
+                        {(offer.status === 'În Așteptare (Axis)' || offer.status === 'În Aprobare') && user?.role === 'Dealer Sales' && (
+                          <span className="text-[11px] font-medium text-amber-700 dark:text-amber-400 bg-amber-50/60 dark:bg-amber-950/30 px-2 py-0.5 rounded-full border border-amber-200 dark:border-amber-800">
+                            În analiză Axis
+                          </span>
+                        )}
+
+                        {(offer.status === 'Draft' || offer.status === 'În Așteptare (Axis)' || offer.status === 'În Aprobare') && user?.role !== 'Dealer Sales' && (
                           <button 
                             onClick={() => handleApprove(offer.id)}
                             className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-600 hover:text-emerald-600 dark:text-gray-300 transition-colors"

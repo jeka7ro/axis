@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { fetchClients, createClient, updateClient, fetchVehicles, fetchVehicleBrands, fetchClientFleetTelemetryReport } from '../services/api';
-import { createOffer, updateOffer, fetchOffer, uploadTemplate, fetchFidejusorSuggestion } from '../services/apiOffers';
+import { createOffer, updateOffer, fetchOffer, uploadTemplate, fetchFidejusorSuggestion, submitOfferForApproval } from '../services/apiOffers';
 import { fetchCampaigns } from '../services/apiCampaigns';
 import useAuthStore from '../store/authStore';
 import { extractTextFromFile, parseRomanianIDCard } from '../utils/pdfOcr';
-import { ChevronLeft, ShieldCheck, UserCheck, Sparkles, AlertCircle, MapPin, Megaphone, TrendingDown, UploadCloud } from 'lucide-react';
+import { ChevronLeft, ShieldCheck, UserCheck, Sparkles, AlertCircle, MapPin, Megaphone, TrendingDown, UploadCloud, Send, Check } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
 
 const OfferBuilder = () => {
@@ -236,8 +236,8 @@ const OfferBuilder = () => {
   const totalInterest = financed * (formData.interest_rate / 100) * (formData.period_months / 12);
   const monthlyRate = (financed + totalInterest) / formData.period_months;
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (e, autoSubmitForApproval = false) => {
+    if (e && e.preventDefault) e.preventDefault();
     if (isNewClientMode) {
       alert("Te rugăm să salvezi clientul nou mai întâi, sau să selectezi unul existent.");
       return;
@@ -248,10 +248,14 @@ const OfferBuilder = () => {
     }
     setLoading(true);
     try {
+      let savedOffer;
       if (isEditMode) {
-        await updateOffer(id, {...formData, client_id: parseInt(formData.client_id)});
+        savedOffer = await updateOffer(id, {...formData, client_id: parseInt(formData.client_id)});
       } else {
-        await createOffer({...formData, client_id: parseInt(formData.client_id)});
+        savedOffer = await createOffer({...formData, client_id: parseInt(formData.client_id)});
+      }
+      if (autoSubmitForApproval && savedOffer?.id) {
+        await submitOfferForApproval(savedOffer.id);
       }
       navigate('/offers');
     } catch (error) {
@@ -351,6 +355,9 @@ const OfferBuilder = () => {
                       <div className="flex gap-4 text-[11px] text-gray-500 dark:text-gray-400 pt-1.5 border-t border-gray-200 dark:border-gray-700/60">
                         <span>Vehicule Flotă: <strong>{telemetryReport.total_active_vehicles}</strong> (LT: {telemetryReport.lt_vehicles_count}, ST: {telemetryReport.st_vehicles_count})</span>
                         <span>Incidente Graniță: <strong className={telemetryReport.unauthorized_border_events > 0 ? "text-red-600 font-bold" : ""}>{telemetryReport.unauthorized_border_events}</strong></span>
+                        {telemetryReport.colocation_alerts_count > 0 && (
+                          <span>Co-locare Suspectă: <strong className="text-red-600 font-bold">{telemetryReport.colocation_alerts_count}</strong></span>
+                        )}
                         <span>Avertismente: <strong>{telemetryReport.warning_alerts_count}</strong></span>
                       </div>
                     </div>
@@ -846,9 +853,35 @@ const OfferBuilder = () => {
               </label>
             </div>
 
-            <button type="submit" disabled={loading} className="w-full py-2 px-4 bg-primary text-white rounded-md hover:bg-primary/90 font-medium">
-              {loading ? "Se salvează..." : (isEditMode ? "Salvează Modificările" : "Generează Oferta Draft")}
-            </button>
+            {user?.role === 'Dealer Sales' && !isEditMode ? (
+              <div className="space-y-2 pt-2">
+                <button
+                  type="button"
+                  onClick={(e) => handleSubmit(e, true)}
+                  disabled={loading}
+                  className="w-full py-2.5 px-4 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 rounded-xl hover:bg-gray-800 dark:hover:bg-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer shadow-sm transition-all"
+                >
+                  <Send size={15} />
+                  <span>{loading ? "Se trimite..." : "Generează și Trimite la Aprobare Axis"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => handleSubmit(e, false)}
+                  disabled={loading}
+                  className="w-full py-2 px-4 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium cursor-pointer transition-all"
+                >
+                  {loading ? "Se salvează..." : "Salvează ca Ciornă (Draft)"}
+                </button>
+              </div>
+            ) : (
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-2.5 px-4 bg-gray-900 text-white dark:bg-gray-100 dark:text-gray-900 rounded-xl hover:bg-gray-800 dark:hover:bg-white text-xs font-semibold cursor-pointer shadow-sm transition-all"
+              >
+                {loading ? "Se salvează..." : (isEditMode ? "Salvează Modificările" : "Generează Oferta")}
+              </button>
+            )}
           </form>
         </div>
 

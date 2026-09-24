@@ -705,13 +705,18 @@ def get_client_fleet_telemetry_report(client_id: int, db: Session = Depends(get_
     st_count = sum(1 for v in vehicles if getattr(v, 'fleet_type', 'LT') == 'ST')
 
     unauth_border_crossings = sum(1 for a in alerts if a.alert_type in ["UNAUTHORIZED_EXIT", "DEBT_BORDER_RISK"])
-    warning_alerts = sum(1 for a in alerts if a.alert_type == "AI_WARNING")
+    colocation_alerts = sum(1 for a in alerts if a.alert_type == "SUSPICIOUS_COLOCATION")
+    warning_alerts = sum(1 for a in alerts if a.alert_type in ["AI_WARNING", "SUSPICIOUS_COLOCATION"])
 
     # Determine risk level
     if unauth_border_crossings > 0:
         telemetry_risk = "HIGH"
         risk_label = "Risc Ridicat (Incidente Graniță Active)"
         recommendation = "BLOCARE / APROBARE SPECIALĂ: Clientul are tentative de părăsire a țării fără împuternicire sau cu restanțe active. Se recomandă garanție suplimentară sau limitare arie circulație."
+    elif colocation_alerts > 0:
+        telemetry_risk = "HIGH"
+        risk_label = "Risc Ridicat (Suprapunere Trasee & Co-locare Suspectă)"
+        recommendation = "ATENȚIE CO-LOCARE (ex: Dino Home Construct): Sistemul AI a identificat staționări repetate la adresele unor entități afiliate cu risc financiar/juridic. Se impune obligatoriu Contract Nou de Fidejusiune și aprobare specială Axis înainte de emiterea ofertei."
     elif warning_alerts > 0:
         telemetry_risk = "MEDIUM"
         risk_label = "Risc Mediu (Avertismente Telemetrice Înregistrate)"
@@ -730,6 +735,7 @@ def get_client_fleet_telemetry_report(client_id: int, db: Session = Depends(get_
         "st_vehicles_count": st_count,
         "total_alerts": len(alerts),
         "unauthorized_border_events": unauth_border_crossings,
+        "colocation_alerts_count": colocation_alerts,
         "warning_alerts_count": warning_alerts,
         "telemetry_risk": telemetry_risk,
         "risk_label": risk_label,
