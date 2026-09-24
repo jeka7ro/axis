@@ -305,7 +305,7 @@ export const OwnershipAndGovernanceCard = ({
               })}
 
               {normalizedHoldings.length === 0 && (
-                <div className="p-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 space-y-3">
+                <div className="p-5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 space-y-2">
                   <div className="flex items-center justify-between">
                     <span className="text-xs font-bold text-gray-800 dark:text-gray-200 uppercase tracking-wider">
                       Statut Acționariat &amp; Asociați
@@ -314,20 +314,14 @@ export const OwnershipAndGovernanceCard = ({
                       ONRC / ReCom
                     </span>
                   </div>
-                  <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-                    Societatea a fost înmatriculată oficial la data de <strong className="text-gray-900 dark:text-white font-semibold">{registrationDate || "26.06.2017"}</strong>{regComNumber ? <> (Nr. Reg. Com: <strong className="text-gray-900 dark:text-white font-semibold">{regComNumber}</strong>)</> : ""}.
+                  {registrationDate && (
+                    <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                      Societatea figurează înmatriculată la data de <strong className="text-gray-900 dark:text-white font-semibold">{registrationDate}</strong>{regComNumber ? <> (Nr. Reg. Com: <strong className="text-gray-900 dark:text-white font-semibold">{regComNumber}</strong>)</> : ""}.
+                    </p>
+                  )}
+                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                    Datele detaliate privind asociații și cotele de participare nu au fost returnate în extrasul curent de la Registrul Comerțului. Consultați lista administratorilor alăturată sau extrasul detaliat ReCom.
                   </p>
-                  <div className="p-3.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-xs text-gray-600 dark:text-gray-400 space-y-2">
-                    <div className="font-semibold text-gray-800 dark:text-gray-200">
-                      Clarificare Date Registru:
-                    </div>
-                    <p className="text-[11px] leading-relaxed">
-                      Cotele procentuale exacte de deținere ale asociaților și istoricul de cesiuni sunt accesibile prin furnizare oficială de informații extinse ReCom ONRC.
-                    </p>
-                    <p className="text-[11px] leading-relaxed text-gray-500 dark:text-gray-400 border-t border-gray-100 dark:border-gray-700/60 pt-2">
-                      Înregistrarea din <strong className="text-gray-800 dark:text-gray-200">21.02.2026</strong> reflectă mandatul executiv al administratorului înregistrat la Registrul Comerțului, <strong className="text-gray-800 dark:text-gray-200">fără a reprezenta o cesiune sau o schimbare de acționari</strong> (motiv pentru care nu figurează ca modificare de acționariat pe portaluri precum Legea 55).
-                    </p>
-                  </div>
                 </div>
               )}
             </div>

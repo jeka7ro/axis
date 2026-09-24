@@ -237,57 +237,7 @@ class RegistryScraper:
                         return res
         except Exception as e:
             print(f"Eroare extragere MOF: {e}")
-
-        # Fallback inteligent: construiește rezoluțiile ONRC oficiale din datele reale ale firmei
-        try:
-            holdings = await self.fetch_company_holdings(clean_cui)
-            admins = await self.fetch_company_administrators(clean_cui)
-            gen = await self.fetch_company_general(clean_cui)
-            comp_name = gen.get("denumire") or f"Societatea CUI {clean_cui}"
-            nr_reg = gen.get("nr_reg_com") or "J40/0000/2020"
-            
-            mentiuni = []
-            pub_idx = 4820
-            
-            # Cesiuni / schimbări asociați
-            for h in holdings:
-                if h.get("from") and h.get("from") != gen.get("data_inregistrare"):
-                    mentiuni.append({
-                        "denumire": comp_name,
-                        "publicatieNr": str(pub_idx),
-                        "data": h.get("from"),
-                        "titlu_publicatie": f"Hotărâre AGA / Cesiune Părți Sociale — {comp_name}",
-                        "continut": f"<p>Oficiul Registrului Comerțului notifică depunerea actului adițional privind cesiunea de părți sociale ale {comp_name}, înregistrată sub nr. {nr_reg}, CUI {clean_cui}. Asociat: {h.get('name')} ({h.get('percent', 0):.0f}%).</p><p>Publicat în Monitorul Oficial al României, Partea a IV-a.</p>"
-                    })
-                    pub_idx -= 120
-
-            # Numire administratori
-            for a in admins:
-                if a.get("data"):
-                    mentiuni.append({
-                        "denumire": comp_name,
-                        "publicatieNr": str(pub_idx),
-                        "data": a.get("data"),
-                        "titlu_publicatie": f"Notificare Numire Administrator — {comp_name}",
-                        "continut": f"<p>Oficiul Registrului Comerțului notifică numirea în funcția de administrator a d-lui/d-nei {a.get('nume')}, cu mandat valabil conform deciziei asociaților societății {comp_name} ({nr_reg}).</p><p>Publicat în Monitorul Oficial al României, Partea a IV-a.</p>"
-                    })
-                    pub_idx -= 95
-
-            # Act constitutiv inițial / înmatriculare
-            data_inreg = gen.get("data_inregistrare") or "2020-01-01"
-            mentiuni.append({
-                "denumire": comp_name,
-                "publicatieNr": str(pub_idx),
-                "data": data_inreg,
-                "titlu_publicatie": f"Încheiere Înmatriculare Societate Comercială — {comp_name}",
-                "continut": f"<p>Încheiere de înmatriculare a Societății {comp_name} la Oficiul Registrului Comerțului sub nr. {nr_reg}, având cod unic de înregistrare {clean_cui}. Sediul social declarat la data constituirii.</p><p>Publicat în Monitorul Oficial al României, Partea a IV-a.</p>"
-            })
-
-            mentiuni.sort(key=lambda x: x.get("data", ""), reverse=True)
-            return mentiuni
-        except Exception as fallback_err:
-            print(f"Eroare generare fallback MOF: {fallback_err}")
-            return []
+        return []
 
     async def fetch_administrator_network(self, name: str, match_cui: Optional[str] = None, match_loc: Optional[str] = None) -> List[Dict]:
         """
@@ -594,8 +544,8 @@ class RegistryScraper:
 
     async def _fetch_openapi_balance(self, cui: str) -> Dict:
         """Fallback OpenAPI.ro pentru bilanț"""
-        if self.api_key == "YOUR_API_KEY_HERE":
-            return self._mock_balance_data(cui)
+        if self.api_key == "YOUR_API_KEY_HERE" or not self.api_key:
+            return {}
             
         try:
             clean_cui = "".join(filter(str.isdigit, str(cui)))
@@ -672,42 +622,3 @@ class RegistryScraper:
         except Exception as e:
             print(f"Eroare API OpenAPI financials: {e}")
             return {}
-
-    def _mock_balance_data(self, cui: str) -> Dict:
-        # Fallback in case of missing key
-        return {
-            "an": 2024,
-            "cifra_afaceri": 1250000,
-            "profit_net": 150000,
-            "datorii": 45000,
-            "angajati": 12
-        }
-
-    def _mock_registry_data(self, cui: str) -> List[Dict]:
-        if cui == "9876543": # Mock for Dino Construct (Bad actor)
-            return [
-                {
-                    "nume": "Ionut Dino",
-                    "rol": "Administrator",
-                    "cota_participare": 100,
-                    "alte_companii_active": 1,
-                    "companii_faliment": 3
-                },
-                {
-                    "nume": "Maria Dino",
-                    "rol": "Asociat",
-                    "cota_participare": 0,
-                    "alte_companii_active": 0,
-                    "companii_faliment": 0
-                }
-            ]
-        else:
-            return [
-                {
-                    "nume": "Administrator General",
-                    "rol": "Administrator",
-                    "cota_participare": 100,
-                    "alte_companii_active": 0,
-                    "companii_faliment": 0
-                }
-            ]
