@@ -6,7 +6,8 @@ import {
   Building2, Eye, Compass, Layers, CheckSquare, Square, ChevronLeft,
   Camera, Maximize2, X, Image as ImageIcon, Loader2, RefreshCw, Users,
   Search, Briefcase, UserCheck, Scale, BookOpen, Sparkles, Award, Network,
-  Copy, Check, Plus, Minus, ZoomIn, ZoomOut, FileDown, Car, Radio, Activity, CheckCircle2
+  Copy, Check, Plus, Minus, ZoomIn, ZoomOut, FileDown, Car, Radio, Activity, CheckCircle2,
+  Calendar
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -277,18 +278,71 @@ const ClientDetails = () => {
         </div>
       )}
 
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link to="/clients" className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-500 dark:text-gray-400">
-          <ArrowLeft size={20} />
-        </Link>
-        <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Profil Client</h2>
+      {/* 1. Header Toolbar: Back navigation + Breadcrumbs & Executive Action Toolbar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <Link 
+            to="/clients" 
+            className="p-2 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-500 dark:text-gray-400"
+            title="Înapoi la lista de clienți"
+          >
+            <ArrowLeft size={18} />
+          </Link>
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <Link to="/clients" className="hover:text-gray-900 dark:hover:text-white transition-colors">
+              Clienți
+            </Link>
+            <span>/</span>
+            <span className="font-semibold text-gray-800 dark:text-gray-200">
+              Profil Client
+            </span>
+          </div>
+        </div>
+
+        {/* Executive Action Toolbar: Symmetrical, sleek, non-garish buttons */}
+        <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap">
+          {/* Reverifică date API */}
+          <button 
+            type="button"
+            onClick={() => handleEvaluate(false)}
+            disabled={evaluating}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/60 hover:border-gray-300 dark:hover:border-gray-600 transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+            title={latestEval ? "Interoghează sursele externe ANAF/FirmeAPI/Just.ro (consumă 1 credit API)" : "Generează prima evaluare (consumă 1 credit API)"}
+          >
+            <RefreshCw size={13} className={evaluating ? "animate-spin text-gray-500" : "text-gray-500"} />
+            <span>
+              {evaluating 
+                ? "Se interoghează..." 
+                : latestEval 
+                  ? "Reverifică date API" 
+                  : "Generare Evaluare (1 Credit)"}
+            </span>
+          </button>
+
+          {/* Raport Comitet de Credit (PDF) */}
+          {latestEval && (
+            <button
+              type="button"
+              onClick={handleExportCreditReport}
+              disabled={exportingCreditReport}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-white bg-gray-900 hover:bg-black dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 transition-all shadow-xs disabled:opacity-50 cursor-pointer"
+              title="Generează Raportul Oficial de Solvabilitate & Risc pentru Comitetul de Credit (PDF)"
+            >
+              {exportingCreditReport ? (
+                <Loader2 size={13} className="animate-spin" />
+              ) : (
+                <FileDown size={14} />
+              )}
+              <span>{exportingCreditReport ? "Se generează PDF..." : "Raport Comitet Credit (PDF)"}</span>
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Main Info Card with Integrated Score & Actions */}
-      <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 flex flex-col md:flex-row md:items-center justify-between gap-6">
-        {/* Left: Avatar & Company Name/CUI */}
-        <div className="flex items-center gap-4 min-w-0">
+      {/* 2. Main Identity & Governance Card: Full Width, Unconstrained Company Header */}
+      <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 md:p-7 space-y-6">
+        {/* Top Section: Company Identity with Full Width */}
+        <div className="flex items-start gap-4 sm:gap-5">
           {/* Profile Photo / Avatar */}
           {client.profile_photo ? (
             <img 
@@ -297,38 +351,77 @@ const ClientDetails = () => {
               className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl object-cover border border-gray-200 dark:border-gray-700 shadow-xs shrink-0"
             />
           ) : (
-            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gray-100 dark:bg-gray-700 flex items-center justify-center border border-gray-200 dark:border-gray-600 shrink-0">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-gray-100 dark:bg-gray-700/80 flex items-center justify-center border border-gray-200 dark:border-gray-600/80 shrink-0 shadow-2xs">
               <span className="text-lg sm:text-xl font-bold text-gray-700 dark:text-gray-200">
                 {client.name ? client.name.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase() : '?'}
               </span>
             </div>
           )}
-          <div className="min-w-0">
-            <div className="flex items-center gap-2.5">
-              <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white tracking-tight break-words">{client.name}</h3>
+
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-gray-900 dark:text-white tracking-tight leading-tight">
+                {client.name}
+              </h1>
+              
+              <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                {client.type || "PJ"}
+              </span>
+
               {client.type === 'PJ' && (
                 <button
                   type="button"
                   onClick={() => openCompanyIntel(client.cui_cnp, client.name)}
-                  className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-primary transition-all cursor-pointer inline-flex items-center gap-1 text-xs font-semibold"
-                  title="Deschide dosar complet OSINT &amp; Portal Just.ro"
+                  className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/60 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-all cursor-pointer shadow-2xs"
+                  title="Deschide dosar complet OSINT & Portal Just.ro"
                 >
-                  <Scale size={15} />
-                  <span className="hidden sm:inline text-[11px] underline">Dosar &amp; Litigii Just.ro</span>
+                  <Scale size={13} className="text-gray-500 dark:text-gray-400" />
+                  <span>Dosar &amp; Litigii Just.ro</span>
                 </button>
               )}
             </div>
-            <p className="text-xs sm:text-sm text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-2 flex-wrap">
-              <span className="font-medium">CUI/CNP: {client.cui_cnp}</span>
-              <span>•</span>
-              <span>Tip: {client.type}</span>
+
+            {/* Sub-row: Metadata (CUI, ONRC, Înmatriculată, Sediu) */}
+            <div className="flex items-center gap-x-4 gap-y-1.5 text-xs text-gray-500 dark:text-gray-400 mt-2.5 flex-wrap">
+              <span className="inline-flex items-center gap-1">
+                <span className="text-gray-400">CUI/CNP:</span>
+                <strong className="text-gray-800 dark:text-gray-200 font-semibold">{client.cui_cnp}</strong>
+              </span>
+              
+              {(() => {
+                const regCom = enrichedRawData?.anaf?.nr_reg_com || enrichedRawData?.anaf?.nrRegCom;
+                if (!regCom) return null;
+                return (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="text-gray-300 dark:text-gray-600">•</span>
+                    <span className="text-gray-400">ONRC:</span>
+                    <strong className="text-gray-800 dark:text-gray-200 font-semibold">{regCom}</strong>
+                  </span>
+                );
+              })()}
+
+              {(() => {
+                const dataInreg = enrichedRawData?.anaf?.data_inregistrare || enrichedRawData?.anaf?.data_inreg;
+                if (!dataInreg) return null;
+                return (
+                  <span className="inline-flex items-center gap-1">
+                    <span className="text-gray-300 dark:text-gray-600">•</span>
+                    <span className="text-gray-400">Înmatriculată:</span>
+                    <strong className="text-gray-800 dark:text-gray-200 font-semibold">{dataInreg}</strong>
+                  </span>
+                );
+              })()}
+
               {client.address && (
-                <>
-                  <span>•</span>
-                  <span className="truncate max-w-sm" title={client.address}>{client.address}</span>
-                </>
+                <span className="inline-flex items-center gap-1">
+                  <span className="text-gray-300 dark:text-gray-600">•</span>
+                  <span className="text-gray-400">Sediu:</span>
+                  <span className="text-gray-700 dark:text-gray-300 font-medium" title={client.address}>{client.address}</span>
+                </span>
               )}
-            </p>
+            </div>
+
+            {/* CAEN Section */}
             {(() => {
               let caenCode = null;
               let caenDesc = '';
@@ -352,18 +445,18 @@ const ClientDetails = () => {
               const finalSec = caenSec || caenInfo?.sectiune || '';
 
               return (
-                <div className="mt-2.5 flex items-center gap-2 flex-wrap">
-                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200/60 dark:border-blue-800/60 text-xs font-semibold shadow-xs">
-                    <Briefcase size={12} className="text-blue-600 dark:text-blue-400 shrink-0" />
+                <div className="mt-3 flex items-center gap-2 flex-wrap">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-gray-100 dark:bg-gray-700/80 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600 text-xs font-semibold shadow-2xs">
+                    <Briefcase size={12} className="text-gray-500 dark:text-gray-400 shrink-0" />
                     <span>CAEN {caenCode}</span>
                     {finalSec && (
-                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-100 dark:bg-blue-800/60 text-blue-800 dark:text-blue-200 font-bold">
+                      <span className="text-[10px] px-1.5 py-0.2 rounded bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-200 font-bold">
                         Secț. {finalSec}
                       </span>
                     )}
                   </div>
                   {finalDesc && (
-                    <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+                    <span className="text-xs text-gray-600 dark:text-gray-300 font-medium">
                       {finalDesc}
                     </span>
                   )}
@@ -373,102 +466,125 @@ const ClientDetails = () => {
           </div>
         </div>
 
-        {/* Right: Integrated Score & Action Button */}
-        <div className="flex items-center gap-4 sm:gap-6 shrink-0 flex-wrap sm:flex-nowrap border-t md:border-t-0 md:border-l border-gray-100 dark:border-gray-700 pt-4 md:pt-0 md:pl-6">
-          {latestEval ? (
-            <div className="flex items-center gap-3.5">
-              {/* Circular Gauge */}
-              <div className="relative w-14 h-14 flex items-center justify-center shrink-0">
-                <svg className="w-full h-full transform -rotate-90" viewBox="0 0 56 56">
-                  <circle
-                    cx="28" cy="28" r="23"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                    fill="transparent"
-                    className="text-gray-100 dark:text-gray-700"
-                  />
-                  <circle
-                    cx="28" cy="28" r="23"
-                    stroke="currentColor"
-                    strokeWidth="4.5"
-                    strokeLinecap="round"
-                    fill="transparent"
-                    className={latestEval.score > 70 ? 'text-emerald-500' : latestEval.score > 40 ? 'text-amber-500' : 'text-rose-500'}
-                    strokeDasharray="144.5"
-                    strokeDashoffset={144.5 - (144.5 * Math.min(100, Math.max(0, latestEval.score))) / 100}
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="text-lg font-bold text-gray-900 dark:text-white tracking-tight">
-                    {latestEval.score}
-                  </span>
+        {/* Bottom Section: 4-Column Executive KPI Strip */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-5 border-t border-gray-100 dark:border-gray-700/60">
+          {/* Card 1: Scor de Finanțare & Risc */}
+          <div className="p-3.5 rounded-2xl border border-gray-200/80 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex items-center gap-3.5 shadow-2xs">
+            {latestEval ? (
+              <>
+                <div className="relative w-12 h-12 flex items-center justify-center shrink-0">
+                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 56 56">
+                    <circle
+                      cx="28" cy="28" r="23"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="transparent"
+                      className="text-gray-200 dark:text-gray-700"
+                    />
+                    <circle
+                      cx="28" cy="28" r="23"
+                      stroke="currentColor"
+                      strokeWidth="4.5"
+                      strokeLinecap="round"
+                      fill="transparent"
+                      className={latestEval.score > 70 ? 'text-emerald-500' : latestEval.score > 40 ? 'text-amber-500' : 'text-rose-500'}
+                      strokeDasharray="144.5"
+                      strokeDashoffset={144.5 - (144.5 * Math.min(100, Math.max(0, latestEval.score))) / 100}
+                    />
+                  </svg>
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <span className="text-base font-bold text-gray-900 dark:text-white tracking-tight">
+                      {latestEval.score}
+                    </span>
+                  </div>
                 </div>
-              </div>
-
-              {/* Score text info */}
-              <div className="flex flex-col">
-                <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wider">
-                  Scor de Finanțare
-                </span>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                <div className="min-w-0">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                    Scor Finanțare
+                  </span>
+                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold mt-0.5 ${
                     latestEval.score > 70 
-                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800' 
+                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60' 
                       : latestEval.score > 40 
-                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200 dark:border-amber-800' 
-                        : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200/60' 
+                        : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200/60'
                   }`}>
-                    {latestEval.score > 70 ? <ShieldCheck size={12} /> : <AlertTriangle size={12} />}
+                    {latestEval.score > 70 ? <ShieldCheck size={11} /> : <AlertTriangle size={11} />}
                     <span>Risc: {latestEval.risk_level}</span>
                   </span>
                 </div>
-                <span className="text-[10px] text-gray-400 mt-0.5">
-                  Actualizat: {new Date(latestEval.created_at).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                </span>
-              </div>
-              <span className="text-[11px] font-semibold text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 px-3 py-1 rounded-full flex items-center gap-1.5 shadow-2xs">
-                Baza Locală (0 credite)
+              </>
+            ) : (
+              <div className="text-xs text-gray-400 p-2">Neevaluat financiar</div>
+            )}
+          </div>
+
+          {/* Card 2: Sursă Date OSINT */}
+          <div className="p-3.5 rounded-2xl border border-gray-200/80 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex items-center gap-3 shadow-2xs">
+            <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 shrink-0 border border-gray-200 dark:border-gray-700">
+              <Building2 size={18} />
+            </div>
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                Sursă Inteligență
+              </span>
+              <span className="text-xs font-bold text-gray-800 dark:text-gray-200 block truncate">
+                Baza Locală Axis
+              </span>
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block">
+                0 credite consumate
               </span>
             </div>
-          ) : (
-            <span className="text-xs text-gray-400 font-medium px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600">
-              Neevaluat
-            </span>
-          )}
+          </div>
 
-          {/* Clean Evaluate / Re-verify Button */}
-          <button 
-            onClick={() => handleEvaluate(false)}
-            disabled={evaluating}
-            className="inline-flex items-center gap-2 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 px-5 py-2.5 rounded-full text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 cursor-pointer shrink-0"
-            title={latestEval ? "Interoghează sursele externe ANAF/FirmeAPI/Just.ro (consumă 1 credit API)" : "Generează prima evaluare (consumă 1 credit API)"}
-          >
-            <RefreshCw size={14} className={evaluating ? "animate-spin" : ""} />
-            <span>
-              {evaluating 
-                ? "Se interoghează..." 
-                : latestEval 
-                  ? "Reverifică date API" 
-                  : "Generare Evaluare (1 Credit)"}
-            </span>
-          </button>
-
-          {/* Executive Credit Committee PDF Report Button */}
-          {latestEval && (
-            <button
-              onClick={handleExportCreditReport}
-              disabled={exportingCreditReport}
-              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 cursor-pointer shrink-0"
-              title="Generează Raportul Oficial de Solvabilitate & Risc pentru Comitetul de Credit (PDF)"
-            >
-              {exportingCreditReport ? (
-                <Loader2 size={14} className="animate-spin" />
-              ) : (
-                <FileDown size={14} />
+          {/* Card 3: Instanțe & Dosare Just.ro */}
+          <div className="p-3.5 rounded-2xl border border-gray-200/80 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex items-center gap-3 shadow-2xs">
+            <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 shrink-0 border border-gray-200 dark:border-gray-700">
+              <Scale size={18} />
+            </div>
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                Portal Just.ro
+              </span>
+              <span className="text-xs font-bold text-gray-800 dark:text-gray-200 block truncate">
+                {enrichedRawData?.court_cases?.length 
+                  ? `${enrichedRawData.court_cases.length} dosare identificate`
+                  : 'Fără litigii înregistrate'}
+              </span>
+              {client.type === 'PJ' && (
+                <button 
+                  type="button"
+                  onClick={() => openCompanyIntel(client.cui_cnp, client.name)}
+                  className="text-[10px] text-gray-500 hover:text-gray-800 dark:hover:text-white font-medium hover:underline inline-flex items-center gap-1 cursor-pointer"
+                >
+                  <span>Vezi dosare</span>
+                  <ExternalLink size={9} />
+                </button>
               )}
-              <span>{exportingCreditReport ? "Se generează PDF..." : "Raport Comitet de Credit (PDF)"}</span>
-            </button>
-          )}
+            </div>
+          </div>
+
+          {/* Card 4: Ultima Actualizare */}
+          <div className="p-3.5 rounded-2xl border border-gray-200/80 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex items-center gap-3 shadow-2xs">
+            <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-600 dark:text-gray-300 shrink-0 border border-gray-200 dark:border-gray-700">
+              <Calendar size={18} />
+            </div>
+            <div className="min-w-0">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                Ultima Evaluare
+              </span>
+              <span className="text-xs font-bold text-gray-800 dark:text-gray-200 block truncate">
+                {latestEval?.created_at 
+                  ? new Date(latestEval.created_at).toLocaleDateString('ro-RO', { day: '2-digit', month: '2-digit', year: 'numeric' })
+                  : 'N/A'}
+              </span>
+              <span className="text-[10px] text-gray-400 block">
+                {latestEval?.created_at 
+                  ? `Ora ${new Date(latestEval.created_at).toLocaleTimeString('ro-RO', { hour: '2-digit', minute: '2-digit' })}`
+                  : 'Necesită evaluare'}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
 
