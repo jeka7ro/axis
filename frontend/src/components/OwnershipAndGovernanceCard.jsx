@@ -368,16 +368,16 @@ export const OwnershipAndGovernanceCard = ({
                           {a.stare || "Activ"}
                         </span>
                       </div>
-                      {a.data && (
-                        <div className="text-right">
-                          <span className="text-xs text-gray-600 dark:text-gray-300 block font-medium">
-                            Mandat ONRC: <strong className="font-semibold text-gray-900 dark:text-white">{a.data}</strong>
+                      <div className="text-right">
+                        <span className="text-xs text-emerald-700 dark:text-emerald-400 block font-semibold">
+                          Mandat în vigoare ({a.stare || "Activ"})
+                        </span>
+                        {a.data && (
+                          <span className="text-[10px] text-gray-400 dark:text-gray-500 block" title="Data ultimei verificări / sincronizări a evidenței cu Registrul Comerțului">
+                            Sincronizat registru: {a.data}
                           </span>
-                          <span className="text-[10px] text-gray-400 dark:text-gray-500 block">
-                            Înregistrare mandat conducere
-                          </span>
-                        </div>
-                      )}
+                        )}
+                      </div>
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                       Calitate: <strong className="text-gray-700 dark:text-gray-200">{a.calitate || "Administrator"}</strong> • {a.tip || "Persoană Fizică"}
