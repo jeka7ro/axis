@@ -6,7 +6,7 @@ import {
   Building2, Eye, Compass, Layers, CheckSquare, Square, ChevronLeft,
   Camera, Maximize2, X, Image as ImageIcon, Loader2, RefreshCw, Users,
   Search, Briefcase, UserCheck, Scale, BookOpen, Sparkles, Award, Network,
-  Copy, Check, Plus, Minus, ZoomIn, ZoomOut
+  Copy, Check, Plus, Minus, ZoomIn, ZoomOut, FileDown
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
@@ -18,6 +18,7 @@ import FinancialPerformanceCard from '../components/FinancialPerformanceCard';
 import OwnershipAndGovernanceCard from '../components/OwnershipAndGovernanceCard';
 import InvestigationBoard from '../components/InvestigationBoard';
 import { getCaenInfo, getCaenDescription } from '../utils/caenHelper';
+import { generateCreditCommitteeReport } from '../utils/creditCommitteeReportGenerator';
 
 const customMapPinIcon = typeof window !== 'undefined' && L ? L.divIcon({
   className: 'custom-leaflet-marker',
@@ -67,6 +68,7 @@ const ClientDetails = () => {
   const [selectedMofPub, setSelectedMofPub] = useState(null);
   const [expandedMofIndices, setExpandedMofIndices] = useState([]);
   const [showConfirmReevalModal, setShowConfirmReevalModal] = useState(false);
+  const [exportingCreditReport, setExportingCreditReport] = useState(false);
 
   const toggleMofExpand = (idx) => {
     setExpandedMofIndices(prev => 
@@ -155,6 +157,22 @@ const ClientDetails = () => {
       alert(`Eroare la evaluarea companiei ${companyName || cleanCui}: ${error.message || 'Verificați conexiunea la server'}`);
     } finally {
       setEvaluatingCui(null);
+    }
+  };
+
+  const handleExportCreditReport = async () => {
+    if (!latestEval) {
+      alert('Vă rugăm să rulați evaluarea companiei înainte de generarea raportului de credit.');
+      return;
+    }
+    setExportingCreditReport(true);
+    try {
+      await generateCreditCommitteeReport(client, latestEval);
+    } catch (err) {
+      console.error('Eroare generare raport comitet credit:', err);
+      alert('A apărut o eroare la generarea raportului: ' + err.message);
+    } finally {
+      setExportingCreditReport(false);
     }
   };
 
@@ -418,6 +436,23 @@ const ClientDetails = () => {
                   : "Generare Evaluare (1 Credit)"}
             </span>
           </button>
+
+          {/* Executive Credit Committee PDF Report Button */}
+          {latestEval && (
+            <button
+              onClick={handleExportCreditReport}
+              disabled={exportingCreditReport}
+              className="inline-flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white px-5 py-2.5 rounded-full text-xs font-semibold shadow-xs transition-colors disabled:opacity-50 cursor-pointer shrink-0"
+              title="Generează Raportul Oficial de Solvabilitate & Risc pentru Comitetul de Credit (PDF)"
+            >
+              {exportingCreditReport ? (
+                <Loader2 size={14} className="animate-spin" />
+              ) : (
+                <FileDown size={14} />
+              )}
+              <span>{exportingCreditReport ? "Se generează PDF..." : "Raport Comitet de Credit (PDF)"}</span>
+            </button>
+          )}
         </div>
       </div>
 
