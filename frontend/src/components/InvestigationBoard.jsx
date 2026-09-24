@@ -10,22 +10,50 @@ import { fetchCompanyFullIntel, fetchPersonFullIntel } from '../services/api';
 
 const THEMES = {
   dark: {
-    company: { bg: '#080e1e', border: '#3b82f6', text: '#ffffff', subtext: '#93c5fd', badge: '#1d4ed8', abbr: 'SRL', label: 'SUBIECT PRINCIPAL (VEDETĂ)' },
-    related_company: { bg: '#18181b', border: '#8b5cf6', text: '#ffffff', subtext: '#c4b5fd', badge: '#6d28d9', abbr: 'CO', label: 'FIRMĂ CONEXĂ' },
-    person: { bg: '#1c1917', border: '#f59e0b', text: '#ffffff', subtext: '#fde68a', badge: '#b45309', abbr: 'ASOC', label: 'ASOCIAT / CONDUCERE' },
-    person_historical: { bg: '#141820', border: '#64748b', text: '#cbd5e1', subtext: '#94a3b8', badge: '#475569', abbr: 'FOST', label: 'FOST ADMINISTRATOR' },
-    address: { bg: '#064e3b', border: '#10b981', text: '#ffffff', subtext: '#a7f3d0', badge: '#047857', abbr: 'ADR', label: 'SEDIU SOCIAL' },
-    risk: { bg: '#450a0a', border: '#ef4444', text: '#ffffff', subtext: '#fca5a5', badge: '#b91c1c', abbr: '!', label: 'ALERTĂ RISC' },
+    company: { bg: '#0f172a', border: '#38bdf8', text: '#f8fafc', subtext: '#94a3b8', badge: '#0284c7', abbr: 'SRL', label: 'SUBIECT PRINCIPAL' },
+    related_company: { bg: '#18181b', border: '#52525b', text: '#f4f4f5', subtext: '#a1a1aa', badge: '#3f3f46', abbr: 'CO', label: 'FIRMĂ AFILIATĂ' },
+    person: { bg: '#18181b', border: '#52525b', text: '#f4f4f5', subtext: '#a1a1aa', badge: '#3f3f46', abbr: 'PERS', label: 'CONDUCERE / ASOCIAT' },
+    person_historical: { bg: '#111827', border: '#374151', text: '#9ca3af', subtext: '#6b7280', badge: '#374151', abbr: 'FOST', label: 'FOST MANDAT' },
+    address: { bg: '#0f172a', border: '#334155', text: '#f8fafc', subtext: '#94a3b8', badge: '#334155', abbr: 'SEDIU', label: 'SEDIU SOCIAL' },
+    risk: { bg: '#450a0a', border: '#dc2626', text: '#fca5a5', subtext: '#ef4444', badge: '#991b1b', abbr: 'RISC', label: 'ALERTĂ RISC' },
   },
   light: {
-    company: { bg: '#ffffff', border: '#2563eb', text: '#0f172a', subtext: '#1d4ed8', badge: '#2563eb', abbr: 'SRL', label: 'SUBIECT PRINCIPAL (VEDETĂ)' },
-    related_company: { bg: '#ffffff', border: '#7c3aed', text: '#0f172a', subtext: '#6d28d9', badge: '#7c3aed', abbr: 'CO', label: 'FIRMĂ CONEXĂ' },
-    person: { bg: '#ffffff', border: '#d97706', text: '#0f172a', subtext: '#b45309', badge: '#d97706', abbr: 'ASOC', label: 'ASOCIAT / CONDUCERE' },
-    person_historical: { bg: '#f1f5f9', border: '#94a3b8', text: '#334155', subtext: '#64748b', badge: '#64748b', abbr: 'FOST', label: 'FOST ADMINISTRATOR' },
-    address: { bg: '#ffffff', border: '#059669', text: '#0f172a', subtext: '#047857', badge: '#059669', abbr: 'ADR', label: 'SEDIU SOCIAL' },
-    risk: { bg: '#fef2f2', border: '#ef4444', text: '#991b1b', subtext: '#b91c1c', badge: '#dc2626', abbr: '!', label: 'ALERTĂ RISC' },
+    company: { bg: '#ffffff', border: '#0f172a', text: '#0f172a', subtext: '#475569', badge: '#0f172a', abbr: 'SRL', label: 'SUBIECT PRINCIPAL' },
+    related_company: { bg: '#ffffff', border: '#64748b', text: '#0f172a', subtext: '#64748b', badge: '#475569', abbr: 'CO', label: 'FIRMĂ AFILIATĂ' },
+    person: { bg: '#ffffff', border: '#64748b', text: '#0f172a', subtext: '#64748b', badge: '#334155', abbr: 'PERS', label: 'CONDUCERE / ASOCIAT' },
+    person_historical: { bg: '#f8fafc', border: '#cbd5e1', text: '#64748b', subtext: '#94a3b8', badge: '#94a3b8', abbr: 'FOST', label: 'FOST MANDAT' },
+    address: { bg: '#ffffff', border: '#64748b', text: '#0f172a', subtext: '#64748b', badge: '#475569', abbr: 'SEDIU', label: 'SEDIU SOCIAL' },
+    risk: { bg: '#fef2f2', border: '#dc2626', text: '#991b1b', subtext: '#b91c1c', badge: '#dc2626', abbr: 'RISC', label: 'ALERTĂ RISC' },
   },
 };
+
+function formatCleanRoles(rawRoles, percent) {
+  if (!rawRoles) {
+    if (percent === 100) return 'Asociat Unic (100%)';
+    if (percent > 0) return `Asociat (${percent}%)`;
+    return 'Conducere';
+  }
+  const parts = String(rawRoles)
+    .split('/')
+    .map(r => r.trim())
+    .filter(Boolean);
+
+  const seen = new Set();
+  const cleaned = [];
+
+  for (const part of parts) {
+    const upper = part.toUpperCase().replace(/\s+/g, ' ');
+    if (upper === 'ASOCIAT SI ADMINISTRATOR' && (seen.has('ADMINISTRATOR') || seen.has('ASOCIAT') || percent > 0)) {
+      continue;
+    }
+    if (!seen.has(upper)) {
+      seen.add(upper);
+      cleaned.push(part);
+    }
+  }
+
+  return cleaned.join(' • ') || rawRoles;
+}
 
 const NODE_DIMENSIONS = {
   company: { w: 136, h: 64 },
@@ -846,29 +874,6 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
     }
   }
 
-  // Pushpin (Red or Gold for Star, Slate for Historical)
-  const pinX = node.x;
-  const pinY = y - 1;
-  const pinR = node.isRoot ? 4 : node.type === 'risk' ? 2.5 : 3.5;
-
-  ctx.beginPath();
-  ctx.arc(pinX + 1, pinY + 1.5, pinR * 0.8, 0, Math.PI * 2);
-  ctx.fillStyle = isDark ? 'rgba(0, 0, 0, 0.4)' : 'rgba(15, 23, 42, 0.25)';
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(pinX, pinY, pinR, 0, Math.PI * 2);
-  ctx.fillStyle = node.isRoot ? '#f59e0b' : isHistorical ? '#64748b' : '#dc2626';
-  ctx.fill();
-  ctx.lineWidth = 0.8;
-  ctx.strokeStyle = node.isRoot ? '#d97706' : isHistorical ? '#475569' : '#991b1b';
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.arc(pinX - pinR * 0.35, pinY - pinR * 0.35, pinR * 0.35, 0, Math.PI * 2);
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.75)';
-  ctx.fill();
-
   ctx.restore();
 }
 
@@ -884,15 +889,6 @@ function drawStringLink(link, ctx, globalScale, isDark = true) {
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist === 0) return;
 
-  const midX = (start.x + end.x) / 2;
-  const midY = (start.y + end.y) / 2;
-  const sag = Math.min(dist * 0.08, 14);
-
-  const nx = dy / dist;
-  const ny = -dx / dist;
-  const ctrlX = midX + nx * sag;
-  const ctrlY = midY + ny * sag;
-
   const isHistoricalLink = link.type === 'primary_historical' || link.type === 'network_historical' || link.type === 'historical';
 
   ctx.save();
@@ -902,48 +898,30 @@ function drawStringLink(link, ctx, globalScale, isDark = true) {
 
   ctx.beginPath();
   ctx.moveTo(start.x, start.y);
-  ctx.quadraticCurveTo(ctrlX, ctrlY, end.x, end.y);
+  ctx.lineTo(end.x, end.y);
 
   if (isDark) {
     if (isHistoricalLink) {
-      ctx.strokeStyle = 'rgba(148, 163, 184, 0.75)';
-      ctx.lineWidth = 1.3;
-    } else if (link.type === 'risk') {
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.75)';
-      ctx.lineWidth = 1.3;
+      ctx.strokeStyle = 'rgba(100, 116, 139, 0.45)';
+      ctx.lineWidth = 1.0;
     } else if (link.type === 'primary') {
-      ctx.strokeStyle = 'rgba(239, 68, 68, 0.9)';
-      ctx.lineWidth = 2.0;
-    } else if (link.type === 'address_branch') {
-      ctx.strokeStyle = 'rgba(16, 185, 129, 0.75)';
-      ctx.lineWidth = 1.4;
-    } else if (link.type === 'network') {
-      ctx.strokeStyle = 'rgba(168, 85, 247, 0.75)';
+      ctx.strokeStyle = 'rgba(203, 213, 225, 0.75)';
       ctx.lineWidth = 1.4;
     } else {
-      ctx.strokeStyle = 'rgba(203, 213, 225, 0.4)';
-      ctx.lineWidth = 1.1;
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.45)';
+      ctx.lineWidth = 1.0;
     }
   } else {
-    // Light mode - vibrant yarn strings with high contrast on light canvas
+    // Light mode - corporate slate
     if (isHistoricalLink) {
-      ctx.strokeStyle = 'rgba(100, 116, 139, 0.75)';
-      ctx.lineWidth = 1.3;
-    } else if (link.type === 'risk') {
-      ctx.strokeStyle = 'rgba(220, 38, 38, 0.85)';
-      ctx.lineWidth = 1.3;
+      ctx.strokeStyle = 'rgba(148, 163, 184, 0.6)';
+      ctx.lineWidth = 1.0;
     } else if (link.type === 'primary') {
-      ctx.strokeStyle = 'rgba(220, 38, 38, 0.95)';
-      ctx.lineWidth = 2.0;
-    } else if (link.type === 'address_branch') {
-      ctx.strokeStyle = 'rgba(5, 150, 105, 0.85)';
-      ctx.lineWidth = 1.5;
-    } else if (link.type === 'network') {
-      ctx.strokeStyle = 'rgba(124, 58, 237, 0.85)';
-      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(51, 65, 85, 0.8)';
+      ctx.lineWidth = 1.4;
     } else {
-      ctx.strokeStyle = 'rgba(100, 116, 139, 0.55)';
-      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = 'rgba(100, 116, 139, 0.5)';
+      ctx.lineWidth = 1.0;
     }
   }
 
@@ -967,22 +945,13 @@ function drawLinkLabel(link, ctx, isDark = true) {
   const dist = Math.sqrt(dx * dx + dy * dy);
   if (dist === 0) return;
 
-  const midX = (start.x + end.x) / 2;
-  const midY = (start.y + end.y) / 2;
-  const sag = Math.min(dist * 0.08, 14);
-
-  const nx = dy / dist;
-  const ny = -dx / dist;
-  const ctrlX = midX + nx * sag;
-  const ctrlY = midY + ny * sag;
-
   const isHistoricalLink = link.type === 'primary_historical' || link.type === 'network_historical' || link.type === 'historical';
 
   ctx.save();
-  ctx.font = 'bold 5.5px Inter, -apple-system, sans-serif';
+  ctx.font = '500 5.5px Inter, -apple-system, sans-serif';
   const textW = ctx.measureText(link.label).width;
-  const badgeW = textW + 8;
-  const badgeH = 9.5;
+  const badgeW = textW + 7;
+  const badgeH = 9;
 
   const dimStart = NODE_DIMENSIONS[start.type] || { w: 104, h: 50 };
   const dimEnd = NODE_DIMENSIONS[end.type] || { w: 104, h: 50 };
@@ -990,45 +959,28 @@ function drawLinkLabel(link, ctx, isDark = true) {
   const ux = dx / dist;
   const uy = dy / dist;
 
-  // Approximate half-extent where the yarn exits start card and enters end card
   const rStart = Math.min(
-    (dimStart.w / 2 + 10) / (Math.abs(ux) || 0.001),
-    (dimStart.h / 2 + 10) / (Math.abs(uy) || 0.001)
+    (dimStart.w / 2 + 8) / (Math.abs(ux) || 0.001),
+    (dimStart.h / 2 + 8) / (Math.abs(uy) || 0.001)
   );
   const rEnd = Math.min(
-    (dimEnd.w / 2 + 10) / (Math.abs(ux) || 0.001),
-    (dimEnd.h / 2 + 10) / (Math.abs(uy) || 0.001)
+    (dimEnd.w / 2 + 8) / (Math.abs(ux) || 0.001),
+    (dimEnd.h / 2 + 8) / (Math.abs(uy) || 0.001)
   );
 
-  // Position at the exact visual center of the free span between card perimeters
   const visibleSpan = Math.max(20, dist - rStart - rEnd);
   const tMid = (rStart + visibleSpan / 2) / dist;
-  const t = Math.max(0.28, Math.min(0.72, tMid));
+  const t = Math.max(0.3, Math.min(0.7, tMid));
 
-  const oneMinusT = 1 - t;
-  let labelX = oneMinusT * oneMinusT * start.x + 2 * oneMinusT * t * ctrlX + t * t * end.x;
-  let labelY = oneMinusT * oneMinusT * start.y + 2 * oneMinusT * t * ctrlY + t * t * end.y;
-
-  // Clearance check: ensure label badge is not pushed inside start or end bounding box
-  const marginStartW = dimStart.w / 2 + badgeW / 2 + 5;
-  const marginStartH = dimStart.h / 2 + badgeH / 2 + 5;
-  const marginEndW = dimEnd.w / 2 + badgeW / 2 + 5;
-  const marginEndH = dimEnd.h / 2 + badgeH / 2 + 5;
-
-  if (Math.abs(labelX - start.x) < marginStartW && Math.abs(labelY - start.y) < marginStartH) {
-    labelX += ux * 16;
-    labelY += uy * 16;
-  } else if (Math.abs(labelX - end.x) < marginEndW && Math.abs(labelY - end.y) < marginEndH) {
-    labelX -= ux * 16;
-    labelY -= uy * 16;
-  }
+  let labelX = (1 - t) * start.x + t * end.x;
+  let labelY = (1 - t) * start.y + t * end.y;
 
   if (isDark) {
-    ctx.shadowColor = 'rgba(0, 0, 0, 0.6)';
-    ctx.shadowBlur = 4;
+    ctx.shadowColor = 'rgba(0, 0, 0, 0.4)';
+    ctx.shadowBlur = 3;
     ctx.shadowOffsetY = 1;
 
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
     ctx.beginPath();
     drawRoundedRect(ctx, labelX - badgeW / 2, labelY - badgeH / 2, badgeW, badgeH, 2.5);
     ctx.fill();
@@ -1037,13 +989,13 @@ function drawLinkLabel(link, ctx, isDark = true) {
     ctx.shadowBlur = 0;
 
     ctx.lineWidth = 0.7;
-    ctx.strokeStyle = isHistoricalLink ? '#64748b' : (link.type === 'risk' || link.type === 'primary') ? '#ef4444' : link.type === 'address_branch' ? '#10b981' : link.type === 'network' ? '#a855f7' : '#94a3b8';
+    ctx.strokeStyle = isHistoricalLink ? 'rgba(100, 116, 139, 0.4)' : 'rgba(148, 163, 184, 0.5)';
     ctx.stroke();
 
-    ctx.fillStyle = isHistoricalLink ? '#cbd5e1' : (link.type === 'risk' || link.type === 'primary') ? '#fca5a5' : '#f1f5f9';
+    ctx.fillStyle = isHistoricalLink ? '#94a3b8' : '#e2e8f0';
   } else {
-    ctx.shadowColor = 'rgba(15, 23, 42, 0.12)';
-    ctx.shadowBlur = 4;
+    ctx.shadowColor = 'rgba(15, 23, 42, 0.08)';
+    ctx.shadowBlur = 3;
     ctx.shadowOffsetY = 1;
 
     ctx.fillStyle = 'rgba(255, 255, 255, 0.96)';
@@ -1055,10 +1007,10 @@ function drawLinkLabel(link, ctx, isDark = true) {
     ctx.shadowBlur = 0;
 
     ctx.lineWidth = 0.8;
-    ctx.strokeStyle = isHistoricalLink ? '#94a3b8' : (link.type === 'risk' || link.type === 'primary') ? '#dc2626' : link.type === 'address_branch' ? '#059669' : link.type === 'network' ? '#7c3aed' : '#94a3b8';
+    ctx.strokeStyle = isHistoricalLink ? 'rgba(203, 213, 225, 0.8)' : 'rgba(203, 213, 225, 0.9)';
     ctx.stroke();
 
-    ctx.fillStyle = isHistoricalLink ? '#475569' : (link.type === 'risk' || link.type === 'primary') ? '#b91c1c' : '#0f172a';
+    ctx.fillStyle = isHistoricalLink ? '#64748b' : '#334155';
   }
 
   ctx.textAlign = 'center';
@@ -2114,7 +2066,7 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
                                 e.stopPropagation();
                                 onOpenCompany(node.cui, node.fullName || node.label);
                               }}
-                              className="px-2 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+                              className="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-[10px] font-medium flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
                               title="Deschide dosar complet firmă"
                             >
                               <Building2 size={11} />
@@ -2128,7 +2080,7 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
                                 e.stopPropagation();
                                 onOpenPerson(node.fullName || node.label, clientCui);
                               }}
-                              className="px-2 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-[10px] font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+                              className="px-2 py-1 rounded-md bg-slate-800 hover:bg-slate-700 dark:bg-slate-700 dark:hover:bg-slate-600 text-white text-[10px] font-medium flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
                               title="Deschide dosar persoană"
                             >
                               <User size={11} />
@@ -2143,29 +2095,29 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
               ) : null}
 
               {searchQuery.trim() && (
-                <div className="p-2.5 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-800/80 rounded-b-xl space-y-1.5">
+                <div className="p-2.5 border-t border-slate-200 dark:border-slate-800 bg-slate-50/80 dark:bg-slate-900/80 rounded-b-xl space-y-1.5">
                   {onOpenCompany && (
                     <button
                       type="button"
                       onMouseDown={handleDirectSearchSubmit}
-                      className="w-full p-2 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 text-blue-700 dark:text-blue-300 border border-blue-500/30 font-semibold text-xs flex items-center justify-between gap-2 transition-all cursor-pointer text-left"
+                      className="w-full p-2 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/80 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-medium text-xs flex items-center justify-between gap-2 transition-all cursor-pointer text-left"
                     >
                       <span className="flex items-center gap-1.5 truncate">
-                        <Building2 size={13} className="shrink-0" />
+                        <Building2 size={13} className="shrink-0 text-slate-500" />
                         <span className="truncate">Deschide Dosar Complet: "{searchQuery.trim()}"</span>
                       </span>
-                      <ExternalLink size={11} className="shrink-0" />
+                      <ExternalLink size={11} className="shrink-0 text-slate-400" />
                     </button>
                   )}
                   <button
                     type="button"
                     disabled={expandingNodeId === 'search'}
                     onMouseDown={() => handleSearchAndExpandToGraph(searchQuery)}
-                    className="w-full p-2 rounded-lg bg-purple-600/10 hover:bg-purple-600/20 text-purple-700 dark:text-purple-300 border border-purple-500/30 font-semibold text-xs flex items-center justify-between gap-2 transition-all cursor-pointer text-left disabled:opacity-50"
+                    className="w-full p-2 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 font-medium text-xs flex items-center justify-between gap-2 transition-all cursor-pointer text-left disabled:opacity-50"
                   >
                     <span className="flex items-center gap-1.5 truncate">
                       {expandingNodeId === 'search' ? (
-                        <Loader2 size={13} className="animate-spin text-purple-600 shrink-0" />
+                        <Loader2 size={13} className="animate-spin text-slate-400 shrink-0" />
                       ) : (
                         <GitBranch size={13} className="shrink-0" />
                       )}
@@ -2257,10 +2209,10 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
       {(selectedNode || hoveredNode) && (
         <div className="absolute top-16 right-4 z-20 max-w-sm animate-in fade-in" style={{ animationDuration: '120ms' }}>
           <div
-            className={`p-4 rounded-2xl border shadow-2xl transition-colors pointer-events-auto ${
+            className={`p-4 rounded-xl border shadow-xl transition-colors pointer-events-auto w-84 ${
               isDark
-                ? 'bg-slate-900/95 border-gray-700/80 text-white'
-                : 'bg-white/95 border-gray-200 text-gray-900'
+                ? 'bg-slate-900/95 border-slate-800 text-slate-100'
+                : 'bg-white/95 border-slate-200 text-slate-900'
             }`}
             style={{ backdropFilter: 'blur(16px)' }}
           >
@@ -2268,118 +2220,101 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
               const activeNode = selectedNode || hoveredNode;
               const isComp = activeNode.type === 'company' || activeNode.type === 'related_company';
               const isPers = activeNode.type === 'person' || activeNode.type === 'person_historical';
+              const isHist = activeNode.type === 'person_historical' || activeNode.isHistorical;
+              const cleanRoles = formatCleanRoles(activeNode.roles, activeNode.percent);
+
+              let badgeLabel = 'Informație';
+              if (activeNode.isRoot) {
+                badgeLabel = 'Subiect Principal';
+              } else if (isComp) {
+                badgeLabel = activeNode.type === 'company' ? 'Firmă Principală' : 'Firmă Conexă';
+              } else if (isPers) {
+                if (activeNode.percent === 100) badgeLabel = 'Asociat Unic (100%)';
+                else if (activeNode.percent > 0) badgeLabel = `Asociat (${activeNode.percent}%)`;
+                else if (isHist) badgeLabel = 'Fost Administrator';
+                else badgeLabel = 'Administrator';
+              } else if (activeNode.type === 'address') {
+                badgeLabel = 'Sediu / Punct Lucru';
+              } else if (activeNode.type === 'risk') {
+                badgeLabel = 'Semnal Risc';
+              }
 
               return (
                 <>
-                  <div className="flex items-center justify-between gap-2 mb-2">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span
-                        className="text-[10px] font-bold px-2 py-0.5 rounded text-white shrink-0"
-                        style={{ background: activeConfig[activeNode.type]?.badge }}
-                      >
-                        {activeNode.type === 'person' && activeNode.percent > 0 ? 'ASOC' : activeConfig[activeNode.type]?.abbr}
-                      </span>
-                      <span className={`text-sm font-bold leading-tight truncate ${isDark ? 'text-white' : 'text-gray-900'}`}>
-                        {activeNode.fullName || activeNode.label}
-                      </span>
-                    </div>
+                  <div className="flex items-start justify-between gap-2">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                      {badgeLabel}
+                    </span>
                     {selectedNode && (
                       <button
                         type="button"
                         onClick={() => setSelectedNode(null)}
-                        className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 rounded-full cursor-pointer shrink-0"
+                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-md cursor-pointer transition-colors shrink-0"
                         title="Închide card"
                       >
                         <X size={14} />
                       </button>
                     )}
                   </div>
-                  <div
-                    className="text-[10px] font-bold uppercase tracking-wider mb-2"
-                    style={{ color: activeConfig[activeNode.type]?.border }}
-                  >
-                    {activeNode.type === 'person'
-                      ? (activeNode.percent === 100 ? 'ASOCIAT UNIC (100%)' : activeNode.percent > 0 ? `ASOCIAT (${activeNode.percent}%)` : 'ADMINISTRATOR')
-                      : activeConfig[activeNode.type]?.label}
+
+                  <div className="text-sm font-semibold text-slate-900 dark:text-white mt-2 leading-snug">
+                    {activeNode.fullName || activeNode.label}
                   </div>
-                  {activeNode.roles && (
-                    <div className={`text-xs font-medium ${isDark ? 'text-amber-300' : 'text-amber-800'}`}>
-                      Calitate oficială: {activeNode.roles}
+
+                  {cleanRoles && (
+                    <div className="text-xs text-slate-600 dark:text-slate-400 mt-1 font-normal leading-relaxed">
+                      {cleanRoles}
                     </div>
                   )}
-                  {activeNode.percent > 0 && (
-                    <div className={`text-xs font-bold ${isDark ? 'text-amber-400' : 'text-amber-600'}`}>
-                      Cota deținută: {activeNode.percent}% părți sociale
-                    </div>
-                  )}
+
                   {activeNode.cui && (
-                    <div className={`text-xs mt-0.5 font-semibold ${isDark ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Cod Fiscal (CUI): <span className="font-mono">{activeNode.cui}</span>
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 font-mono">
+                      CUI: {activeNode.cui}
                     </div>
                   )}
-                  {activeNode.an_infiintare && (
-                    <div className={`text-xs ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>
-                      An Înființare: {activeNode.an_infiintare}
-                    </div>
-                  )}
-                  {activeNode.telefon && (
-                    <div className={`text-xs mt-1 font-medium ${isDark ? 'text-cyan-300' : 'text-cyan-700'}`}>
-                      Tel. Oficial Contact: {activeNode.telefon}
-                    </div>
-                  )}
-                  {activeNode.stare && (
-                    <div className="text-xs mt-1 flex items-center gap-1.5">
-                      <span
-                        className={`w-2 h-2 rounded-full ${
-                          activeNode.stare === 'Activ' ? 'bg-emerald-500' : 'bg-rose-500'
-                        }`}
-                      />
-                      <span
-                        className={
-                          activeNode.stare === 'Activ'
-                            ? isDark
-                              ? 'text-emerald-300'
-                              : 'text-emerald-700'
-                            : isDark
-                            ? 'text-rose-300'
-                            : 'text-rose-700'
-                        }
-                      >
-                        {activeNode.stare}
-                      </span>
-                    </div>
-                  )}
-                  {activeNode.relation && (
-                    <div className={`text-xs mt-1 font-medium ${isDark ? 'text-purple-300' : 'text-purple-700'}`}>
-                      Conexiune: {activeNode.relation}
-                    </div>
-                  )}
+
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mt-2">
+                    {(activeNode.stare || activeNode.isRoot || isHist) && (
+                      <div className="flex items-center gap-1.5">
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            activeNode.stare === 'Activ' || activeNode.isRoot ? 'bg-emerald-500' : 'bg-slate-400'
+                          }`}
+                        />
+                        <span>
+                          {activeNode.isRoot
+                            ? 'Activ (Client înregistrat)'
+                            : isHist
+                            ? (activeNode.mandatPeriod ? `Mandat Încheiat (${activeNode.mandatPeriod})` : 'Mandat Încheiat')
+                            : (activeNode.stare || 'Înregistrat')}
+                        </span>
+                      </div>
+                    )}
+                    {activeNode.an_infiintare && (
+                      <span>Înființare: {activeNode.an_infiintare}</span>
+                    )}
+                    {activeNode.telefon && (
+                      <span>Tel: {activeNode.telefon}</span>
+                    )}
+                    {activeNode.relation && !cleanRoles && (
+                      <span>Conexiune: {activeNode.relation}</span>
+                    )}
+                  </div>
+
                   {activeNode.full && (
-                    <div
-                      className={`text-[11px] mt-1 border-t pt-1.5 ${
-                        isDark ? 'text-gray-300 border-gray-700/60' : 'text-gray-700 border-gray-200'
-                      }`}
-                    >
+                    <div className="text-[11px] mt-2 border-t border-slate-100 dark:border-slate-800 pt-1.5 text-slate-600 dark:text-slate-400">
                       {activeNode.full}
                     </div>
                   )}
+
                   {activeNode.fullAddr && (
-                    <div
-                      className={`text-[11px] mt-1 border-t pt-1.5 ${
-                        isDark ? 'text-gray-400 border-gray-700/60' : 'text-gray-600 border-gray-200'
-                      }`}
-                    >
+                    <div className="text-[11px] mt-2 border-t border-slate-100 dark:border-slate-800 pt-1.5 text-slate-500 dark:text-slate-400">
                       {activeNode.fullAddr}
                     </div>
                   )}
+
                   {activeNode.fullText && (
-                    <div
-                      className={`text-xs mt-1 p-2 rounded-lg border ${
-                        isDark
-                          ? 'bg-red-950/40 text-rose-300 border-red-800/40'
-                          : 'bg-red-50 text-red-800 border-red-200'
-                      }`}
-                    >
+                    <div className="text-xs mt-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
                       {activeNode.fullText}
                     </div>
                   )}
@@ -2389,33 +2324,32 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
                     <button
                       type="button"
                       onClick={() => onOpenCompany(activeNode.cui, activeNode.fullName || activeNode.label)}
-                      className="mt-3 w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer"
-                      title="Deschide dosar complet ANAF, bilanț, insolvență, asociați și istoric"
+                      className="mt-3.5 w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
+                      title="Deschide dosar complet ANAF, bilanț, insolvență și asociați"
                     >
-                      <Building2 size={15} />
-                      <span>Deschide Dosar &amp; Verifică Firma</span>
-                      <ExternalLink size={13} />
+                      <Building2 size={13} />
+                      <span>Deschide Dosar Firmă</span>
+                      <ExternalLink size={12} className="opacity-70" />
                     </button>
                   )}
 
-                  {/* Button: Expand Company Connections into ForceGraph ("Caracatița") */}
                   {isComp && (
                     <button
                       type="button"
                       disabled={expandingNodeId === activeNode.id}
                       onClick={() => handleExpandNode(activeNode)}
-                      className="mt-2 w-full py-2 px-3 rounded-xl bg-purple-600/10 hover:bg-purple-600/20 text-purple-700 dark:text-purple-300 border border-purple-500/30 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                      className="mt-2 w-full py-2 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
                       title="Extinde asociații, administratorii și firmele conexe direct în panoul vizual"
                     >
                       {expandingNodeId === activeNode.id ? (
                         <>
-                          <Loader2 size={14} className="animate-spin text-purple-600 dark:text-purple-300" />
+                          <Loader2 size={13} className="animate-spin text-slate-400" />
                           <span>Se extinde rețeaua în graf...</span>
                         </>
                       ) : (
                         <>
-                          <GitBranch size={14} />
-                          <span>{expandedNodeIds.has(activeNode.id) ? 'Re-extinde Conexiunile în Graf' : 'Extinde în Caracatiță (Graf)'}</span>
+                          <GitBranch size={13} />
+                          <span>{expandedNodeIds.has(activeNode.id) ? 'Re-extinde Conexiunile în Graf' : 'Extinde Rețeaua Firmei în Graf'}</span>
                         </>
                       )}
                     </button>
@@ -2425,32 +2359,31 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
                     <button
                       type="button"
                       onClick={() => onOpenPerson(activeNode.fullName || activeNode.label, clientCui)}
-                      className="mt-3 w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer"
+                      className="mt-3.5 w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
                       title="Deschide dosar persoană cu companii deținute și dosare pe Portal Just.ro"
                     >
-                      <User size={15} />
-                      <span>Dosar Persoană (Portal Just &amp; Firme)</span>
-                      <ExternalLink size={13} />
+                      <User size={13} />
+                      <span>Dosar Persoană (Portal Just & Firme)</span>
+                      <ExternalLink size={12} className="opacity-70" />
                     </button>
                   )}
 
-                  {/* Button: Expand Person Companies into ForceGraph */}
                   {isPers && (
                     <button
                       type="button"
                       disabled={expandingNodeId === activeNode.id}
                       onClick={() => handleExpandNode(activeNode)}
-                      className="mt-2 w-full py-2 px-3 rounded-xl bg-amber-600/10 hover:bg-amber-600/20 text-amber-700 dark:text-amber-300 border border-amber-500/30 font-bold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                      className="mt-2 w-full py-2 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
                       title="Extinde companiile asociate acestei persoane în panoul vizual"
                     >
                       {expandingNodeId === activeNode.id ? (
                         <>
-                          <Loader2 size={14} className="animate-spin text-amber-600 dark:text-amber-300" />
+                          <Loader2 size={13} className="animate-spin text-slate-400" />
                           <span>Se încarcă companiile în graf...</span>
                         </>
                       ) : (
                         <>
-                          <GitBranch size={14} />
+                          <GitBranch size={13} />
                           <span>{expandedNodeIds.has(activeNode.id) ? 'Re-extinde Firmele în Graf' : 'Extinde Firmele Persoanei în Graf'}</span>
                         </>
                       )}
