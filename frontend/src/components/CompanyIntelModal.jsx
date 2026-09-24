@@ -3,7 +3,8 @@ import {
   X, Building2, ExternalLink, Scale, FileText, Users, 
   TrendingUp, AlertTriangle, ShieldCheck, CheckCircle2, 
   MapPin, Phone, Hash, Calendar, Loader2, Eye, RefreshCw,
-  Sparkles, Award, Briefcase, Layers, Network, ArrowLeft, ChevronRight
+  Sparkles, Award, Briefcase, Layers, Network, ArrowLeft, ChevronRight,
+  Globe, Compass, Camera, Search
 } from 'lucide-react';
 import { fetchCompanyFullIntel } from '../services/api';
 import { Link } from 'react-router-dom';
@@ -28,6 +29,7 @@ const CompanyIntelModal = ({
   const [activeTab, setActiveTab] = useState('general');
   const [expandedCase, setExpandedCase] = useState(null);
   const [selectedMofPub, setSelectedMofPub] = useState(null);
+  const [mapViewMode, setMapViewMode] = useState('satellite');
 
   useEffect(() => {
     if (!isOpen || !cui) return;
@@ -71,6 +73,7 @@ const CompanyIntelModal = ({
   if (!isOpen) return null;
 
   const general = data?.general || {};
+  const visual = data?.visual || {};
   const balance = data?.balance || {};
   const personnel = data?.personnel || [];
   const courtCases = data?.court_cases || [];
@@ -114,14 +117,48 @@ const CompanyIntelModal = ({
         {/* Modal Header */}
         <div className="p-5 border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-start justify-between gap-4 shrink-0">
           <div className="flex items-start gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center shrink-0 border border-blue-500/20">
-              <Building2 size={20} />
+            <div className="w-11 h-11 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center shrink-0 overflow-hidden shadow-xs relative">
+              {visual?.logo_url ? (
+                <img
+                  src={visual.logo_url}
+                  alt={companyName}
+                  className="w-full h-full object-contain p-1"
+                  onError={(e) => {
+                    if (visual?.favicon_url && e.currentTarget.src !== visual.favicon_url) {
+                      e.currentTarget.src = visual.favicon_url;
+                      e.currentTarget.className = "w-6 h-6 object-contain";
+                    } else {
+                      e.currentTarget.style.display = 'none';
+                      const fallback = e.currentTarget.nextElementSibling;
+                      if (fallback) fallback.style.display = 'flex';
+                    }
+                  }}
+                />
+              ) : null}
+              <div 
+                className={`w-full h-full items-center justify-center text-blue-600 dark:text-blue-400 ${visual?.logo_url ? 'hidden' : 'flex'}`}
+              >
+                <Building2 size={20} />
+              </div>
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-2 flex-wrap">
                 <h3 className="text-base font-bold text-gray-900 dark:text-white truncate">
                   {companyName}
                 </h3>
+                {visual?.website && (
+                  <a
+                    href={visual.website}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:underline"
+                    title={`Site oficial: ${visual.domain}`}
+                  >
+                    <Globe size={11} />
+                    <span>{visual.domain}</span>
+                    <ExternalLink size={10} />
+                  </a>
+                )}
                 {general.stare && (
                   <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
                     general.stare.includes('INREGISTRAT') || general.stare.includes('ACTIVA')
@@ -222,6 +259,24 @@ const CompanyIntelModal = ({
 
           <button
             type="button"
+            onClick={() => setActiveTab('visual')}
+            className={`py-3 px-3 text-xs font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'visual'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+            }`}
+          >
+            <MapPin size={14} />
+            <span>Sediu &amp; Verificare Vizuală</span>
+            {visual?.coordinates?.geocoded && (
+              <span className="px-1.5 py-0.2 rounded-md text-[9px] font-bold bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300">
+                GPS
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={() => setActiveTab('just')}
             className={`py-3 px-3 text-xs font-semibold border-b-2 transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
               activeTab === 'just'
@@ -282,6 +337,7 @@ const CompanyIntelModal = ({
             {bpi.has_insolvency && <span className="w-2 h-2 rounded-full bg-red-500"></span>}
           </button>
         </div>
+
 
         {/* Modal Body */}
         <div className="p-6 overflow-y-auto flex-1 min-h-[350px]">
@@ -436,7 +492,246 @@ const CompanyIntelModal = ({
                 </div>
               )}
 
-              {/* TAB 2: DOSARE ÎN INSTANȚĂ (PORTAL JUST.RO) */}
+              {/* TAB 2: SEDIU & VERIFICARE VIZUALĂ (STREET VIEW & OSINT) */}
+              {activeTab === 'visual' && (
+                <div className="space-y-4">
+                  {/* Explorer Hărți & Street View */}
+                  <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xs">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-3">
+                      <div>
+                        <h4 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                          <MapPin size={14} className="text-primary" />
+                          <span>Verificare Fizică Sediu Social &amp; Prezență Clădire</span>
+                        </h4>
+                        <p className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                          Inspectare fațadă, identificare sediu real vs firmă-fantomă și confirmare operațională.
+                        </p>
+                      </div>
+
+                      {/* Map Mode Toggle & External Shortcuts */}
+                      <div className="flex items-center gap-2 self-stretch sm:self-auto shrink-0">
+                        <div className="p-0.5 bg-gray-100 dark:bg-gray-900 rounded-lg flex items-center border border-gray-200 dark:border-gray-700 text-[11px] font-semibold">
+                          <button
+                            type="button"
+                            onClick={() => setMapViewMode('satellite')}
+                            className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                              mapViewMode === 'satellite'
+                                ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-2xs'
+                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
+                            }`}
+                          >
+                            Satelit HD
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setMapViewMode('street')}
+                            className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                              mapViewMode === 'street'
+                                ? 'bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-2xs'
+                                : 'text-gray-500 hover:text-gray-700 dark:text-gray-400'
+                            }`}
+                          >
+                            Hartă Stradală
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Interactive Map Embed */}
+                    <div className="relative w-full h-80 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 shadow-inner bg-gray-100 dark:bg-gray-900">
+                      <iframe
+                        title="Harta Sediu Social"
+                        src={
+                          mapViewMode === 'satellite'
+                            ? (visual?.views?.satellite_embed || `https://maps.google.com/maps?q=${encodeURIComponent(general.adresa || companyName)}&t=k&z=18&output=embed`)
+                            : (visual?.views?.street_embed || `https://maps.google.com/maps?q=${encodeURIComponent(general.adresa || companyName)}&t=m&z=17&output=embed`)
+                        }
+                        className="w-full h-full border-0"
+                        loading="lazy"
+                      />
+
+                      {/* Floating Actions on Map */}
+                      <div className="absolute top-3 right-3 flex flex-wrap items-center gap-2 pointer-events-auto">
+                        {visual?.views?.street_view_direct_url && (
+                          <a
+                            href={visual.views.street_view_direct_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 rounded-lg bg-gray-900/90 hover:bg-gray-900 text-white font-medium text-xs flex items-center gap-1.5 shadow-lg backdrop-blur-md transition-all cursor-pointer"
+                            title="Deschide Google Street View 360° la fațadă"
+                          >
+                            <Compass size={13} className="text-cyan-400" />
+                            <span>Street View 360°</span>
+                            <ExternalLink size={11} className="opacity-70" />
+                          </a>
+                        )}
+                        {visual?.views?.google_places_search_url && (
+                          <a
+                            href={visual.views.google_places_search_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="px-3 py-1.5 rounded-lg bg-white/95 hover:bg-white text-gray-800 font-medium text-xs flex items-center gap-1.5 shadow-lg backdrop-blur-md border border-gray-200 transition-all cursor-pointer"
+                            title="Verifică fotografiile reale și profilul magazinului pe Google Maps"
+                          >
+                            <Camera size={13} className="text-gray-600" />
+                            <span>Poze &amp; Profil Google Maps</span>
+                            <ExternalLink size={11} className="opacity-70" />
+                          </a>
+                        )}
+                      </div>
+
+                      {/* GPS Badge bottom-left */}
+                      {visual?.coordinates?.geocoded && (
+                        <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-md bg-gray-900/80 text-white text-[10px] font-mono backdrop-blur-sm flex items-center gap-1.5 shadow-sm">
+                          <MapPin size={11} className="text-emerald-400" />
+                          <span>GPS: {visual.coordinates.lat?.toFixed(5)}, {visual.coordinates.lon?.toFixed(5)}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Card: Detalii Adresă & Structură Locație */}
+                  <div className="p-4 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xs">
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                        <MapPin size={14} className="text-gray-600 dark:text-gray-300" />
+                        <span>Adresă Sediu Social Oficial</span>
+                      </span>
+                      {visual?.coordinates?.geocoded ? (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1">
+                          <CheckCircle2 size={11} />
+                          <span>Punct Geocodificat Verificat</span>
+                        </span>
+                      ) : (
+                        <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700">
+                          Adresă Înregistrată
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+                      {general.adresa || 'Adresă nespecificată'}
+                    </p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-3 pt-3 border-t border-gray-100 dark:border-gray-700/60 text-xs">
+                      <div>
+                        <span className="text-[10px] text-gray-400 block">Localitate:</span>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">{visual?.location_info?.city || general.localitate || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-400 block">Județ / Sector:</span>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">{visual?.location_info?.sector || visual?.location_info?.county || general.judet || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-400 block">Stradă &amp; Număr:</span>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">
+                          {visual?.location_info?.street ? `${visual.location_info.street} ${visual.location_info.number || ''}` : '-'}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-gray-400 block">Cod Poștal:</span>
+                        <span className="font-semibold text-gray-700 dark:text-gray-300">{general.cod_postal || '-'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Hub Registre Publice & Verificări Extinse (OSINT) */}
+                  <div>
+                    <h4 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-2.5">
+                      Registre Publice &amp; Verificări Extinse (OSINT)
+                    </h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                      {/* SEAP */}
+                      <div className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-gray-800 dark:text-gray-200">Achiziții Publice (SEAP / SICAP)</span>
+                            <span className="text-[10px] font-semibold text-gray-500 bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">e-Licitatie</span>
+                          </div>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                            Verificare contracte de achiziție publică și licitații câștigate cu instituțiile statului.
+                          </p>
+                        </div>
+                        <a
+                          href={visual?.osint_portals?.seap_url || `https://www.e-licitatie.ro/pub/notices/contract-notices/list/cui/${cui}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 inline-flex items-center justify-between px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          <span>Interoghează SEAP pentru CUI {cui}</span>
+                          <ExternalLink size={11} className="text-gray-400" />
+                        </a>
+                      </div>
+
+                      {/* RNPM */}
+                      <div className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-gray-800 dark:text-gray-200">Ipoteci Mobiliare &amp; Leasing (RNPM)</span>
+                            <span className="text-[10px] font-semibold text-gray-500 bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">AEGRM</span>
+                          </div>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                            Verificare gajuri pe flotă/utilaje, contracte de leasing financiar sau creanțe cesionate.
+                          </p>
+                        </div>
+                        <a
+                          href={visual?.osint_portals?.rnpm_url || `https://www.coim.ro/cautare-avize?cui=${cui}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 inline-flex items-center justify-between px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          <span>Caută Avize Ipotecare în RNPM</span>
+                          <ExternalLink size={11} className="text-gray-400" />
+                        </a>
+                      </div>
+
+                      {/* BPI */}
+                      <div className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-gray-800 dark:text-gray-200">Buletinul Insolvenței (BPI)</span>
+                            <span className="text-[10px] font-semibold text-gray-500 bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">BPI Oficial</span>
+                          </div>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                            Verificare notificări deschidere concordat preventiv sau cereri de faliment.
+                          </p>
+                        </div>
+                        <a
+                          href={visual?.osint_portals?.bpi_url || `https://bpi.ro/cautare?cui=${cui}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 inline-flex items-center justify-between px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          <span>Interoghează Registrul BPI</span>
+                          <ExternalLink size={11} className="text-gray-400" />
+                        </a>
+                      </div>
+
+                      {/* Recenzii Google & Reclamații */}
+                      <div className="p-3.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/40 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="font-bold text-gray-800 dark:text-gray-200">Recenzii &amp; Reputație Comercială</span>
+                            <span className="text-[10px] font-semibold text-gray-500 bg-white dark:bg-gray-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">Google Feedback</span>
+                          </div>
+                          <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                            Semnale de la clienți și parteneri: reclamații, calitatea serviciilor, litigii publice.
+                          </p>
+                        </div>
+                        <a
+                          href={visual?.osint_portals?.google_reviews_url || `https://www.google.com/search?q=${encodeURIComponent(companyName + ' recenzii pareri')}`}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="mt-3 inline-flex items-center justify-between px-3 py-1.5 rounded-lg bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 text-[11px] font-medium transition-colors cursor-pointer"
+                        >
+                          <span>Caută Recenzii &amp; Opinii Publice</span>
+                          <ExternalLink size={11} className="text-gray-400" />
+                        </a>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: DOSARE ÎN INSTANȚĂ (PORTAL JUST.RO) */}
               {activeTab === 'just' && (
                 <div className="space-y-4">
                   <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-lg flex items-center justify-between text-xs text-blue-800 dark:text-blue-300">

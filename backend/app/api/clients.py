@@ -147,6 +147,7 @@ def get_all_blacklisted(db: Session = Depends(get_db), current_user = Depends(mo
 from ..services.osint.anaf_scraper import AnafScraper
 from ..services.osint.registry_scraper import RegistryScraper
 from ..services.osint.cross_checker import CrossChecker
+from ..services.osint.visual_enricher import VisualEnricher
 
 @router.get("/lookup/{cui}")
 async def lookup_client_by_cui(cui: str, current_user = Depends(mock_get_current_user)):
@@ -224,11 +225,22 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
                         prev_d.get("personnel") or prev_d.get("holdings") or [],
                         prev_d.get("admin_networks") or []
                     )
+                    visual_intel = prev_d.get("visual")
+                    if not visual_intel:
+                        visual_enricher = VisualEnricher()
+                        visual_intel = await visual_enricher.enrich_company(
+                            cui=clean_cui,
+                            company_name=existing_client.name,
+                            address=prev_d.get("anaf", {}).get("adresa") or existing_client.address,
+                            email=prev_d.get("anaf", {}).get("email"),
+                            website=prev_d.get("anaf", {}).get("site")
+                        )
                     return {
                         "cui": clean_cui,
                         "denumire": existing_client.name,
                         "existing_client_id": existing_client.id,
                         "general": prev_d.get("anaf", {}),
+                        "visual": visual_intel,
                         "personnel": prev_d.get("personnel", []),
                         "holdings": prev_d.get("holdings", []),
                         "administrators": prev_d.get("administrators", []),
@@ -307,8 +319,18 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
             existing_client = new_client
             existing_client_id = new_client.id
 
+        visual_enricher = VisualEnricher()
+        visual_intel = await visual_enricher.enrich_company(
+            cui=clean_cui,
+            company_name=official_name,
+            address=gen_data.get("adresa") or (existing_client.address if existing_client else ""),
+            email=gen_data.get("email"),
+            website=gen_data.get("site")
+        )
+
         saved_intel_payload = {
             "anaf": gen_data,
+            "visual": visual_intel,
             "personnel": personnel,
             "holdings": holdings,
             "administrators": administrators,
@@ -334,12 +356,21 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
         print(f"[DB PROPRIETARY BASE] CUI {clean_cui} ({official_name}) salvat permanent în baza Axis.")
     except Exception as save_err:
         print(f"[DB SAVE WARNING] Nu s-a putut salva snapshot-ul pentru CUI {clean_cui}: {save_err}")
+        visual_enricher = VisualEnricher()
+        visual_intel = await visual_enricher.enrich_company(
+            cui=clean_cui,
+            company_name=official_name,
+            address=gen_data.get("adresa") or (existing_client.address if existing_client else ""),
+            email=gen_data.get("email"),
+            website=gen_data.get("site")
+        )
 
     return {
         "cui": clean_cui,
         "denumire": official_name,
         "existing_client_id": existing_client_id,
         "general": gen_data,
+        "visual": visual_intel,
         "personnel": personnel,
         "holdings": holdings,
         "administrators": administrators,
