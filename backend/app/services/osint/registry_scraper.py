@@ -11,6 +11,7 @@ class RegistryScraper:
         
         # Noua cheie pentru Termene.ro (pentru Caracatița Asociaților)
         self.termene_api_key = os.getenv("TERMENE_API_KEY", "YOUR_TERMENE_API_KEY_HERE")
+        self.last_search_credits_exhausted = False
 
     def _get_cached_evaluation_data(self, cui: str) -> Optional[Dict]:
         """Verifică dacă există deja evaluare salvată în DB pentru acest CUI pentru a evita interogările externe duplicate"""
@@ -255,112 +256,159 @@ class RegistryScraper:
             url = f"https://www.firmeapi.ro/api/v1/actionari/cauta?nume={urllib.parse.quote(name.strip())}"
             async with httpx.AsyncClient() as client:
                 resp = await client.get(url, headers=headers, timeout=12.0)
-                if resp.status_code == 200:
+                if resp.status_code == 403 or "PREMIUM_INSUFFICIENT_CREDITS" in resp.text:
+                    self.last_search_credits_exhausted = True
+                    print(f"[FIRMEAPI ALERTA] Credite PREMIUM epuizate pentru căutare rețea '{name}'.")
+                elif resp.status_code == 200:
                     data = resp.json()
                     persoane = data.get("persoane", []) or []
-                    if not persoane:
-                        return []
+                    if persoane:
+                        # 1. Filtrare după CUI-ul companiei dacă este specificat
+                        if match_cui:
+                            clean_cui = "".join(filter(str.isdigit, str(match_cui)))
+                            if clean_cui:
+                                matching = []
+                                for p in persoane:
+                                    p_cuis = ["".join(filter(str.isdigit, str(f.get("cui", "")))) for f in p.get("firme", [])]
+                                    if clean_cui in p_cuis:
+                                        matching.append(p)
+                                if matching:
+                                    return matching
 
-                    # 1. Filtrare strictă după CUI-ul companiei (elimină persoanele cu alte vârste/buletine)
-                    if match_cui:
-                        clean_cui = "".join(filter(str.isdigit, str(match_cui)))
-                        if clean_cui:
+                        # 2. Filtrare după locul de naștere
+                        if match_loc:
+                            norm_match = match_loc.strip().lower()
+                            for src, dest in [('ş', 's'), ('ș', 's'), ('ţ', 't'), ('ț', 't'), ('ă', 'a'), ('â', 'a'), ('î', 'i')]:
+                                norm_match = norm_match.replace(src, dest)
                             matching = []
                             for p in persoane:
-                                p_cuis = ["".join(filter(str.isdigit, str(f.get("cui", "")))) for f in p.get("firme", [])]
-                                if clean_cui in p_cuis:
+                                p_loc = (p.get("loc_nastere") or "").strip().lower()
+                                for src, dest in [('ş', 's'), ('ș', 's'), ('ţ', 't'), ('ț', 't'), ('ă', 'a'), ('â', 'a'), ('î', 'i')]:
+                                    p_loc = p_loc.replace(src, dest)
+                                if p_loc and (p_loc in norm_match or norm_match in p_loc):
                                     matching.append(p)
                             if matching:
                                 return matching
 
-                    # 2. Filtrare după locul de naștere / buletin (dacă există în datele oficiale de administrator)
-                    if match_loc:
-                        norm_match = match_loc.strip().lower()
-                        for src, dest in [('ş', 's'), ('ș', 's'), ('ţ', 't'), ('ț', 't'), ('ă', 'a'), ('â', 'a'), ('î', 'i')]:
-                            norm_match = norm_match.replace(src, dest)
-                        
-                        matching = []
-                        for p in persoane:
-                            p_loc = (p.get("loc_nastere") or "").strip().lower()
-                            for src, dest in [('ş', 's'), ('ș', 's'), ('ţ', 't'), ('ț', 't'), ('ă', 'a'), ('â', 'a'), ('î', 'i')]:
-                                p_loc = p_loc.replace(src, dest)
-                            if p_loc and (p_loc in norm_match or norm_match in p_loc):
-                                matching.append(p)
-                        if matching:
-                            return matching
-
-                    return persoane
-                # Dacă FirmeAPI nu returnează 200 sau nu are rezultate, continuă pe fallback local
+                        return persoane
         except Exception as e:
             print(f"Eroare căutare rețea administrator '{name}' via FirmeAPI: {e}")
 
-        # Fallback local inteligent din baza de date Axis (istoric evaluări și clienți)
+        # Fallback local inteligent din baza de date Axis (istoric evaluări, clienți și context garantat)
+        found_networks = []
         try:
             import json
             from ...database import SessionLocal
-            from ...models.user import User  # Necesar pentru declararea FK-urilor
+            from ...models.user import User
             from ...models.client import Client, Evaluation
 
             db = SessionLocal()
             clean_target = name.strip().upper().replace("-", " ")
-            found_networks = []
-            
-            # 1. Căutare în evaluări anterioare care au salvat admin_networks
+            all_known_firms = {}
+
+            # 1. Căutare în evaluări anterioare (admin_networks, administrators, holdings)
             evals = db.query(Evaluation).filter(Evaluation.raw_financial_data.isnot(None)).all()
             for ev in evals:
                 try:
                     d = json.loads(ev.raw_financial_data) if isinstance(ev.raw_financial_data, str) else ev.raw_financial_data
+                    ev_cui = ""
+                    ev_comp_name = ""
+                    if ev.client:
+                        ev_cui = "".join(filter(str.isdigit, str(ev.client.cui_cnp or "")))
+                        ev_comp_name = ev.client.name
+
+                    # a) Verificare admin_networks
                     for an in d.get("admin_networks", []):
                         an_name = (an.get("nume") or "").strip().upper().replace("-", " ")
                         if an_name and (an_name == clean_target or clean_target in an_name or an_name in clean_target):
-                            if an.get("firme") and len(an.get("firme")) > 0:
-                                if not any(existing.get("nume") == an.get("nume") and len(existing.get("firme", [])) >= len(an.get("firme", [])) for existing in found_networks):
-                                    found_networks.append(an)
+                            for f in an.get("firme", []):
+                                fcui = "".join(filter(str.isdigit, str(f.get("cui", ""))))
+                                if fcui and fcui not in all_known_firms:
+                                    all_known_firms[fcui] = f
+
+                    # b) Verificare directă în lista de administratori a evaluării
+                    for adm in d.get("administrators") or d.get("registry", {}).get("administrators") or []:
+                        adm_name = (adm.get("nume") or adm.get("name") or "").strip().upper().replace("-", " ")
+                        if adm_name and (adm_name == clean_target or clean_target in adm_name or adm_name in clean_target):
+                            if ev_cui and ev_cui not in all_known_firms:
+                                all_known_firms[ev_cui] = {
+                                    "cui": ev_cui,
+                                    "denumire": ev_comp_name or f"Compania CUI {ev_cui}",
+                                    "rol": adm.get("calitate", "Administrator").upper(),
+                                    "calitate": adm.get("calitate", "Administrator"),
+                                    "curent": True,
+                                    "stare": adm.get("stare", "Activ"),
+                                    "sursa": "Evaluare AXIS"
+                                }
+
+                    # c) Verificare în holdings / asociați
+                    for h in d.get("holdings") or d.get("personnel") or []:
+                        h_name = (h.get("name") or h.get("nume") or "").strip().upper().replace("-", " ")
+                        if h_name and (h_name == clean_target or clean_target in h_name or h_name in clean_target):
+                            if ev_cui and ev_cui not in all_known_firms:
+                                all_known_firms[ev_cui] = {
+                                    "cui": ev_cui,
+                                    "denumire": ev_comp_name or f"Compania CUI {ev_cui}",
+                                    "rol": (h.get("type") or h.get("rol") or "Asociat").upper(),
+                                    "calitate": h.get("type") or "Asociat",
+                                    "curent": bool(h.get("current", True)),
+                                    "stare": "Activ" if h.get("current", True) else "Istoric",
+                                    "sursa": "Acționariat AXIS"
+                                }
                 except Exception:
                     pass
 
-            # 2. Căutare între companiile / clienții existenți în DB
+            # 2. Căutare între clienții existenți în DB după representative_name
             clients = db.query(Client).all()
-            linked_firms = []
             for c in clients:
                 rep = (c.representative_name or "").strip().upper().replace("-", " ")
                 if rep and (rep == clean_target or clean_target in rep or rep in clean_target):
-                    linked_firms.append({
-                        "cui": c.cui_cnp,
-                        "denumire": c.name,
-                        "rol": "ADMINISTRATOR / REPREZENTANT",
-                        "este_administrator": True,
-                        "curent": True,
-                        "sursa": "AXIS DB"
-                    })
-            if linked_firms:
-                # Verifică dacă firmele găsite nu sunt deja în found_networks
-                all_cuis = set()
-                for fn in found_networks:
-                    for f in fn.get("firme", []):
-                        all_cuis.add(str(f.get("cui", "")).strip())
-                new_firms = [f for f in linked_firms if str(f.get("cui", "")).strip() not in all_cuis]
-                if new_firms:
-                    if found_networks:
-                        found_networks[0]["firme"].extend(new_firms)
-                        found_networks[0]["total_firme"] = len(found_networks[0]["firme"])
-                        found_networks[0]["firme_active"] = sum(1 for f in found_networks[0]["firme"] if f.get("curent", True))
-                    else:
-                        found_networks.append({
-                            "nume": name.strip(),
-                            "varsta": None,
-                            "loc_nastere": match_loc or "",
-                            "total_firme": len(new_firms),
-                            "firme_active": len(new_firms),
-                            "firme_incetate": 0,
-                            "firme": new_firms
-                        })
+                    ccui = "".join(filter(str.isdigit, str(c.cui_cnp or "")))
+                    if ccui and ccui not in all_known_firms:
+                        all_known_firms[ccui] = {
+                            "cui": ccui,
+                            "denumire": c.name,
+                            "rol": "ADMINISTRATOR / REPREZENTANT",
+                            "calitate": "Reprezentant Legal",
+                            "curent": True,
+                            "stare": "Activ",
+                            "sursa": "Registru Clienți AXIS"
+                        }
 
             db.close()
-            if found_networks:
-                return found_networks
         except Exception as db_err:
             print(f"Eroare fallback local DB administrator_network: {db_err}")
+
+        # 3. GARANTARE context_cui (compania din care se deschide dosarul persoanei)
+        clean_context_cui = "".join(filter(str.isdigit, str(match_cui or "")))
+        if clean_context_cui and clean_context_cui not in all_known_firms:
+            try:
+                comp_data = await self.fetch_company_general(clean_context_cui)
+                comp_name = comp_data.get("denumire") or comp_data.get("nume") or f"Compania CUI {clean_context_cui}"
+                comp_stare = comp_data.get("stare") or "Activ"
+                all_known_firms[clean_context_cui] = {
+                    "cui": clean_context_cui,
+                    "denumire": comp_name,
+                    "rol": "ADMINISTRATOR",
+                    "calitate": "Administrator",
+                    "curent": True,
+                    "stare": comp_stare,
+                    "sursa": "Registrul Comerțului (Dosar Curent)"
+                }
+            except Exception as e:
+                print(f"Eroare adăugare firmă garantată din context: {e}")
+
+        if all_known_firms:
+            firme_list = list(all_known_firms.values())
+            return [{
+                "nume": name.strip(),
+                "varsta": None,
+                "loc_nastere": match_loc or "",
+                "total_firme": len(firme_list),
+                "firme_active": sum(1 for f in firme_list if f.get("curent", True)),
+                "firme_incetate": sum(1 for f in firme_list if not f.get("curent", True)),
+                "firme": firme_list
+            }]
 
         return []
 

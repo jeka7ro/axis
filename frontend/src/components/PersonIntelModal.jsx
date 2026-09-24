@@ -109,6 +109,16 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
           </button>
         </div>
 
+        {/* Banner Credite API epuizate */}
+        {data?.api_credits_exhausted && (
+          <div className="px-5 py-2.5 bg-amber-50 dark:bg-amber-950/30 border-b border-amber-200 dark:border-amber-800/40 text-xs text-amber-800 dark:text-amber-300 flex items-center gap-2 shrink-0">
+            <AlertTriangle size={15} className="shrink-0 text-amber-600 dark:text-amber-400" />
+            <span>
+              Căutarea extinsă națională în Registrul Comerțului prin FirmeAPI este limitată (credite Premium epuizate pe cont). Sunt afișate companiile confirmate din dosar și evidența internă.
+            </span>
+          </div>
+        )}
+
         {/* Homonym Disambiguation Bar (Dacă s-au găsit mai multe persoane cu același nume dar vârstă/buletin diferit) */}
         {network.length > 1 && (
           <div className="px-5 py-2.5 bg-amber-500/10 border-b border-amber-500/20 text-xs">
@@ -202,8 +212,15 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
               {activeTab === 'network' && (
                 <div className="space-y-4">
                   {currentFirme.length === 0 ? (
-                    <div className="p-6 text-center text-xs text-gray-500">
-                      Nu au fost identificate companii asociate acestei persoane.
+                    <div className="p-8 text-center text-xs text-gray-500 space-y-2">
+                      <p className="font-medium text-gray-700 dark:text-gray-300">
+                        Nu au fost identificate companii asociate acestei persoane în registrul curent.
+                      </p>
+                      {data?.api_credits_exhausted && (
+                        <p className="text-amber-600 dark:text-amber-400">
+                          Notă: Căutarea națională extinsă ReCom prin FirmeAPI necesită reîncărcarea creditelor Premium.
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">

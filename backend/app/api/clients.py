@@ -350,7 +350,7 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
     }
 
 @router.get("/person-full-intel")
-async def get_person_full_intel(name: str, context_cui: Optional[str] = None):
+async def get_person_full_intel(name: str, context_cui: Optional[str] = None, db: Session = Depends(get_db)):
     """
     Super-Smart Person Intelligence:
     Rețeaua completă de companii ("Caracatița") + dosare personale pe Portal Just.ro.
@@ -362,14 +362,60 @@ async def get_person_full_intel(name: str, context_cui: Optional[str] = None):
     reg_scraper = RegistryScraper()
     court_scraper = CourtScraper()
 
-    t_network = reg_scraper.fetch_administrator_network(clean_name, match_cui=context_cui)
+    clean_cui = "".join(filter(str.isdigit, str(context_cui or "")))
+
+    t_network = reg_scraper.fetch_administrator_network(clean_name, match_cui=clean_cui)
     t_cases = court_scraper.search_court_cases(clean_name, limit=20)
 
     network, court_cases = await asyncio.gather(t_network, t_cases)
 
-    # Calcul metrici de risc administrator
+    # 1. Asigurăm o structură de rețea dacă e goală
+    if not network:
+        network = [{
+            "nume": clean_name,
+            "varsta": None,
+            "loc_nastere": "",
+            "total_firme": 0,
+            "firme_active": 0,
+            "firme_incetate": 0,
+            "firme": []
+        }]
+
+    existing_cuis = set()
+    for p in network:
+        for f in p.get("firme", []):
+            existing_cuis.add("".join(filter(str.isdigit, str(f.get("cui", "")))))
+
+    # 2. Asigurăm garantat compania din contextul curent (ex: dosarul firmei din care s-a deschis modalul)
+    if clean_cui and clean_cui not in existing_cuis:
+        comp_name = None
+        db_client = db.query(Client).filter(Client.cui_cnp.like(f"%{clean_cui}%")).first()
+        if db_client and db_client.name:
+            comp_name = db_client.name
+        else:
+            comp_data = await reg_scraper.fetch_company_general(clean_cui)
+            comp_name = comp_data.get("denumire") or comp_data.get("nume")
+
+        if not comp_name:
+            comp_name = f"Compania CUI {clean_cui}"
+
+        network[0]["firme"].insert(0, {
+            "cui": clean_cui,
+            "denumire": comp_name,
+            "rol": "ADMINISTRATOR",
+            "calitate": "Administrator",
+            "curent": True,
+            "stare": "Activ",
+            "sursa": "Registrul Comerțului (Dosar Curent)"
+        })
+        existing_cuis.add(clean_cui)
+
+    # 3. Calcul metrici de risc administrator
     all_firme = []
     for p in network:
+        p["total_firme"] = len(p.get("firme", []))
+        p["firme_active"] = sum(1 for f in p.get("firme", []) if f.get("curent", True))
+        p["firme_incetate"] = p["total_firme"] - p["firme_active"]
         for f in p.get("firme", []):
             all_firme.append(f)
 
@@ -384,7 +430,8 @@ async def get_person_full_intel(name: str, context_cui: Optional[str] = None):
         "firme_active": firme_active,
         "firme_radiate": firme_radiate,
         "court_cases": court_cases,
-        "total_dosare": len(court_cases)
+        "total_dosare": len(court_cases),
+        "api_credits_exhausted": getattr(reg_scraper, "last_search_credits_exhausted", False)
     }
 
 @router.get("/{client_id}", response_model=ClientDetailResponse)
