@@ -673,3 +673,89 @@ async def download_mof_pdf(payload: MofPdfRequest):
         }
     )
 
+@router.get("/{client_id}/fleet-telemetry-report")
+def get_client_fleet_telemetry_report(client_id: int, db: Session = Depends(get_db)):
+    """
+    Raport Comportament Flotă GPS & Telemetrie pentru clienți existenți la cereri noi de ofertă (Cerința 7 Alin).
+    Analizează parcul auto alocat, alertele GPS istorice, riscul de frontieră și corelarea cu riscul financiar.
+    """
+    client = db.query(Client).filter(Client.id == client_id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Clientul nu a fost găsit.")
+
+    from ..models.offer import Offer, OfferStatus
+    from ..models.gps import GPSAlert, GPSData
+    from ..models.vehicle import Vehicle
+
+    # Find client's offers / contracts
+    client_offers = db.query(Offer).filter(Offer.client_id == client_id).all()
+    vehicle_ids = [o.vehicle_id for o in client_offers if o.vehicle_id]
+    
+    vehicles = db.query(Vehicle).filter(Vehicle.id.in_(vehicle_ids)).all() if vehicle_ids else []
+    plates = [v.license_plate for v in vehicles]
+
+    # Query GPS alerts for these plates or client_id
+    alerts = []
+    if plates:
+        alerts = db.query(GPSAlert).filter((GPSAlert.vehicle_plate.in_(plates)) | (GPSAlert.client_id == client_id)).all()
+    else:
+        alerts = db.query(GPSAlert).filter(GPSAlert.client_id == client_id).all()
+
+    lt_count = sum(1 for v in vehicles if getattr(v, 'fleet_type', 'LT') == 'LT')
+    st_count = sum(1 for v in vehicles if getattr(v, 'fleet_type', 'LT') == 'ST')
+
+    unauth_border_crossings = sum(1 for a in alerts if a.alert_type in ["UNAUTHORIZED_EXIT", "DEBT_BORDER_RISK"])
+    warning_alerts = sum(1 for a in alerts if a.alert_type == "AI_WARNING")
+
+    # Determine risk level
+    if unauth_border_crossings > 0:
+        telemetry_risk = "HIGH"
+        risk_label = "Risc Ridicat (Incidente Graniță Active)"
+        recommendation = "BLOCARE / APROBARE SPECIALĂ: Clientul are tentative de părăsire a țării fără împuternicire sau cu restanțe active. Se recomandă garanție suplimentară sau limitare arie circulație."
+    elif warning_alerts > 0:
+        telemetry_risk = "MEDIUM"
+        risk_label = "Risc Mediu (Avertismente Telemetrice Înregistrate)"
+        recommendation = "VERIFICARE: Monitorizați parcursul flotei. Este necesară reconfirmarea traseelor operaționale înainte de extinderea plafonului."
+    else:
+        telemetry_risk = "LOW"
+        risk_label = "Risc Scăzut (Comportament Impecabil)"
+        recommendation = "APROBARE RECOMANDATĂ: Zero încălcări ale perimetrului de operare. Vehiculele respectă traseul și procedurile de autorizare."
+
+    return {
+        "client_id": client.id,
+        "client_name": client.name,
+        "cui_cnp": client.cui_cnp,
+        "total_active_vehicles": len(vehicles),
+        "lt_vehicles_count": lt_count,
+        "st_vehicles_count": st_count,
+        "total_alerts": len(alerts),
+        "unauthorized_border_events": unauth_border_crossings,
+        "warning_alerts_count": warning_alerts,
+        "telemetry_risk": telemetry_risk,
+        "risk_label": risk_label,
+        "ai_recommendation": recommendation,
+        "evaluated_at": datetime.utcnow().isoformat(),
+        "vehicles_monitored": [
+            {
+                "id": v.id,
+                "plate": v.license_plate,
+                "model": f"{v.make} {v.model}",
+                "fleet_type": getattr(v, 'fleet_type', 'LT'),
+                "status": v.status.value if hasattr(v.status, 'value') else str(v.status)
+            }
+            for v in vehicles
+        ],
+        "recent_alerts": [
+            {
+                "id": a.id,
+                "type": a.alert_type,
+                "plate": a.vehicle_plate,
+                "message": a.message,
+                "recommendation": a.ai_recommendation,
+                "created_at": a.created_at.isoformat() if a.created_at else None
+            }
+            for a in alerts[:5]
+        ]
+    }
+
+

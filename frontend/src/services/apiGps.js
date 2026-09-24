@@ -1,7 +1,8 @@
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://axis-v01.up.railway.app/api' : 'http://localhost:8000/api');
 
-export const fetchLiveLocations = async () => {
-  const response = await fetch(`${API_URL}/gps/live`);
+export const fetchLiveLocations = async (fleetType = null) => {
+  const url = fleetType && fleetType !== 'ALL' ? `${API_URL}/gps/live?fleet_type=${fleetType}` : `${API_URL}/gps/live`;
+  const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch live GPS data');
   return response.json();
 };

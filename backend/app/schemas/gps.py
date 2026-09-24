@@ -12,9 +12,21 @@ class GPSDataResponse(BaseModel):
     engine_on: bool
     location_name: Optional[str]
     timestamp: datetime
+    fleet_type: Optional[str] = "LT"
+    vehicle_make_model: Optional[str] = None
 
     class Config:
         from_attributes = True
+
+class TelemetryIngestRequest(BaseModel):
+    vehicle_plate: str
+    latitude: float
+    longitude: float
+    speed_kmh: float
+    engine_on: bool = True
+    location_name: Optional[str] = None
+    provider: Optional[str] = "TrackGPS API"
+
 
 class GPSAlertResponse(BaseModel):
     id: int

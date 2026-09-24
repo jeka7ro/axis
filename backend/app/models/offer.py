@@ -13,6 +13,7 @@ class OfferStatus(str, enum.Enum):
 
 class ContractStatus(str, enum.Enum):
     GENERATED = "Generat"
+    SENT_TO_SIGN = "Trimis la Semnat"
     SIGNED_DEALER = "Semnat Dealer"
     SIGNED_CLIENT = "Semnat Client"
     SIGNED_AXIS = "Semnat Axis"
@@ -36,6 +37,12 @@ class Offer(Base):
     monthly_rate = Column(Float, nullable=False)
     currency = Column(String, default="EUR", nullable=True)
     template_type = Column(String, default="standard", nullable=True)
+
+    # Dealer & Campaign fields (Capitolul 3 & 4)
+    dealer_name = Column(String, nullable=True)
+    created_by_role = Column(String, nullable=True)
+    campaign_id = Column(Integer, nullable=True)
+    campaign_name = Column(String, nullable=True)
 
     # Fidejusor / Guarantor fields (From AI governance or manual entry)
     fidejusor_name = Column(String, nullable=True)
@@ -63,6 +70,10 @@ class Contract(Base):
     template_type = Column(String, default="standard", nullable=True)
     status = Column(Enum(ContractStatus), default=ContractStatus.GENERATED)
     document_url = Column(String, nullable=True) # Path to generated DOCX/PDF
+    
+    # eSign Dual-Pass Namirial integration fields
+    esign_envelope_id = Column(String, nullable=True)
+    esign_audit_log = Column(String, nullable=True)
     
     # Fidejusor / Guarantor fields
     fidejusor_name = Column(String, nullable=True)

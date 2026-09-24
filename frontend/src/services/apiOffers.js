@@ -1,7 +1,13 @@
 const API_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? 'https://axis-v01.up.railway.app/api' : 'http://localhost:8000/api');
 
-export const fetchOffers = async () => {
-  const response = await fetch(`${API_URL}/offers/`);
+export const fetchOffers = async (role = null, dealerName = null) => {
+  let url = `${API_URL}/offers/`;
+  const params = new URLSearchParams();
+  if (role) params.append('role', role);
+  if (dealerName) params.append('dealer_name', dealerName);
+  const qs = params.toString();
+  if (qs) url += `?${qs}`;
+  const response = await fetch(url);
   if (!response.ok) throw new Error('Failed to fetch offers');
   return response.json();
 };
@@ -37,6 +43,14 @@ export const approveOffer = async (id) => {
     method: 'POST'
   });
   if (!response.ok) throw new Error('Failed to approve offer');
+  return response.json();
+};
+
+export const submitOfferForApproval = async (id) => {
+  const response = await fetch(`${API_URL}/offers/${id}/submit-approval`, {
+    method: 'POST'
+  });
+  if (!response.ok) throw new Error('Failed to submit offer for approval');
   return response.json();
 };
 
@@ -79,11 +93,39 @@ export const fetchContracts = async () => {
   return response.json();
 };
 
-export const sendESign = async (id) => {
-  // Mock endpoint, will fail on actual backend if not implemented,
-  // but we'll mock the success in the UI for now.
-  return new Promise(resolve => setTimeout(() => resolve({status: 'Trimis la Semnat'}), 800));
+// Dual-Pass Namirial eSign API calls
+export const sendESignEnvelope = async (id) => {
+  const response = await fetch(`${API_URL}/offers/${id}/esign/send`, {
+    method: 'POST'
+  });
+  if (!response.ok) throw new Error('Eroare la crearea plicului eSign');
+  return response.json();
 };
+
+export const signClientESign = async (id) => {
+  const response = await fetch(`${API_URL}/offers/${id}/esign/sign-client`, {
+    method: 'POST'
+  });
+  if (!response.ok) throw new Error('Eroare la semnarea clientului');
+  return response.json();
+};
+
+export const signAxisESign = async (id) => {
+  const response = await fetch(`${API_URL}/offers/${id}/esign/sign-axis`, {
+    method: 'POST'
+  });
+  if (!response.ok) throw new Error('Eroare la contrasemnarea Axis');
+  return response.json();
+};
+
+export const fetchESignAuditTrail = async (id) => {
+  const response = await fetch(`${API_URL}/offers/${id}/esign/audit-trail`);
+  if (!response.ok) throw new Error('Nu s-a putut descărca jurnalul de audit');
+  return response.json();
+};
+
+export const sendESign = sendESignEnvelope;
+
 
 export const uploadTemplate = async (file) => {
   const formData = new FormData();

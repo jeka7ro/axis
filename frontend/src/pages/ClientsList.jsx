@@ -818,7 +818,7 @@ const ClientsList = () => {
             <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shrink-0">
               <h3 className="text-xl font-bold text-gray-900 dark:text-white">{isEditing ? 'Editare Client' : 'Adaugă Client Nou'}</h3>
               <button onClick={() => { setIsModalOpen(false); setIsEditing(false); setNewClient({ type: 'PJ', name: '', cui_cnp: '' }); }} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                ✕
+                <X size={18} />
               </button>
             </div>
             

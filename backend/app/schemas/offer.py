@@ -18,6 +18,12 @@ class OfferBase(BaseModel):
     currency: Optional[str] = "EUR"
     template_type: Optional[str] = "standard"
     
+    # Dealer & Campaign fields
+    dealer_name: Optional[str] = None
+    created_by_role: Optional[str] = None
+    campaign_id: Optional[int] = None
+    campaign_name: Optional[str] = None
+
     # Fidejusor details
     fidejusor_name: Optional[str] = None
     fidejusor_cnp: Optional[str] = None
@@ -63,6 +69,12 @@ class ContractResponse(BaseModel):
     document_url: Optional[str]
     created_at: datetime
     
+    signed_client_at: Optional[datetime] = None
+    signed_dealer_at: Optional[datetime] = None
+    signed_axis_at: Optional[datetime] = None
+    esign_envelope_id: Optional[str] = None
+    esign_audit_log: Optional[str] = None
+
     fidejusor_name: Optional[str] = None
     fidejusor_cnp: Optional[str] = None
     fidejusor_address: Optional[str] = None

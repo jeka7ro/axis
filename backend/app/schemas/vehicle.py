@@ -16,6 +16,7 @@ class VehicleBase(BaseModel):
     color: Optional[str] = None
     features: Optional[str] = None
     purchase_price: Optional[float] = None
+    fleet_type: Optional[str] = "LT"
     rental_price_short_term: Optional[float] = None
     rental_price_long_term: Optional[float] = None
     insurance_expiry: Optional[datetime] = None

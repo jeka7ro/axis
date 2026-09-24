@@ -1,20 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { fetchClients, createClient, updateClient, fetchVehicles, fetchVehicleBrands } from '../services/api';
+import { fetchClients, createClient, updateClient, fetchVehicles, fetchVehicleBrands, fetchClientFleetTelemetryReport } from '../services/api';
 import { createOffer, updateOffer, fetchOffer, uploadTemplate, fetchFidejusorSuggestion } from '../services/apiOffers';
+import { fetchCampaigns } from '../services/apiCampaigns';
 import useAuthStore from '../store/authStore';
 import { extractTextFromFile, parseRomanianIDCard } from '../utils/pdfOcr';
-import { ChevronLeft, ShieldCheck, UserCheck, Sparkles, AlertCircle } from 'lucide-react';
+import { ChevronLeft, ShieldCheck, UserCheck, Sparkles, AlertCircle, MapPin, Megaphone, TrendingDown, UploadCloud } from 'lucide-react';
 import SearchableSelect from '../components/SearchableSelect';
 
 const OfferBuilder = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const isEditMode = Boolean(id);
-  const { currency } = useAuthStore();
+  const { currency, user } = useAuthStore();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [campaigns, setCampaigns] = useState([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState('');
   
+  const [telemetryReport, setTelemetryReport] = useState(null);
+  const [loadingTelemetry, setLoadingTelemetry] = useState(false);
+
   const [isNewClientMode, setIsNewClientMode] = useState(false);
   const [newClientData, setNewClientData] = useState({ 
     name: '', cui_cnp: '', address: '', type: 'PF',
@@ -39,6 +45,10 @@ const OfferBuilder = () => {
     residual_value_percent: 1,
     interest_rate: 5.9,
     template_type: 'Standard',
+    campaign_id: null,
+    campaign_name: '',
+    dealer_name: user?.dealer_name || (user?.role === 'Dealer Sales' ? 'Dealer Partener Axis' : null),
+    created_by_role: user?.role || 'Super Admin',
     fidejusor_name: '',
     fidejusor_cnp: '',
     fidejusor_address: '',
@@ -58,6 +68,7 @@ const OfferBuilder = () => {
     fetchClients().then(setClients).catch(console.error);
     fetchVehicles().then(setVehicles).catch(console.error);
     fetchVehicleBrands().then(setBrands).catch(console.error);
+    fetchCampaigns(true).then(setCampaigns).catch(console.error);
     
     if (isEditMode) {
       setLoading(true);
@@ -75,13 +86,21 @@ const OfferBuilder = () => {
             residual_value_percent: offer.residual_value_percent,
             interest_rate: offer.interest_rate,
             template_type: offer.template_type || 'Standard',
+            campaign_id: offer.campaign_id || null,
+            campaign_name: offer.campaign_name || '',
+            dealer_name: offer.dealer_name || user?.dealer_name || null,
+            created_by_role: offer.created_by_role || user?.role || 'Super Admin',
             fidejusor_name: offer.fidejusor_name || '',
             fidejusor_cnp: offer.fidejusor_cnp || '',
             fidejusor_address: offer.fidejusor_address || '',
             fidejusor_id_card: offer.fidejusor_id_card || '',
             fidejusor_quality: offer.fidejusor_quality || ''
           });
+          if (offer.campaign_id) {
+            setSelectedCampaignId(offer.campaign_id.toString());
+          }
           loadFidejusorForClient(offer.client_id);
+          loadTelemetryForClient(offer.client_id);
         })
         .catch(err => {
           console.error(err);
@@ -90,7 +109,24 @@ const OfferBuilder = () => {
         })
         .finally(() => setLoading(false));
     }
-  }, [id, isEditMode, navigate]);
+  }, [id, isEditMode, navigate, user]);
+
+  const loadTelemetryForClient = async (clientId) => {
+    if (!clientId) {
+      setTelemetryReport(null);
+      return;
+    }
+    setLoadingTelemetry(true);
+    try {
+      const rep = await fetchClientFleetTelemetryReport(clientId);
+      setTelemetryReport(rep);
+    } catch (err) {
+      console.warn("Could not load telemetry report:", err);
+      setTelemetryReport(null);
+    } finally {
+      setLoadingTelemetry(false);
+    }
+  };
 
   const loadFidejusorForClient = async (clientId) => {
     if (!clientId) return;
@@ -276,6 +312,7 @@ const OfferBuilder = () => {
                         fidejusor_quality: ''
                       }));
                       loadFidejusorForClient(clientId);
+                      loadTelemetryForClient(clientId);
                     }}
                   />
                   
@@ -285,6 +322,37 @@ const OfferBuilder = () => {
                       <span className="font-medium text-gray-900 dark:text-white">
                         {clients.find(c => String(c.id) === String(formData.client_id))?.representative_name || <span className="text-red-500 italic">Nesetat (Editează clientul în lista de Clienți pentru a adăuga reprezentantul)</span>}
                       </span>
+                    </div>
+                  )}
+
+                  {/* Raport Comportament Flotă GPS (Cerința 7 Alin) */}
+                  {formData.client_id && telemetryReport && (
+                    <div className="mt-3 p-3.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <MapPin size={16} className="text-gray-600 dark:text-gray-400" />
+                          <span className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                            Raport Comportament Flotă GPS
+                          </span>
+                        </div>
+                        <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-semibold border ${
+                          telemetryReport.telemetry_risk === 'HIGH' 
+                            ? 'bg-gray-100 dark:bg-gray-800 text-red-600 dark:text-red-400 border-red-300 dark:border-red-800'
+                            : telemetryReport.telemetry_risk === 'MEDIUM'
+                            ? 'bg-gray-100 dark:bg-gray-800 text-yellow-600 dark:text-yellow-400 border-yellow-300 dark:border-yellow-800'
+                            : 'bg-gray-100 dark:bg-gray-800 text-emerald-600 dark:text-emerald-400 border-emerald-300 dark:border-emerald-800'
+                        }`}>
+                          {telemetryReport.risk_label}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-gray-400 leading-relaxed">
+                        {telemetryReport.ai_recommendation}
+                      </p>
+                      <div className="flex gap-4 text-[11px] text-gray-500 dark:text-gray-400 pt-1.5 border-t border-gray-200 dark:border-gray-700/60">
+                        <span>Vehicule Flotă: <strong>{telemetryReport.total_active_vehicles}</strong> (LT: {telemetryReport.lt_vehicles_count}, ST: {telemetryReport.st_vehicles_count})</span>
+                        <span>Incidente Graniță: <strong className={telemetryReport.unauthorized_border_events > 0 ? "text-red-600 font-bold" : ""}>{telemetryReport.unauthorized_border_events}</strong></span>
+                        <span>Avertismente: <strong>{telemetryReport.warning_alerts_count}</strong></span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -643,6 +711,70 @@ const OfferBuilder = () => {
               />
             </div>
 
+            {/* Campanie Promoțională Finanțare (Cerința 4 Alin) */}
+            <div className="bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 p-4 rounded-xl space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Megaphone size={16} className="text-gray-700 dark:text-gray-300" />
+                  <label className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                    Campanie Promoțională Finanțare (Subvenționare Dobândă)
+                  </label>
+                </div>
+                {formData.campaign_name && (
+                  <span className="text-[11px] font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 px-2.5 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                    Campanie Activă
+                  </span>
+                )}
+              </div>
+
+              <select
+                value={selectedCampaignId}
+                onChange={e => {
+                  const val = e.target.value;
+                  setSelectedCampaignId(val);
+                  if (!val) {
+                    setFormData(prev => ({
+                      ...prev,
+                      campaign_id: null,
+                      campaign_name: '',
+                      interest_rate: 5.9
+                    }));
+                  } else {
+                    const camp = campaigns.find(c => c.id.toString() === val);
+                    if (camp) {
+                      setFormData(prev => ({
+                        ...prev,
+                        campaign_id: camp.id,
+                        campaign_name: camp.name,
+                        interest_rate: camp.discounted_interest_rate,
+                        advance_percent: Math.max(prev.advance_percent, camp.min_advance_percent || 15)
+                      }));
+                    }
+                  }
+                }}
+                className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-1 focus:ring-gray-400"
+              >
+                <option value="">-- Dobândă Standard Axis (5.90% pe an) --</option>
+                {campaigns.map(c => (
+                  <option key={c.id} value={c.id.toString()}>
+                    {c.name} • {c.discounted_interest_rate}% (Subvenționat de: {c.subsidized_by})
+                  </option>
+                ))}
+              </select>
+
+              {formData.campaign_name && (
+                <div className="p-2.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs">
+                  <div className="text-gray-600 dark:text-gray-300">
+                    <span className="font-semibold text-gray-900 dark:text-white">{formData.campaign_name}</span>
+                    <span className="text-gray-400 ml-2">Dobândă aplicată: <strong className="text-gray-900 dark:text-white">{formData.interest_rate}%</strong></span>
+                  </div>
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400">
+                    Canal: <strong>{formData.dealer_name || 'Toți Dealerii'}</strong>
+                  </span>
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Valută</label>
@@ -692,7 +824,7 @@ const OfferBuilder = () => {
             <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 bg-gray-50/50 dark:bg-gray-900/30 text-center">
               <label className="cursor-pointer flex flex-col items-center justify-center space-y-2">
                 <span className="p-3 bg-white dark:bg-gray-800 shadow-sm rounded-full border border-gray-200 dark:border-gray-700 text-gray-500 dark:text-gray-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" x2="12" y1="3" y2="15"/></svg>
+                  <UploadCloud size={24} />
                 </span>
                 <span className="text-sm font-medium text-gray-900 dark:text-white">Atașează Draft (Word / PDF)</span>
                 <span className="text-xs text-gray-500">Trage fișierul aici sau apasă pentru a alege din calculator</span>

@@ -353,7 +353,9 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany }
                             <h5 className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
                               <span>Părți în dosarul {courtCases[expandedCase].numar}</span>
                             </h5>
-                            <button onClick={() => setExpandedCase(null)} className="text-gray-400 hover:text-gray-600 text-xs cursor-pointer">✕ Închide</button>
+                            <button onClick={() => setExpandedCase(null)} className="text-gray-400 hover:text-gray-600 text-xs cursor-pointer flex items-center gap-1">
+                              <X size={14} /> Închide
+                            </button>
                           </div>
 
                           <div className="flex flex-wrap gap-2">

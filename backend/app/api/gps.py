@@ -88,11 +88,15 @@ def generate_alert_if_needed(db: Session, plate: str, alert_type: str, message: 
         )
         db.add(alert)
 
+from ..schemas.gps import GPSDataResponse, GPSAlertResponse, BulkAlertRequest, TelemetryIngestRequest
+from typing import Optional
+
 @router.get("/live", response_model=List[GPSDataResponse])
-def get_live_locations(db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+def get_live_locations(fleet_type: Optional[str] = None, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
     """
     Returns live locations and ANIMATES the vehicles.
     Every request moves the vehicles slightly and evaluates AI scenarios.
+    Supports filtering by fleet_type ('LT' for Leasing Operațional, 'ST' for Rent a Car).
     """
     initialize_simulation(db)
     
@@ -154,7 +158,69 @@ def get_live_locations(db: Session = Depends(get_db), current_user = Depends(moc
             gps.location_name = "București - Ilfov"
 
     db.commit()
-    return db.query(GPSData).all()
+    
+    # Prepare enriched responses with fleet_type and vehicle_make_model
+    results = []
+    for g in db.query(GPSData).all():
+        v = vehicles.get(g.vehicle_plate)
+        v_fleet_type = getattr(v, 'fleet_type', 'LT') or ('LT' if (v and v.id % 2 == 0) else 'ST')
+        if fleet_type and v_fleet_type != fleet_type:
+            continue
+        v_model = f"{v.make} {v.model}" if v else g.vehicle_plate
+        
+        item = GPSDataResponse(
+            id=g.id,
+            client_id=g.client_id,
+            vehicle_plate=g.vehicle_plate,
+            latitude=g.latitude,
+            longitude=g.longitude,
+            speed_kmh=g.speed_kmh,
+            engine_on=g.engine_on,
+            location_name=g.location_name,
+            timestamp=g.timestamp,
+            fleet_type=v_fleet_type,
+            vehicle_make_model=v_model
+        )
+        results.append(item)
+    return results
+
+@router.post("/telemetry/ingest")
+def ingest_telemetry_packet(packet: TelemetryIngestRequest, db: Session = Depends(get_db)):
+    """
+    Ingest live GPS packet from hardware telematics (TrackGPS / SafeFleet / Webfleet / SasFleet).
+    Evaluates geofence rules and triggers real-time alerts.
+    """
+    record = db.query(GPSData).filter(GPSData.vehicle_plate == packet.vehicle_plate).first()
+    if not record:
+        record = GPSData(
+            client_id=1,
+            vehicle_plate=packet.vehicle_plate,
+            latitude=packet.latitude,
+            longitude=packet.longitude,
+            speed_kmh=packet.speed_kmh,
+            engine_on=packet.engine_on,
+            location_name=packet.location_name or "Transmisie GPS Live"
+        )
+        db.add(record)
+    else:
+        record.latitude = packet.latitude
+        record.longitude = packet.longitude
+        record.speed_kmh = packet.speed_kmh
+        record.engine_on = packet.engine_on
+        if packet.location_name:
+            record.location_name = packet.location_name
+        record.timestamp = datetime.utcnow()
+    
+    # AI Scenario evaluation on live ingest
+    if packet.longitude < ROMANIA_WEST_LON:
+        generate_alert_if_needed(
+            db, packet.vehicle_plate, "UNAUTHORIZED_EXIT",
+            f"Vehiculul {packet.vehicle_plate} a părăsit România (Senzor Hardware {packet.provider}).",
+            "SISTEM HARDWARE: Coordonate GPS externe fără autorizație. Notificare automată dispecerat."
+        )
+    
+    db.commit()
+    return {"status": "success", "vehicle_plate": packet.vehicle_plate, "received_at": datetime.utcnow().isoformat()}
 
 @router.get("/alerts", response_model=List[GPSAlertResponse])
 def get_gps_alerts(db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):

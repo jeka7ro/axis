@@ -28,6 +28,7 @@ class Vehicle(Base):
     features = Column(String, nullable=True) # Dotări extra (Text/JSON)
     
     purchase_price = Column(Float, nullable=True)
+    fleet_type = Column(String, default="LT", nullable=True) # LT (Leasing Operational) vs ST (Rent a Car)
     rental_price_short_term = Column(Float, nullable=True) # Preț/zi
     rental_price_long_term = Column(Float, nullable=True) # Preț/lună
     

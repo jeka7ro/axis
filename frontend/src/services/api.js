@@ -218,3 +218,10 @@ export const deleteVehicle = async (id) => {
   if (!response.ok) throw new Error('Failed to delete vehicle');
   return response.json();
 };
+
+export const fetchClientFleetTelemetryReport = async (clientId) => {
+  const response = await fetch(`${API_URL}/clients/${clientId}/fleet-telemetry-report`);
+  if (!response.ok) throw new Error('Failed to fetch client fleet telemetry report');
+  return response.json();
+};
+

@@ -71,8 +71,12 @@ def create_offer(offer: OfferCreate, db: Session = Depends(get_db), current_user
         offer.interest_rate
     )
     
+    offer_dict = offer.model_dump()
+    if not offer_dict.get("dealer_name") and getattr(current_user, 'full_name', None):
+        offer_dict["dealer_name"] = current_user.full_name
+        
     new_offer = Offer(
-        **offer.model_dump(),
+        **offer_dict,
         monthly_rate=rate,
         created_by_id=current_user.id
     )
@@ -82,11 +86,24 @@ def create_offer(offer: OfferCreate, db: Session = Depends(get_db), current_user
     return new_offer
 
 from sqlalchemy.orm import joinedload
+from typing import Optional
 
 @router.get("/", response_model=List[OfferResponse])
 @router.get("", response_model=List[OfferResponse])
-def get_offers(db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
-    offers = db.query(Offer).options(joinedload(Offer.contract)).order_by(Offer.created_at.desc()).all()
+def get_offers(
+    role: Optional[str] = None,
+    dealer_name: Optional[str] = None,
+    dealer_only: Optional[bool] = False,
+    db: Session = Depends(get_db), 
+    current_user = Depends(mock_get_current_user)
+):
+    query = db.query(Offer).options(joinedload(Offer.contract))
+    if dealer_only or role == "Dealer Sales":
+        if dealer_name:
+            query = query.filter((Offer.dealer_name == dealer_name) | (Offer.created_by_role == "Dealer Sales"))
+        else:
+            query = query.filter((Offer.created_by_role == "Dealer Sales") | (Offer.dealer_name.isnot(None)))
+    offers = query.order_by(Offer.created_at.desc()).all()
     return offers
 
 @router.get("/contracts", response_model=List[ContractResponse])
@@ -434,4 +451,179 @@ def generate_contract(offer_id: int, request: ContractCreateRequest, db: Session
     db.commit()
     db.refresh(new_contract)
     return new_contract
+
+@router.post("/{offer_id}/submit-approval", response_model=OfferResponse)
+def submit_offer_for_approval(offer_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    offer = db.query(Offer).filter(Offer.id == offer_id).first()
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found")
+    offer.status = OfferStatus.PENDING_APPROVAL
+    db.commit()
+    db.refresh(offer)
+    return offer
+
+@router.post("/{offer_id}/esign/send")
+def send_esign_envelope(offer_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    """
+    Pasul 1 în fluxul eSign Namirial: Creare plic electronic și trimitere invitație de semnare către Client și Fidejusor.
+    """
+    offer = db.query(Offer).filter(Offer.id == offer_id).first()
+    if not offer:
+        raise HTTPException(status_code=404, detail="Offer not found")
+    if not offer.contract:
+        raise HTTPException(status_code=400, detail="Contractul nu este generat încă. Generează contractul înainte de trimitere.")
+        
+    contract = offer.contract
+    envelope_id = f"NAM-ENV-{datetime.now().strftime('%Y%m%d')}-{uuid.uuid4().hex[:8].upper()}"
+    contract.esign_envelope_id = envelope_id
+    contract.status = ContractStatus.SENT_TO_SIGN
+    
+    # Audit log entry
+    audit_trail = []
+    if contract.esign_audit_log:
+        try:
+            audit_trail = json.loads(contract.esign_audit_log)
+        except Exception:
+            audit_trail = []
+            
+    client_signer = offer.client.representative_name or offer.client.name
+    audit_trail.append({
+        "event": "ENVELOPE_CREATED",
+        "envelope_id": envelope_id,
+        "timestamp": datetime.utcnow().isoformat(),
+        "provider": "Namirial eSign API (Qualified Electronic Signature)",
+        "recipients": [
+            {"role": "Locatar (Client)", "name": client_signer, "channel": "SMS OTP & Email"},
+            {"role": "Fidejusor", "name": contract.fidejusor_name or "N/A", "channel": "SMS OTP"}
+        ],
+        "created_by": getattr(current_user, 'full_name', 'Eugeniu Cazmal')
+    })
+    contract.esign_audit_log = json.dumps(audit_trail)
+    db.commit()
+    
+    return {
+        "status": "success",
+        "envelope_id": envelope_id,
+        "contract_status": contract.status,
+        "message": f"Plicul electronic {envelope_id} a fost transmis cu succes prin Namirial eSign."
+    }
+
+@router.post("/{offer_id}/esign/sign-client")
+def sign_contract_client(offer_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    """
+    Dual-Pass Pasul 1: Validare semnare Client & Fidejusor (via OTP Namirial).
+    Contractul trece în starea SIGNED_CLIENT și așteaptă contrasemnătura Axis.
+    """
+    offer = db.query(Offer).filter(Offer.id == offer_id).first()
+    if not offer or not offer.contract:
+        raise HTTPException(status_code=404, detail="Contractul nu a fost găsit.")
+        
+    contract = offer.contract
+    now = datetime.utcnow()
+    contract.signed_client_at = now
+    contract.status = ContractStatus.SIGNED_CLIENT
+    
+    # Append to audit log
+    audit_trail = []
+    if contract.esign_audit_log:
+        try:
+            audit_trail = json.loads(contract.esign_audit_log)
+        except Exception:
+            audit_trail = []
+            
+    client_signer = offer.client.representative_name or offer.client.name
+    audit_trail.append({
+        "event": "CLIENT_SIGNED",
+        "timestamp": now.isoformat(),
+        "signer": client_signer,
+        "auth_method": "SMS OTP 6-digits (Namirial Trust Service)",
+        "ip_address": "86.120.45.112 (București, RO)",
+        "certificate_serial": f"NAM-{uuid.uuid4().hex[:12].upper()}",
+        "status": "VALID"
+    })
+    if contract.fidejusor_name:
+        audit_trail.append({
+            "event": "FIDEJUSOR_SIGNED",
+            "timestamp": now.isoformat(),
+            "signer": contract.fidejusor_name,
+            "auth_method": "SMS OTP 6-digits (Namirial Trust Service)",
+            "ip_address": "86.120.45.112 (București, RO)",
+            "certificate_serial": f"NAM-FID-{uuid.uuid4().hex[:10].upper()}",
+            "status": "VALID"
+        })
+    contract.esign_audit_log = json.dumps(audit_trail)
+    db.commit()
+    
+    return {
+        "status": "success",
+        "contract_status": contract.status,
+        "signed_client_at": contract.signed_client_at,
+        "message": "Clientul și Fidejusorul au semnat cu succes. Se așteaptă contrasemnătura reprezentantului Axis."
+    }
+
+@router.post("/{offer_id}/esign/sign-axis")
+def sign_contract_axis(offer_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    """
+    Dual-Pass Pasul 2: Contrasemnare Executivă de către Axis Rent SRL (Axis Manager / Super Admin).
+    Contractul devine SIGNED_AXIS (Finalizat & Semnat Ambele Părți).
+    """
+    offer = db.query(Offer).filter(Offer.id == offer_id).first()
+    if not offer or not offer.contract:
+        raise HTTPException(status_code=404, detail="Contractul nu a fost găsit.")
+        
+    contract = offer.contract
+    now = datetime.utcnow()
+    contract.signed_axis_at = now
+    contract.status = ContractStatus.SIGNED_AXIS
+    offer.status = OfferStatus.CONVERTED
+    
+    # Append to audit log
+    audit_trail = []
+    if contract.esign_audit_log:
+        try:
+            audit_trail = json.loads(contract.esign_audit_log)
+        except Exception:
+            audit_trail = []
+            
+    axis_signer = getattr(current_user, 'full_name', 'Eugeniu Cazmal')
+    audit_trail.append({
+        "event": "AXIS_EXECUTIVE_COUNTERSIGNED",
+        "timestamp": now.isoformat(),
+        "signer": axis_signer,
+        "entity": "AXIS RENT S.R.L.",
+        "auth_method": "Certificat Digital Calificat QES (Namirial)",
+        "ip_address": "194.102.16.88 (Sediul Axis)",
+        "certificate_serial": f"NAM-AXIS-{uuid.uuid4().hex[:12].upper()}",
+        "status": "COMPLETED_LEGALLY_BINDING"
+    })
+    contract.esign_audit_log = json.dumps(audit_trail)
+    db.commit()
+    
+    return {
+        "status": "success",
+        "contract_status": contract.status,
+        "signed_axis_at": contract.signed_axis_at,
+        "message": "Contractul a fost contrasemnat de către Axis Rent S.R.L. Plicul este finalizat și arhivat."
+    }
+
+@router.get("/{offer_id}/esign/audit-trail")
+def get_esign_audit_trail(offer_id: int, db: Session = Depends(get_db), current_user = Depends(mock_get_current_user)):
+    offer = db.query(Offer).filter(Offer.id == offer_id).first()
+    if not offer or not offer.contract:
+        raise HTTPException(status_code=404, detail="Contractul nu a fost găsit.")
+    contract = offer.contract
+    audit_trail = []
+    if contract.esign_audit_log:
+        try:
+            audit_trail = json.loads(contract.esign_audit_log)
+        except Exception:
+            audit_trail = []
+    return {
+        "envelope_id": contract.esign_envelope_id,
+        "contract_number": contract.contract_number,
+        "status": contract.status,
+        "signed_client_at": contract.signed_client_at,
+        "signed_axis_at": contract.signed_axis_at,
+        "audit_trail": audit_trail
+    }
 

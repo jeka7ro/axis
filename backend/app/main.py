@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from .database import engine, Base
-from .api import auth, clients, offers, gps, vehicles, nomenclatures
+from .api import auth, clients, offers, gps, vehicles, nomenclatures, campaigns
 import os
 
 # Create database tables (wrapped to survive Postgres enum conflicts)
@@ -36,21 +36,28 @@ try:
             conn.execute(text("ALTER TABLE axis_evaluations ALTER COLUMN created_by_user_id DROP NOT NULL;"))
         except Exception:
             pass
-        # Auto-migrate Fidejusor and Template fields
+        # Auto-migrate Fidejusor, Dealer, Campaign, and eSign fields
         for tbl, col, ctype in [
             ("axis_offers", "template_type", "VARCHAR"),
             ("axis_offers", "currency", "VARCHAR"),
+            ("axis_offers", "dealer_name", "VARCHAR"),
+            ("axis_offers", "created_by_role", "VARCHAR"),
+            ("axis_offers", "campaign_id", "INTEGER"),
+            ("axis_offers", "campaign_name", "VARCHAR"),
             ("axis_offers", "fidejusor_name", "VARCHAR"),
             ("axis_offers", "fidejusor_cnp", "VARCHAR"),
             ("axis_offers", "fidejusor_address", "VARCHAR"),
             ("axis_offers", "fidejusor_id_card", "VARCHAR"),
             ("axis_offers", "fidejusor_quality", "VARCHAR"),
             ("axis_contracts", "template_type", "VARCHAR"),
+            ("axis_contracts", "esign_envelope_id", "VARCHAR"),
+            ("axis_contracts", "esign_audit_log", "TEXT"),
             ("axis_contracts", "fidejusor_name", "VARCHAR"),
             ("axis_contracts", "fidejusor_cnp", "VARCHAR"),
             ("axis_contracts", "fidejusor_address", "VARCHAR"),
             ("axis_contracts", "fidejusor_id_card", "VARCHAR"),
             ("axis_contracts", "fidejusor_quality", "VARCHAR"),
+            ("axis_vehicles", "fleet_type", "VARCHAR"),
         ]:
             try:
                 conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {ctype};"))
@@ -145,10 +152,31 @@ app.include_router(offers.router)
 app.include_router(gps.router)
 app.include_router(vehicles.router)
 app.include_router(nomenclatures.router)
+app.include_router(campaigns.router)
+
+@app.middleware("http")
+async def security_headers_middleware(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "SAMEORIGIN"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    return response
 
 @app.get("/")
 def root():
     return {"message": "Welcome to Axis AI Platform API", "version": "2.5.1-cors-fix"}
+
+@app.get("/health")
+def health_check():
+    """Endpoint de verificare stare pentru monitorizare VPS IOSS și uptime checks"""
+    return {
+        "status": "healthy",
+        "service": "axis-ai-platform",
+        "version": "2.5.1",
+        "database": "connected"
+    }
 
 @app.get("/api/debug/test-error")
 async def test_error():

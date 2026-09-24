@@ -6,11 +6,11 @@ import {
   Building2, Eye, Compass, Layers, CheckSquare, Square, ChevronLeft,
   Camera, Maximize2, X, Image as ImageIcon, Loader2, RefreshCw, Users,
   Search, Briefcase, UserCheck, Scale, BookOpen, Sparkles, Award, Network,
-  Copy, Check, Plus, Minus, ZoomIn, ZoomOut, FileDown
+  Copy, Check, Plus, Minus, ZoomIn, ZoomOut, FileDown, Car, Radio, Activity, CheckCircle2
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
-import { fetchClient, evaluateClient, evaluateCompanyByCui, fetchAdminNetwork } from '../services/api';
+import { fetchClient, evaluateClient, evaluateCompanyByCui, fetchAdminNetwork, fetchClientFleetTelemetryReport } from '../services/api';
 import CompanyIntelModal from '../components/CompanyIntelModal';
 import PersonIntelModal from '../components/PersonIntelModal';
 import MofDocumentModal from '../components/MofDocumentModal';
@@ -69,6 +69,8 @@ const ClientDetails = () => {
   const [expandedMofIndices, setExpandedMofIndices] = useState([]);
   const [showConfirmReevalModal, setShowConfirmReevalModal] = useState(false);
   const [exportingCreditReport, setExportingCreditReport] = useState(false);
+  const [telemetryReport, setTelemetryReport] = useState(null);
+  const [loadingTelemetry, setLoadingTelemetry] = useState(false);
 
   const toggleMofExpand = (idx) => {
     setExpandedMofIndices(prev => 
@@ -94,6 +96,19 @@ const ClientDetails = () => {
     setPersonIntelTarget({ isOpen: false, name: '', contextCui: null });
   };
 
+  const loadTelemetryReport = async () => {
+    if (!id) return;
+    setLoadingTelemetry(true);
+    try {
+      const data = await fetchClientFleetTelemetryReport(id);
+      setTelemetryReport(data);
+    } catch (err) {
+      console.error("Telemetry fetch error:", err);
+    } finally {
+      setLoadingTelemetry(false);
+    }
+  };
+
   const loadClient = async () => {
     try {
       const data = await fetchClient(id);
@@ -107,6 +122,7 @@ const ClientDetails = () => {
 
   useEffect(() => {
     loadClient();
+    loadTelemetryReport();
   }, [id]);
 
   useEffect(() => {
@@ -1241,7 +1257,7 @@ const ClientDetails = () => {
                                           className="text-[10px] px-2 py-0.5 text-gray-400 hover:text-rose-500 rounded-full border border-gray-200 dark:border-gray-700 hover:border-rose-300 ml-1 transition-colors cursor-pointer"
                                           title="Elimină din listă (altă persoană / alt buletin)"
                                         >
-                                          ✕ Ignoră
+                                          <X size={10} className="inline mr-1" /> Ignoră
                                         </button>
                                       )}
                                     </div>
@@ -2306,73 +2322,233 @@ const ClientDetails = () => {
       )}
 
       {activeTab === 'gps' && (
-        <div className="space-y-6 mt-6">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 animate-in fade-in">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 bg-red-100 text-red-600 rounded-full dark:bg-red-900/30 dark:text-red-400">
-                <AlertTriangle size={24} />
+        <div className="space-y-6 mt-6 animate-in fade-in">
+          {/* Header Card */}
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="p-3 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 rounded-full">
+                  <Radio size={22} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">Comportament Flotă GPS & Telemetrie</h3>
+                  <p className="text-sm text-gray-500">Analiză automată a parcului auto alocat, istoricului de traversare frontiere și alertelor active.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Raport de Risc GPS (Monitorizare Flotă)</h3>
-                <p className="text-sm text-gray-500">Generat automat pe baza traseelor de la vehiculele LT / ST.</p>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadTelemetryReport}
+                  disabled={loadingTelemetry}
+                  className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                >
+                  <RefreshCw size={12} className={loadingTelemetry ? "animate-spin" : ""} />
+                  Actualizează Date
+                </button>
+                <span className={`px-3 py-1 rounded-full text-xs font-semibold border ${
+                  telemetryReport?.telemetry_risk === 'HIGH'
+                    ? 'border-red-300 text-red-700 dark:border-red-800 dark:text-red-400 bg-red-50/50 dark:bg-red-950/20'
+                    : telemetryReport?.telemetry_risk === 'MEDIUM'
+                    ? 'border-amber-300 text-amber-700 dark:border-amber-800 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20'
+                    : 'border-emerald-300 text-emerald-700 dark:border-emerald-800 dark:text-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20'
+                }`}>
+                  {telemetryReport?.risk_label || 'Risc Nedeterminat'}
+                </span>
               </div>
             </div>
-            
-            <div className="space-y-6">
-               <div className="p-4 bg-gray-50 dark:bg-gray-900 rounded-2xl border border-gray-100 dark:border-gray-800">
-                 <h4 className="font-semibold text-gray-900 dark:text-white mb-2">Evaluare Pattern-uri Suspicioase</h4>
-                 <p className="text-sm text-gray-600 dark:text-gray-400 leading-relaxed mb-4">
-                   Sistemul AI a identificat **suprapuneri de adrese și rute frecvente** cu alte entități din portofoliul Axis. Risc crescut de subînchiriere neautorizată (Cross-Fleet Usage).
-                 </p>
-                 
-                 <div className="bg-red-50 dark:bg-red-900/10 border-l-4 border-red-500 p-4 rounded-r-xl">
-                   <h5 className="font-medium text-red-800 dark:text-red-400 text-sm mb-1">Alerte Curente:</h5>
-                   <ul className="list-disc pl-5 text-sm text-red-700 dark:text-red-300 space-y-1">
-                     <li>Vehiculul B-123-AXS (ST) staționează frecvent peste noapte la sediul <b>Dino Home Construct</b> (client cu istoric negativ).</li>
-                     <li>Ofertarea nouă pentru vehicule comerciale ar putea fi direcționată tot către terți. Se recomandă <b>Contract Fidejusor</b> sau respingerea cererii.</li>
-                   </ul>
-                 </div>
-               </div>
-               
-               <div className="grid grid-cols-2 gap-4">
-                 <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-2xl">
-                   <div className="text-sm text-gray-500 mb-1">Acuratețe AI</div>
-                   <div className="text-xl font-bold text-gray-900 dark:text-white">94%</div>
-                   <div className="text-xs text-green-600 mt-1">Conform 1200+ ore monitorizare</div>
-                 </div>
-                 <div className="p-4 border border-gray-200 dark:border-gray-700 rounded-2xl">
-                   <div className="text-sm text-gray-500 mb-1">Status Recomandare</div>
-                   <div className="text-xl font-bold text-red-600">Investigație Manuală</div>
-                   <div className="text-xs text-gray-500 mt-1">Acțiune blocantă pt depart. aprobări</div>
-                 </div>
-               </div>
+
+            {/* AI Recommendation Banner */}
+            <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-900/40 rounded-2xl border border-gray-200 dark:border-gray-700">
+              <div className="flex items-start gap-3">
+                <BrainCircuit size={18} className="text-gray-700 dark:text-gray-300 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-gray-700 dark:text-gray-300 mb-1">
+                    Recomandare AI Comitet de Credit
+                  </h4>
+                  <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                    {telemetryReport?.ai_recommendation || 'Se analizează telemetria și istoricul de alerte pentru emiterea avizului de credit.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* KPIs Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
+              <div className="p-4 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/80">
+                <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
+                  <span>Vehicule Alocate</span>
+                  <Car size={14} />
+                </div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {telemetryReport?.total_active_vehicles || 0}
+                </div>
+                <div className="flex items-center gap-2 mt-2 text-[11px] text-gray-500">
+                  <span className="px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700">LT: {telemetryReport?.lt_vehicles_count || 0}</span>
+                  <span className="px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700">ST: {telemetryReport?.st_vehicles_count || 0}</span>
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/80">
+                <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
+                  <span>Incidente Graniță</span>
+                  <ShieldAlert size={14} />
+                </div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {telemetryReport?.unauthorized_border_events || 0}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-2">
+                  Ieșiri din țară fără procură
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/80">
+                <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
+                  <span>Alerte Telemetrice</span>
+                  <Activity size={14} />
+                </div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {telemetryReport?.total_alerts || 0}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-2">
+                  Total evenimente sesizate
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800/80">
+                <div className="flex items-center justify-between text-gray-500 text-xs mb-1">
+                  <span>Nivel Risc Flotă</span>
+                  <ShieldCheck size={14} />
+                </div>
+                <div className="text-2xl font-bold text-gray-900 dark:text-white">
+                  {telemetryReport?.telemetry_risk || 'N/A'}
+                </div>
+                <div className="text-[11px] text-gray-500 mt-2">
+                  Calculat pe baza istoricului GPS
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* GPS Monitoring History */}
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 animate-in fade-in">
+          {/* Monitored Vehicles Table */}
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
             <h4 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <MapPin size={18} className="text-primary" /> Istoric Monitorizare GPS (Silențios)
+              <Car size={18} className="text-gray-600 dark:text-gray-400" /> Vehicule din Portofoliu Monitorizate
             </h4>
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400">
+              <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
                 <thead className="text-xs text-gray-500 uppercase bg-gray-50/80 dark:bg-gray-900/50 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
                   <tr>
-                    <th scope="col" className="px-4 py-3">Vehicul</th>
-                    <th scope="col" className="px-4 py-3">Eveniment / Locație</th>
-                    <th scope="col" className="px-4 py-3">Data și Ora</th>
-                    <th scope="col" className="px-4 py-3">Status Permisiune</th>
-                    <th scope="col" className="px-4 py-3">Decizie AI</th>
+                    <th scope="col" className="w-10 px-4 py-3 text-center">
+                      <input type="checkbox" disabled className="rounded border-gray-300 dark:border-gray-600 cursor-not-allowed" />
+                    </th>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Nr. Crt.</th>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Număr Înmatriculare</th>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Marcă & Model</th>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Regim Flotă</th>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Status</th>
                   </tr>
                 </thead>
-                <tbody>
-                   <tr>
-                     <td colSpan="5" className="px-4 py-8 text-center text-gray-500">
-                       Niciun eveniment GPS înregistrat. Monitorizarea este activă.
-                     </td>
-                   </tr>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {telemetryReport?.vehicles_monitored && telemetryReport.vehicles_monitored.length > 0 ? (
+                    telemetryReport.vehicles_monitored.map((v, idx) => (
+                      <tr key={v.id || idx} className="hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors">
+                        <td className="px-4 py-3 text-center">
+                          <input type="checkbox" className="rounded border-gray-300 dark:border-gray-600" />
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs">{idx + 1}</td>
+                        <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{v.plate}</td>
+                        <td className="px-4 py-3">{v.model}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${
+                            v.fleet_type === 'ST'
+                              ? 'border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-800'
+                              : 'border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 bg-blue-50/50 dark:bg-blue-950/20'
+                          }`}>
+                            {v.fleet_type === 'ST' ? 'ST - Rent a Car' : 'LT - Leasing Operațional'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="inline-flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                            {v.status || 'Activ'}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
+                        Niciun vehicul activ alocat acestui client.
+                      </td>
+                    </tr>
+                  )}
                 </tbody>
               </table>
+            </div>
+            <div className="flex items-center justify-between text-xs text-gray-500 mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <span>Afișează [ 25 v ]</span>
+              <span>Total vehicule: {telemetryReport?.vehicles_monitored?.length || 0}</span>
+              <div className="flex items-center gap-2">
+                <span>Pagină 1 din 1</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Recent Telemetry Alerts Table */}
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <h4 className="font-semibold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
+              <AlertTriangle size={18} className="text-gray-600 dark:text-gray-400" /> Istoric Evenimente Telemetrice & Alerte GPS
+            </h4>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-sm text-gray-600 dark:text-gray-300">
+                <thead className="text-xs text-gray-500 uppercase bg-gray-50/80 dark:bg-gray-900/50 dark:text-gray-400 border-b border-gray-200 dark:border-gray-700">
+                  <tr>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Nr. Crt.</th>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Tip Alertă</th>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Număr Înmatriculare</th>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Mesaj Alertă</th>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Recomandare AI</th>
+                    <th scope="col" className="px-4 py-3 whitespace-nowrap">Dată Înregistrare</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                  {telemetryReport?.recent_alerts && telemetryReport.recent_alerts.length > 0 ? (
+                    telemetryReport.recent_alerts.map((alert, idx) => (
+                      <tr key={alert.id || idx} className="hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs">{idx + 1}</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
+                            alert.type === 'UNAUTHORIZED_EXIT' || alert.type === 'DEBT_BORDER_RISK'
+                              ? 'border-red-300 text-red-700 dark:border-red-800 dark:text-red-400 bg-red-50/50 dark:bg-red-950/20'
+                              : 'border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300'
+                          }`}>
+                            {alert.type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{alert.plate || 'N/A'}</td>
+                        <td className="px-4 py-3 text-xs">{alert.message}</td>
+                        <td className="px-4 py-3 text-xs text-gray-700 dark:text-gray-300">{alert.recommendation || '-'}</td>
+                        <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                          {alert.created_at ? new Date(alert.created_at).toLocaleString('ro-RO') : 'N/A'}
+                        </td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan="6" className="px-4 py-8 text-center text-gray-500">
+                        Nicio alertă sau încălcare de traseu înregistrată în telemetrie.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex items-center justify-between text-xs text-gray-500 mt-4 pt-3 border-t border-gray-100 dark:border-gray-800">
+              <span>Afișează [ 25 v ]</span>
+              <span>Total alerte: {telemetryReport?.recent_alerts?.length || 0}</span>
+              <div className="flex items-center gap-2">
+                <span>Pagină 1 din 1</span>
+              </div>
             </div>
           </div>
         </div>
