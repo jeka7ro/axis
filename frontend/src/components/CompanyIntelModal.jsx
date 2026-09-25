@@ -7,7 +7,7 @@ import {
   Globe, Compass, Camera, Search
 } from 'lucide-react';
 import { fetchCompanyFullIntel } from '../services/api';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import MofDocumentModal from './MofDocumentModal';
 import FinancialPerformanceCard from './FinancialPerformanceCard';
 import OwnershipAndGovernanceCard from './OwnershipAndGovernanceCard';
@@ -20,12 +20,14 @@ const CompanyIntelModal = ({
   initialName, 
   onEvaluate, 
   onOpenPerson, 
-  onOpenCompany,
-  history = [],
+  onOpenCompany, 
+  history = [], 
   onBack 
 }) => {
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [evaluating, setEvaluating] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
   const [expandedCase, setExpandedCase] = useState(null);
   const [selectedMofPub, setSelectedMofPub] = useState(null);
@@ -68,6 +70,24 @@ const CompanyIntelModal = ({
       .finally(() => {
         setLoading(false);
       });
+  };
+
+  const handleRunEvaluation = async () => {
+    if (!onEvaluate || evaluating) return;
+    setEvaluating(true);
+    try {
+      const res = await onEvaluate(cui, companyName);
+      if (res?.client_id) {
+        onClose();
+        navigate(`/clients/${res.client_id}?tab=investigation`);
+      } else {
+        handleRefreshApi();
+      }
+    } catch (err) {
+      console.error('Eroare evaluare companie:', err);
+    } finally {
+      setEvaluating(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -203,7 +223,7 @@ const CompanyIntelModal = ({
 
             {data?.existing_client_id ? (
               <Link
-                to={`/clients/${data.existing_client_id}`}
+                to={`/clients/${data.existing_client_id}?tab=investigation`}
                 className="px-4 py-2 bg-primary text-white rounded-full text-xs font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
               >
                 <Eye size={14} />
@@ -212,14 +232,21 @@ const CompanyIntelModal = ({
             ) : onEvaluate && (
               <button
                 type="button"
-                onClick={() => {
-                  onEvaluate(cui, companyName);
-                  onClose();
-                }}
-                className="px-4 py-2 bg-primary text-white rounded-full text-xs font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer"
+                onClick={handleRunEvaluation}
+                disabled={evaluating || loading}
+                className="px-4 py-2 bg-primary text-white rounded-full text-xs font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer disabled:opacity-60"
               >
-                <Sparkles size={14} />
-                <span>Evaluează în Axis</span>
+                {evaluating ? (
+                  <>
+                    <Loader2 size={14} className="animate-spin" />
+                    <span>Se evaluează...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} />
+                    <span>Evaluează în Axis</span>
+                  </>
+                )}
               </button>
             )}
             <button

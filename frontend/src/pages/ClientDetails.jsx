@@ -214,11 +214,13 @@ const ClientDetails = () => {
       // Verifică întâi în baza de date proprie (forceRefresh=false) pentru a nu consuma credite dacă există deja
       const res = await evaluateCompanyByCui(cleanCui, false);
       if (res?.client_id) {
-        navigate(`/clients/${res.client_id}`);
+        navigate(`/clients/${res.client_id}?tab=investigation`);
       }
+      return res;
     } catch (error) {
       console.error("Failed to evaluate company:", error);
       alert(`Eroare la evaluarea companiei ${companyName || cleanCui}: ${error.message || 'Verificați conexiunea la server'}`);
+      throw error;
     } finally {
       setEvaluatingCui(null);
     }
