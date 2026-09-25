@@ -363,14 +363,14 @@ const Dashboard = () => {
       {/* Clean Unified Page Header matching Axis style */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Panou de Control</h2>
-          <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-            Monitorizare portofoliu clienți, evaluări de risc și acces rapid la rețeaua relațională.
+          <h2 className="text-xl font-bold text-gray-900 dark:text-white">Privire de Ansamblu & Risc</h2>
+          <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
+            Monitorizare portofoliu clienți, diagnostic de solvabilitate și acces rapid la rețeaua relațională.
           </p>
         </div>
         <button
           onClick={() => handleLaunchInvestigation()}
-          className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-full hover:bg-primary/90 transition-all shadow-md font-medium text-sm self-start sm:self-auto cursor-pointer"
+          className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-full hover:bg-primary/90 transition-all shadow-sm font-medium text-sm self-start sm:self-auto cursor-pointer"
         >
           <Network size={17} />
           <span>Investigation Board</span>

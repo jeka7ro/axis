@@ -2449,7 +2449,7 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
                   )}
 
                   {activeNode.cui && (
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 font-mono">
+                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 font-medium">
                       CUI: {activeNode.cui}
                     </div>
                   )}

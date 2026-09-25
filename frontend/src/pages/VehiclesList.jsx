@@ -327,7 +327,7 @@ const VehiclesList = () => {
                         className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-400 dark:border-gray-600 dark:bg-gray-700"
                       />
                     </td>
-                    <td className="px-4 py-4 font-mono text-xs text-gray-400">{startIndex + idx + 1}</td>
+                    <td className="px-4 py-4 text-xs text-gray-400 font-medium">{startIndex + idx + 1}</td>
                     <td className="px-5 py-4 max-w-[200px]">
                       <div className="font-semibold text-gray-900 dark:text-white truncate" title={v.make}>
                         {v.make}

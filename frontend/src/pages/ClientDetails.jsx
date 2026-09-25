@@ -2647,7 +2647,7 @@ const ClientDetails = () => {
                         <td className="px-4 py-3 text-center">
                           <input type="checkbox" className="rounded border-gray-300 dark:border-gray-600" />
                         </td>
-                        <td className="px-4 py-3 font-mono text-xs">{idx + 1}</td>
+                        <td className="px-4 py-3 text-xs text-gray-400 font-medium">{idx + 1}</td>
                         <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{v.plate}</td>
                         <td className="px-4 py-3">{v.model}</td>
                         <td className="px-4 py-3">
@@ -2707,7 +2707,7 @@ const ClientDetails = () => {
                   {telemetryReport?.recent_alerts && telemetryReport.recent_alerts.length > 0 ? (
                     telemetryReport.recent_alerts.map((alert, idx) => (
                       <tr key={alert.id || idx} className="hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors">
-                        <td className="px-4 py-3 font-mono text-xs">{idx + 1}</td>
+                        <td className="px-4 py-3 text-xs text-gray-400 font-medium">{idx + 1}</td>
                         <td className="px-4 py-3">
                           <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium border ${
                             alert.type === 'UNAUTHORIZED_EXIT' || alert.type === 'DEBT_BORDER_RISK' || alert.type === 'SUSPICIOUS_COLOCATION'
@@ -2720,7 +2720,7 @@ const ClientDetails = () => {
                         <td className="px-4 py-3 font-semibold text-gray-900 dark:text-white">{alert.plate || 'N/A'}</td>
                         <td className="px-4 py-3 text-xs">{alert.message}</td>
                         <td className="px-4 py-3 text-xs text-gray-700 dark:text-gray-300">{alert.recommendation || '-'}</td>
-                        <td className="px-4 py-3 font-mono text-xs text-gray-500">
+                        <td className="px-4 py-3 text-xs text-gray-500">
                           {alert.created_at ? new Date(alert.created_at).toLocaleString('ro-RO') : 'N/A'}
                         </td>
                       </tr>

@@ -582,7 +582,7 @@ const CompanyIntelModal = ({
 
                       {/* GPS Badge bottom-left */}
                       {visual?.coordinates?.geocoded && (
-                        <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-md bg-gray-900/80 text-white text-[10px] font-mono backdrop-blur-sm flex items-center gap-1.5 shadow-sm">
+                        <div className="absolute bottom-3 left-3 px-2.5 py-1 rounded-md bg-gray-900/80 text-white text-[10px] font-medium backdrop-blur-sm flex items-center gap-1.5 shadow-sm">
                           <MapPin size={11} className="text-emerald-400" />
                           <span>GPS: {visual.coordinates.lat?.toFixed(5)}, {visual.coordinates.lon?.toFixed(5)}</span>
                         </div>

@@ -192,7 +192,7 @@ const GPSMonitoring = () => {
                       <AlertTriangle className={alert.alert_type === 'UNAUTHORIZED_EXIT' ? "text-red-500 shrink-0" : "text-amber-500 shrink-0"} size={16} />
                       <div>
                         <h4 className="font-bold text-gray-900 dark:text-white text-xs">{alert.vehicle_plate}</h4>
-                        <span className="text-[10px] text-gray-500 font-mono">{new Date(alert.created_at).toLocaleTimeString('ro-RO')}</span>
+                        <span className="text-[10px] text-gray-500 font-medium">{new Date(alert.created_at).toLocaleTimeString('ro-RO')}</span>
                       </div>
                     </div>
                     <button className="text-gray-400 hover:text-gray-600">
@@ -348,7 +348,7 @@ const GPSMonitoring = () => {
                         className="w-4 h-4 rounded border-gray-300 text-gray-900 focus:ring-gray-400 dark:border-gray-600 dark:bg-gray-700"
                       />
                     </td>
-                    <td className="px-4 py-4 font-mono text-xs text-gray-400">{startIndex + idx + 1}</td>
+                    <td className="px-4 py-4 text-xs text-gray-400 font-medium">{startIndex + idx + 1}</td>
                     <td className="px-6 py-4 font-bold text-gray-900 dark:text-white">
                       {loc.vehicle_plate}
                     </td>
@@ -367,7 +367,7 @@ const GPSMonitoring = () => {
                         {loc.engine_on ? 'Pornit' : 'Oprit'}
                       </span>
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs text-gray-700 dark:text-gray-300">{loc.speed_kmh}</td>
+                    <td className="px-6 py-4 text-xs text-gray-700 dark:text-gray-300 font-medium">{loc.speed_kmh}</td>
                     <td className="px-6 py-4 text-xs text-gray-600 dark:text-gray-400">{loc.location_name || 'Transmisie Live'}</td>
                     <td className="px-6 py-4 text-right">
                       <button 
@@ -375,7 +375,7 @@ const GPSMonitoring = () => {
                           setTargetCenter([loc.latitude, loc.longitude]);
                           window.scrollTo({ top: 0, behavior: 'smooth' });
                         }}
-                        className="text-xs text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:underline flex items-center justify-end gap-1 ml-auto font-mono"
+                        className="text-xs text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white hover:underline flex items-center justify-end gap-1 ml-auto font-medium"
                         title="Conduceți pe hartă"
                       >
                         <MapPin size={12} />
