@@ -755,7 +755,7 @@ const ClientsList = () => {
                           {anafLookupResult.name}
                         </h4>
                         <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-3 gap-y-0.5">
-                          <span>CUI: <strong className="font-mono text-gray-700 dark:text-gray-200">{cleanCui}</strong></span>
+                          <span>CUI: <strong className="font-medium text-gray-800 dark:text-gray-200">{cleanCui}</strong></span>
                           {anafLookupResult.reg_com && <span>Reg. Com: {anafLookupResult.reg_com}</span>}
                           {anafLookupResult.caen && <span>CAEN: {anafLookupResult.caen}</span>}
                         </div>
@@ -811,7 +811,7 @@ const ClientsList = () => {
                 {!anafLookupLoading && !anafLookupResult && !anafLookupError && isCuiPattern && !existingClientWithCui && (
                   <div className="flex items-center justify-between gap-3 py-1">
                     <div className="text-xs text-gray-600 dark:text-gray-400">
-                      CUI-ul <strong className="font-mono text-gray-800 dark:text-gray-200">{cleanCui}</strong> nu există în baza locală.
+                      CUI-ul <strong className="font-medium text-gray-800 dark:text-gray-200">{cleanCui}</strong> nu există în baza locală.
                     </div>
                     <button
                       type="button"
