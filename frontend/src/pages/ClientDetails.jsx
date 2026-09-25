@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { 
   ArrowLeft, BrainCircuit, AlertTriangle, ShieldCheck, FileText, 
   ChevronRight, ShieldAlert, MapPin, ExternalLink, Navigation, 
@@ -40,11 +40,20 @@ const customMapPinIcon = typeof window !== 'undefined' && L ? L.divIcon({
 const ClientDetails = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'financial';
   const [client, setClient] = useState(null);
   const [loading, setLoading] = useState(true);
   const [evaluating, setEvaluating] = useState(false);
   const [evaluatingCui, setEvaluatingCui] = useState(null);
-  const [activeTab, setActiveTab] = useState('financial');
+  const [activeTab, setActiveTab] = useState(initialTab);
+
+  useEffect(() => {
+    const tabParam = searchParams.get('tab');
+    if (tabParam && ['financial', 'gps', 'investigation'].includes(tabParam)) {
+      setActiveTab(tabParam);
+    }
+  }, [searchParams]);
   const [selectedAddressRows, setSelectedAddressRows] = useState([]);
   const [addressPage, setAddressPage] = useState(1);
   const [addressPageSize, setAddressPageSize] = useState(5);
@@ -629,20 +638,41 @@ const ClientDetails = () => {
       {/* Tabs */}
       <div className="flex items-center gap-4 border-b border-gray-200 dark:border-gray-700 mt-6">
         <button 
-          onClick={() => setActiveTab('financial')}
+          onClick={() => {
+            setActiveTab('financial');
+            setSearchParams(prev => {
+              const next = new URLSearchParams(prev);
+              next.set('tab', 'financial');
+              return next;
+            }, { replace: true });
+          }}
           className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'financial' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
         >
           Evaluare Financiară
         </button>
         <button 
-          onClick={() => setActiveTab('gps')}
+          onClick={() => {
+            setActiveTab('gps');
+            setSearchParams(prev => {
+              const next = new URLSearchParams(prev);
+              next.set('tab', 'gps');
+              return next;
+            }, { replace: true });
+          }}
           className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'gps' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
         >
           Raport Risc GPS & Flotă
         </button>
         {latestEval && rawDataObj && (
           <button 
-            onClick={() => setActiveTab('investigation')}
+            onClick={() => {
+              setActiveTab('investigation');
+              setSearchParams(prev => {
+                const next = new URLSearchParams(prev);
+                next.set('tab', 'investigation');
+                return next;
+              }, { replace: true });
+            }}
             className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${activeTab === 'investigation' ? 'border-blue-500 text-blue-500' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
           >
             <Network size={14} />
@@ -2717,16 +2747,26 @@ const ClientDetails = () => {
       )}
 
       {/* Investigation Board Tab */}
-      {activeTab === 'investigation' && (enrichedRawData || rawDataObj) && (
-        <div className="mt-6 animate-in fade-in">
-          <InvestigationBoard
-            rawData={enrichedRawData || rawDataObj}
-            clientName={client?.name}
-            clientCui={client?.cui_cnp}
-            onOpenCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}
-            onOpenPerson={(personName, ctxCui) => openPersonIntel(personName, ctxCui || client?.cui_cnp)}
-          />
-        </div>
+      {activeTab === 'investigation' && (
+        (enrichedRawData || rawDataObj) ? (
+          <div className="mt-6 animate-in fade-in">
+            <InvestigationBoard
+              rawData={enrichedRawData || rawDataObj}
+              clientName={client?.name}
+              clientCui={client?.cui_cnp}
+              onOpenCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}
+              onOpenPerson={(personName, ctxCui) => openPersonIntel(personName, ctxCui || client?.cui_cnp)}
+            />
+          </div>
+        ) : (
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl p-12 text-center mt-6 shadow-sm">
+            <Network size={44} className="mx-auto text-blue-500 mb-3 opacity-80" />
+            <h4 className="text-lg font-semibold text-gray-800 dark:text-white">Investigation Board Indisponibil</h4>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
+              Nu s-au găsit date complete de analiză pentru a construi rețeaua vizuală. Apăsați butonul de re-evaluare pentru a obține datele ANAF și OSINT.
+            </p>
+          </div>
+        )
       )}
 
       {/* Super-Smart OSINT Intelligence Modals */}
