@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   Plus, Search, Building2, User, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, 
@@ -23,7 +23,15 @@ const ClientsList = () => {
   const [formError, setFormError] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [ocrLoading, setOcrLoading] = useState(false);
-  
+
+  // ANAF Dual-Function Search State
+  const [anafLookupLoading, setAnafLookupLoading] = useState(false);
+  const [anafLookupResult, setAnafLookupResult] = useState(null);
+  const [anafLookupError, setAnafLookupError] = useState(null);
+  const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const [addingFromAnaf, setAddingFromAnaf] = useState(false);
+  const searchContainerRef = useRef(null);
+
   // Table state
   const [selectedIds, setSelectedIds] = useState([]);
   const [currentPage, setCurrentPage] = useState(1);
@@ -485,6 +493,122 @@ const ClientsList = () => {
     );
   };
 
+  // Extract and clean potential CUI from search query
+  const cleanCui = useMemo(() => {
+    return searchQuery.trim().replace(/^RO/i, '').trim();
+  }, [searchQuery]);
+
+  const isCuiPattern = useMemo(() => {
+    return /^\d{4,10}$/.test(cleanCui);
+  }, [cleanCui]);
+
+  const existingClientWithCui = useMemo(() => {
+    if (!cleanCui) return null;
+    return clients.find(c => c.cui_cnp === cleanCui);
+  }, [clients, cleanCui]);
+
+  // Click outside search container listener
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
+        setIsSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Debounced live ANAF lookup when typing an unmonitored CUI
+  useEffect(() => {
+    if (isCuiPattern && !existingClientWithCui) {
+      setAnafLookupError(null);
+      const timer = setTimeout(async () => {
+        try {
+          setAnafLookupLoading(true);
+          const data = await lookupClientByCui(cleanCui);
+          if (data && data.name) {
+            setAnafLookupResult(data);
+            setAnafLookupError(null);
+          } else {
+            setAnafLookupResult(null);
+            setAnafLookupError(`CUI-ul ${cleanCui} nu a fost găsit în registrul public ANAF.`);
+          }
+        } catch (err) {
+          console.warn('ANAF search error:', err);
+          setAnafLookupResult(null);
+          setAnafLookupError(`Eroare la interogarea ANAF pentru CUI ${cleanCui}.`);
+        } finally {
+          setAnafLookupLoading(false);
+        }
+      }, 450);
+
+      return () => clearTimeout(timer);
+    } else {
+      setAnafLookupResult(null);
+      setAnafLookupError(null);
+      setAnafLookupLoading(false);
+    }
+  }, [cleanCui, isCuiPattern, existingClientWithCui]);
+
+  const handleTriggerAnafLookup = async () => {
+    if (!cleanCui || !isCuiPattern) return;
+    try {
+      setAnafLookupLoading(true);
+      setAnafLookupError(null);
+      const data = await lookupClientByCui(cleanCui);
+      if (data && data.name) {
+        setAnafLookupResult(data);
+        setAnafLookupError(null);
+      } else {
+        setAnafLookupResult(null);
+        setAnafLookupError(`CUI-ul ${cleanCui} nu a fost găsit în registrul public ANAF.`);
+      }
+    } catch (err) {
+      console.warn('Manual ANAF search error:', err);
+      setAnafLookupResult(null);
+      setAnafLookupError(`Eroare la interogarea ANAF pentru CUI ${cleanCui}.`);
+    } finally {
+      setAnafLookupLoading(false);
+    }
+  };
+
+  const handleInstantAddFromAnaf = async (companyData, cuiToAdd) => {
+    if (!companyData || !companyData.name) return;
+    setAddingFromAnaf(true);
+    try {
+      const payload = {
+        type: 'PJ',
+        name: companyData.name,
+        cui_cnp: cuiToAdd,
+        reg_com: companyData.reg_com || null,
+        address: companyData.address || null,
+        contact_phone: companyData.phone || null
+      };
+
+      const created = await createClient(payload);
+      showToast(`Compania ${created.name} a fost adăugată instant din ANAF!`, 'success');
+
+      setSearchQuery(created.cui_cnp);
+      setAnafLookupResult(null);
+      setIsSearchFocused(false);
+
+      await loadClients();
+
+      // Trigger automatic AI evaluation in the background for risk scoring
+      evaluateClient(created.id)
+        .then(() => {
+          loadClients();
+        })
+        .catch(e => console.warn('Background evaluation notice:', e));
+
+    } catch (err) {
+      console.error('Eroare adăugare instant client ANAF:', err);
+      showToast(err.message || 'Eroare la adăugarea companiei din ANAF.', 'error');
+    } finally {
+      setAddingFromAnaf(false);
+    }
+  };
+
   // Pagination and Filtering logic
   const filteredClients = clients.filter(client => {
     if (!searchQuery) return true;
@@ -532,18 +656,175 @@ const ClientsList = () => {
         
         {/* Table Header Controls */}
         <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between gap-4 bg-gray-50/50 dark:bg-gray-800/50">
-          <div className="relative flex-1 max-w-md">
+          <div ref={searchContainerRef} className="relative flex-1 max-w-lg">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
               type="text" 
-              placeholder="Caută după nume, CUI, adresă..." 
+              placeholder="Caută în portofoliu sau introdu CUI nou pentru adăugare instant din ANAF..." 
               value={searchQuery}
+              onFocus={() => setIsSearchFocused(true)}
               onChange={(e) => {
                 setSearchQuery(e.target.value);
                 setCurrentPage(1); // Reset to first page on search
+                setIsSearchFocused(true);
               }}
-              className="w-full pl-12 pr-4 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-primary focus:border-primary dark:text-white shadow-sm"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && isCuiPattern && !existingClientWithCui) {
+                  e.preventDefault();
+                  handleTriggerAnafLookup();
+                } else if (e.key === 'Escape') {
+                  setIsSearchFocused(false);
+                }
+              }}
+              className="w-full pl-11 pr-28 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-primary focus:border-primary dark:text-white shadow-sm text-sm"
             />
+
+            {/* Quick Action Button & Clear inside search input */}
+            <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setAnafLookupResult(null);
+                    setAnafLookupError(null);
+                  }}
+                  className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                  title="Șterge căutarea"
+                >
+                  <X size={15} />
+                </button>
+              )}
+
+              {isCuiPattern && !existingClientWithCui && (
+                <button
+                  type="button"
+                  onClick={handleTriggerAnafLookup}
+                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-full flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                  title="Interoghează ANAF"
+                >
+                  {anafLookupLoading ? (
+                    <Loader2 size={13} className="animate-spin" />
+                  ) : (
+                    <Building2 size={13} />
+                  )}
+                  <span>Caută ANAF</span>
+                </button>
+              )}
+            </div>
+
+            {/* Floating Dropdown Panel for ANAF & Dual Search Results */}
+            {isSearchFocused && (anafLookupLoading || anafLookupResult || anafLookupError || (isCuiPattern && !existingClientWithCui)) && (
+              <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-4 animate-in fade-in slide-in-from-top-2">
+                {/* Loading State */}
+                {anafLookupLoading && (
+                  <div className="flex items-center gap-3 py-2 text-sm text-gray-600 dark:text-gray-300">
+                    <Loader2 size={18} className="animate-spin text-blue-600" />
+                    <div>
+                      <div className="font-medium text-gray-900 dark:text-white">Interogare în timp real în registrul public ANAF...</div>
+                      <div className="text-xs text-gray-400">Verificare identificatori și status TVA pentru CUI {cleanCui}</div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Found Company in ANAF */}
+                {!anafLookupLoading && anafLookupResult && (
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/40 px-2 py-0.5 rounded-md border border-blue-200 dark:border-blue-800">
+                            Găsit în ANAF v9
+                          </span>
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
+                            anafLookupResult.status === 'Activa' 
+                              ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' 
+                              : 'bg-red-100 text-red-700'
+                          }`}>
+                            {anafLookupResult.status || 'Activa'}
+                          </span>
+                          <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-md ${
+                            anafLookupResult.tva_activ 
+                              ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' 
+                              : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                          }`}>
+                            {anafLookupResult.tva_activ ? 'Plătitor TVA' : 'Neplătitor TVA'}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                          {anafLookupResult.name}
+                        </h4>
+                        <div className="text-xs text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-3 gap-y-0.5">
+                          <span>CUI: <strong className="font-mono text-gray-700 dark:text-gray-200">{cleanCui}</strong></span>
+                          {anafLookupResult.reg_com && <span>Reg. Com: {anafLookupResult.reg_com}</span>}
+                          {anafLookupResult.caen && <span>CAEN: {anafLookupResult.caen}</span>}
+                        </div>
+                        {anafLookupResult.address && (
+                          <p className="text-xs text-gray-500 dark:text-gray-400 line-clamp-1">
+                            Sediu: {anafLookupResult.address}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="pt-2.5 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        Compania nu există în portofoliul local
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleInstantAddFromAnaf(anafLookupResult, cleanCui)}
+                        disabled={addingFromAnaf}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        {addingFromAnaf ? (
+                          <>
+                            <Loader2 size={14} className="animate-spin" />
+                            <span>Adăugare & Evaluare...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus size={14} />
+                            <span>Adaugă Instant în Portofoliu</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Not Found in ANAF / Error */}
+                {!anafLookupLoading && anafLookupError && (
+                  <div className="flex items-center justify-between gap-3 text-xs text-red-600 dark:text-red-400 py-1">
+                    <span>{anafLookupError}</span>
+                    <button
+                      type="button"
+                      onClick={handleTriggerAnafLookup}
+                      className="text-blue-600 hover:text-blue-500 font-semibold underline"
+                    >
+                      Reîncearcă
+                    </button>
+                  </div>
+                )}
+
+                {/* Prompt to query ANAF if debounce hasn't triggered */}
+                {!anafLookupLoading && !anafLookupResult && !anafLookupError && isCuiPattern && !existingClientWithCui && (
+                  <div className="flex items-center justify-between gap-3 py-1">
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      CUI-ul <strong className="font-mono text-gray-800 dark:text-gray-200">{cleanCui}</strong> nu există în baza locală.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleTriggerAnafLookup}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-xs transition-colors"
+                    >
+                      <Building2 size={13} />
+                      <span>Interoghează ANAF</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
           
           {selectedIds.length > 0 && (
