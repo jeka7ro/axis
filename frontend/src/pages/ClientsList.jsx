@@ -700,7 +700,7 @@ const ClientsList = () => {
                 <button
                   type="button"
                   onClick={handleTriggerAnafLookup}
-                  className="px-2.5 py-1 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-full flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
+                  className="px-2.5 py-1 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 text-xs font-semibold rounded-full flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
                   title="Interoghează ANAF"
                 >
                   {anafLookupLoading ? (

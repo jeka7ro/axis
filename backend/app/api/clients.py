@@ -423,29 +423,50 @@ async def get_person_full_intel(name: str, context_cui: Optional[str] = None, db
         for f in p.get("firme", []):
             existing_cuis.add("".join(filter(str.isdigit, str(f.get("cui", "")))))
 
-    # 2. Asigurăm garantat compania din contextul curent (ex: dosarul firmei din care s-a deschis modalul)
+    # 2. Verificare context_cui: adăugăm compania din context DOAR dacă persoana chiar figurează oficial ca administrator sau asociat
     if clean_cui and clean_cui not in existing_cuis:
-        comp_name = None
-        db_client = db.query(Client).filter(Client.cui_cnp.like(f"%{clean_cui}%")).first()
-        if db_client and db_client.name:
-            comp_name = db_client.name
-        else:
-            comp_data = await reg_scraper.fetch_company_general(clean_cui)
-            comp_name = comp_data.get("denumire") or comp_data.get("nume")
-
-        if not comp_name:
-            comp_name = f"Compania CUI {clean_cui}"
-
-        network[0]["firme"].insert(0, {
-            "cui": clean_cui,
-            "denumire": comp_name,
-            "rol": "ADMINISTRATOR",
-            "calitate": "Administrator",
-            "curent": True,
-            "stare": "Activ",
-            "sursa": "Registrul Comerțului (Dosar Curent)"
-        })
-        existing_cuis.add(clean_cui)
+        admins = await reg_scraper.fetch_company_administrators(clean_cui)
+        holdings = await reg_scraper.fetch_company_holdings(clean_cui)
+        target_norm = clean_name.upper().replace("-", " ")
+        
+        # Verificăm dacă persoana este administrator confirmat
+        matched_admin = next(
+            (a for a in (admins or []) if target_norm in (a.get("nume") or "").upper() or (a.get("nume") or "").upper() in target_norm),
+            None
+        )
+        # Verificăm dacă persoana este asociat / acționar confirmat
+        matched_holding = next(
+            (h for h in (holdings or []) if target_norm in (h.get("name") or h.get("nume") or "").upper() or (h.get("name") or h.get("nume") or "").upper() in target_norm),
+            None
+        )
+        
+        if matched_admin or matched_holding:
+            comp_name = None
+            db_client = db.query(Client).filter(Client.cui_cnp.like(f"%{clean_cui}%")).first()
+            if db_client and db_client.name:
+                comp_name = db_client.name
+            else:
+                comp_data = await reg_scraper.fetch_company_general(clean_cui)
+                comp_name = comp_data.get("denumire") or comp_data.get("nume")
+            if not comp_name:
+                comp_name = f"Compania CUI {clean_cui}"
+            
+            role = "ADMINISTRATOR" if matched_admin else "ASOCIAT"
+            calitate = "Administrator" if matched_admin else "Asociat"
+            if matched_admin and matched_holding:
+                role = "ASOCIAT & ADMINISTRATOR"
+                calitate = "Asociat & Administrator"
+                
+            network[0]["firme"].insert(0, {
+                "cui": clean_cui,
+                "denumire": comp_name,
+                "rol": role,
+                "calitate": calitate,
+                "curent": True,
+                "stare": "Activ",
+                "sursa": "Registrul Comerțului (Dosar Curent)"
+            })
+            existing_cuis.add(clean_cui)
 
     # 3. Calcul metrici de risc administrator
     all_firme = []

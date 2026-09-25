@@ -11,7 +11,7 @@ import { fetchCompanyFullIntel, fetchPersonFullIntel } from '../services/api';
 const THEMES = {
   dark: {
     company: { bg: '#080e1e', border: '#38bdf8', text: '#ffffff', subtext: '#94a3b8', badge: '#0284c7', abbr: 'SUBIECT', label: 'SUBIECT PRINCIPAL • VEDETĂ ANCHETĂ' },
-    related_company: { bg: '#081c24', border: '#06b6d4', text: '#ecfeff', subtext: '#67e8f9', badge: '#0891b2', abbr: 'CO', label: 'FIRMĂ AFILIATĂ' },
+    related_company: { bg: '#081c24', border: '#06b6d4', text: '#ecfeff', subtext: '#67e8f9', badge: '#0891b2', abbr: 'CO', label: 'FIRMĂ DIN REȚEA' },
     person: { bg: '#13112c', border: '#818cf8', text: '#f5f3ff', subtext: '#a5b4fc', badge: '#4f46e5', abbr: 'PERS', label: 'CONDUCERE / ASOCIAT' },
     person_historical: { bg: '#0f172a', border: '#475569', text: '#94a3b8', subtext: '#64748b', badge: '#334155', abbr: 'FOST', label: 'FOST MANDAT' },
     address: { bg: '#061a14', border: '#10b981', text: '#ecfdf5', subtext: '#6ee7b7', badge: '#059669', abbr: 'SEDIU', label: 'SEDIU SOCIAL' },
@@ -19,7 +19,7 @@ const THEMES = {
   },
   light: {
     company: { bg: '#ffffff', border: '#1d4ed8', text: '#0f172a', subtext: '#1e3a8a', badge: '#1d4ed8', abbr: 'SUBIECT', label: 'SUBIECT PRINCIPAL • VEDETĂ ANCHETĂ' },
-    related_company: { bg: '#ffffff', border: '#0891b2', text: '#0f172a', subtext: '#0e7490', badge: '#0891b2', abbr: 'CO', label: 'FIRMĂ AFILIATĂ' },
+    related_company: { bg: '#ffffff', border: '#0891b2', text: '#0f172a', subtext: '#0e7490', badge: '#0891b2', abbr: 'CO', label: 'FIRMĂ DIN REȚEA' },
     person: { bg: '#ffffff', border: '#4f46e5', text: '#0f172a', subtext: '#4338ca', badge: '#4f46e5', abbr: 'PERS', label: 'CONDUCERE / ASOCIAT' },
     person_historical: { bg: '#f8fafc', border: '#94a3b8', text: '#475569', subtext: '#64748b', badge: '#64748b', abbr: 'FOST', label: 'FOST MANDAT' },
     address: { bg: '#ffffff', border: '#059669', text: '#0f172a', subtext: '#047857', badge: '#059669', abbr: 'SEDIU', label: 'SEDIU SOCIAL' },
@@ -307,10 +307,12 @@ function buildGraph(rawData, clientName, clientCui) {
         mandatPeriod: extra.mandatPeriod || null,
         firme: [],
         isAsociat: false,
+        hasDirectClientRole: false,
       });
     }
 
     const p = personMap.get(normKey);
+    if (extra.hasDirectClientRole) p.hasDirectClientRole = true;
     if (extra.role) p.roles.add(extra.role);
     if (extra.roles && Array.isArray(extra.roles)) {
       extra.roles.forEach(r => p.roles.add(r));
@@ -384,6 +386,7 @@ function buildGraph(rawData, clientName, clientCui) {
         mandatPeriod,
         birthplace: h.placeofbirth || h.loc_nastere,
         stare: isCurrent ? 'Activ' : 'Istoric',
+        hasDirectClientRole: true,
       });
     }
   });
@@ -399,6 +402,7 @@ function buildGraph(rawData, clientName, clientCui) {
       percent,
       isAsociat: true,
       stare: 'Activ',
+      hasDirectClientRole: true,
     });
   });
 
@@ -424,6 +428,7 @@ function buildGraph(rawData, clientName, clientCui) {
       isHistorical: !isCurrent,
       mandatPeriod: p.data_sfarsit ? String(p.data_sfarsit).slice(0, 4) : null,
       stare: isCurrent ? 'Activ' : 'Istoric',
+      hasDirectClientRole: true,
     });
   });
 
@@ -432,7 +437,7 @@ function buildGraph(rawData, clientName, clientCui) {
     const raw = typeof a === 'string' ? a : a.nume || a.name;
     const stare = (typeof a === 'object' && a.stare) ? a.stare : 'Activ';
     const isHist = stare === 'Istoric' || stare === 'Inactiv';
-    upsertPerson(raw, { role: isHist ? 'Fost Administrator' : 'Administrator', stare, isHistorical: isHist });
+    upsertPerson(raw, { role: isHist ? 'Fost Administrator' : 'Administrator', stare, isHistorical: isHist, hasDirectClientRole: true });
   });
 
   // Colectăm din admin_networks (caracatiță)
@@ -462,6 +467,7 @@ function buildGraph(rawData, clientName, clientCui) {
       isHistoricalInClient = true;
     }
 
+    const hasClientRole = Boolean(clientRole);
     const extraRoles = [];
     if (clientRole) {
       if (isHistoricalInClient && !clientRole.toLowerCase().includes('fost')) {
@@ -470,7 +476,8 @@ function buildGraph(rawData, clientName, clientCui) {
         extraRoles.push(clientRole);
       }
     } else {
-      extraRoles.push(isHistoricalInClient ? 'Fost Administrator' : 'Administrator');
+      const defaultRole = an.rol || (isHistoricalInClient ? 'Fost Afiliat' : 'Administrator Afiliat');
+      extraRoles.push(defaultRole);
     }
 
     upsertPerson(an.nume, {
@@ -484,11 +491,12 @@ function buildGraph(rawData, clientName, clientCui) {
       birthplace: an.loc_nastere,
       stare: isHistoricalInClient ? 'Istoric' : 'Activ',
       firme: an.firme || [],
+      hasDirectClientRole: hasClientRole,
     });
   });
 
   if (personMap.size === 0 && anaf.administrator) {
-    upsertPerson(anaf.administrator, { role: 'Administrator', stare: 'Activ' });
+    upsertPerson(anaf.administrator, { role: 'Administrator', stare: 'Activ', hasDirectClientRole: true });
   }
 
   // Verificare de acuratețe: dacă există date oficiale din holdings/personnel cu asociați/administratori curenți,
@@ -552,22 +560,24 @@ function buildGraph(rawData, clientName, clientCui) {
       y: pInitY,
     });
 
-    // Firul principal direct de la VEDETĂ la administrator / asociat
-    let linkText = rolesStr;
-    let linkType = 'primary';
+    // Firul principal direct de la VEDETĂ la administrator / asociat (doar dacă are mandat confirmat în firmă)
+    if (pData.hasDirectClientRole) {
+      let linkText = rolesStr;
+      let linkType = 'primary';
 
-    if (pData.isHistorical) {
-      linkType = 'primary_historical';
-      linkText = pData.mandatPeriod ? `FOST ADMINISTRATOR (${pData.mandatPeriod})` : 'FOST ADMINISTRATOR';
-    } else {
-      const isAdm = pData.roles.has('Administrator') || rolesStr.toLowerCase().includes('admin');
-      if (pData.percent === 100) {
-        linkText = isAdm ? '100% ASOCIAT UNIC & ADM' : '100% ASOCIAT UNIC';
-      } else if (pData.percent > 0) {
-        linkText = isAdm ? `${pData.percent}% ASOCIAT & ADM` : `${pData.percent}% PĂRȚI SOCIALE`;
+      if (pData.isHistorical) {
+        linkType = 'primary_historical';
+        linkText = pData.mandatPeriod ? `FOST ADMINISTRATOR (${pData.mandatPeriod})` : 'FOST ADMINISTRATOR';
+      } else {
+        const isAdm = pData.roles.has('Administrator') || rolesStr.toLowerCase().includes('admin');
+        if (pData.percent === 100) {
+          linkText = isAdm ? '100% ASOCIAT UNIC & ADM' : '100% ASOCIAT UNIC';
+        } else if (pData.percent > 0) {
+          linkText = isAdm ? `${pData.percent}% ASOCIAT & ADM` : `${pData.percent}% PĂRȚI SOCIALE`;
+        }
       }
+      addLink(companyId, personId, linkText, linkType);
     }
-    addLink(companyId, personId, linkText, linkType);
 
     // Din persoană pleacă firele spre rețeaua sa de firme
     const relatedFirme = pData.firme || [];
@@ -768,7 +778,10 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
   let headerLabel = cfg.label;
   let badgeText = cfg.abbr;
 
-  if (node.type === 'person') {
+  if (node.relation === 'Sediu Comun' || node.relation?.toLowerCase().includes('sediu')) {
+    headerLabel = 'SEDIU COMUN (CLUSTER)';
+    badgeText = 'SEDIU';
+  } else if (node.type === 'person') {
     if (isHistorical) {
       const isAdm = node.roles?.toLowerCase().includes('admin') || !node.isAsociat;
       headerLabel = isAdm ? 'FOST ADMINISTRATOR' : 'FOST ASOCIAT';
@@ -2407,8 +2420,10 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
               let badgeLabel = 'Informație';
               if (activeNode.isRoot) {
                 badgeLabel = 'Subiect Principal';
+              } else if (activeNode.relation === 'Sediu Comun' || activeNode.relation?.toLowerCase().includes('sediu')) {
+                badgeLabel = 'Firmă la Sediu Comun';
               } else if (isComp) {
-                badgeLabel = activeNode.type === 'company' ? 'Firmă Principală' : 'Firmă Conexă';
+                badgeLabel = activeNode.type === 'company' ? 'Firmă Principală' : 'Firmă din Rețea';
               } else if (isPers) {
                 if (activeNode.percent === 100) badgeLabel = 'Asociat Unic (100%)';
                 else if (activeNode.percent > 0) badgeLabel = `Asociat (${activeNode.percent}%)`;

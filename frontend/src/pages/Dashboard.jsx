@@ -64,13 +64,6 @@ const Dashboard = () => {
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Investigation Board Search & Fast-Launch State
-  const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState(false);
-  const [searchError, setSearchError] = useState('');
-  const searchInputRef = useRef(null);
-  const searchCardRef = useRef(null);
-  const searchContainerRef = useRef(null);
-
   // OSINT Intelligence Modals
   const [companyIntelTarget, setCompanyIntelTarget] = useState({ isOpen: false, cui: '', name: '' });
   const [personIntelTarget, setPersonIntelTarget] = useState({ isOpen: false, name: '', contextCui: '' });
@@ -131,17 +124,6 @@ const Dashboard = () => {
     loadData();
   }, []);
 
-  // Click outside search container listener
-  useEffect(() => {
-    const handleClickOutside = (event) => {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(event.target)) {
-        setIsSearchDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   // Modal navigation handlers
   const openCompanyIntel = (cui, name = '') => {
     setIntelHistory(prev => [...prev, { type: 'company', cui, name }]);
@@ -195,78 +177,6 @@ const Dashboard = () => {
       console.error('Eroare evaluare companie:', err);
       throw err;
     }
-  };
-
-  // Extract and clean potential CUI from search query
-  const cleanCui = useMemo(() => {
-    return searchQuery.trim().replace(/^RO/i, '').trim();
-  }, [searchQuery]);
-
-  const isNumericCui = useMemo(() => {
-    return /^\d{4,10}$/.test(cleanCui);
-  }, [cleanCui]);
-
-  const matchingClients = useMemo(() => {
-    if (!searchQuery.trim()) return clients.slice(0, 6);
-    const q = searchQuery.toLowerCase().trim();
-    const clean = cleanCui.toLowerCase();
-    return clients.filter(c => 
-      c.name?.toLowerCase().includes(q) || 
-      c.cui_cnp?.toLowerCase().includes(clean) ||
-      c.cui_cnp?.toLowerCase().includes(q)
-    ).slice(0, 6);
-  }, [clients, searchQuery, cleanCui]);
-
-  const exactMatchingClient = useMemo(() => {
-    if (!searchQuery.trim()) return null;
-    const q = searchQuery.toLowerCase().trim();
-    const clean = cleanCui.toLowerCase();
-    return clients.find(c => 
-      c.cui_cnp?.toLowerCase() === clean || 
-      c.cui_cnp?.toLowerCase() === q ||
-      c.name?.toLowerCase() === q
-    );
-  }, [clients, searchQuery, cleanCui]);
-
-  // Launch Investigation Board directly
-  const handleLaunchInvestigation = (targetQuery) => {
-    const raw = (targetQuery !== undefined ? targetQuery : searchQuery).trim();
-    const clean = raw.replace(/^RO/i, '').trim();
-    const q = clean.toLowerCase();
-
-    if (!q) {
-      // User did NOT enter a CUI or company! Do NOT arbitrarily navigate to any client!
-      setSearchError('Introduceți un CUI sau selectați o companie pentru a deschide Investigation Board.');
-      setIsSearchDropdownOpen(true);
-      searchCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      searchInputRef.current?.focus();
-      return;
-    }
-
-    setSearchError('');
-
-    // 1. Check if matches existing client by CUI or Name
-    const matched = clients.find(c => 
-      c.cui_cnp?.toLowerCase() === q || 
-      c.cui_cnp?.toLowerCase() === clean ||
-      c.name?.toLowerCase().includes(q)
-    );
-
-    if (matched) {
-      setIsSearchDropdownOpen(false);
-      navigate(`/clients/${matched.id}?tab=investigation`);
-      return;
-    }
-
-    // 2. If it's a numeric CUI not yet in local portfolio, open Company Intel / OSINT graph modal directly
-    if (/^\d{4,10}$/.test(clean)) {
-      setIsSearchDropdownOpen(false);
-      openCompanyIntel(clean);
-      return;
-    }
-
-    // 3. Otherwise filter table and keep dropdown open
-    setIsSearchDropdownOpen(true);
   };
 
   // KPI computations
@@ -432,205 +342,6 @@ const Dashboard = () => {
           <p className="mt-0.5 text-sm text-gray-500 dark:text-gray-400">
             Monitorizare portofoliu clienți, diagnostic de solvabilitate și acces rapid la rețeaua relațională.
           </p>
-        </div>
-        <button
-          onClick={() => {
-            if (searchQuery.trim()) {
-              handleLaunchInvestigation();
-            } else {
-              setSearchError('Introduceți un CUI sau selectați o companie pentru a deschide Investigation Board.');
-              setIsSearchDropdownOpen(true);
-              searchCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              searchInputRef.current?.focus();
-            }
-          }}
-          className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-full hover:bg-primary/90 transition-all shadow-sm font-medium text-sm self-start sm:self-auto cursor-pointer"
-        >
-          <Network size={17} />
-          <span>Investigation Board</span>
-          <ArrowRight size={15} />
-        </button>
-      </div>
-
-      {/* Investigation Fast-Launch Card - Clean White Tahoe Design */}
-      <div ref={searchCardRef} className="bg-white dark:bg-gray-800 rounded-3xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-          <div>
-            <div className="flex items-center gap-2 text-xs font-semibold text-primary mb-1">
-              <Network size={15} />
-              <span>Acces Rapid Investigation Board</span>
-            </div>
-            <h3 className="text-base font-bold text-gray-900 dark:text-white">
-              Explorare Rețele & Graf Relațional
-            </h3>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-              Caută o companie din portofoliu sau introdu un CUI pentru a deschide direct harta conexiunilor și asociaților.
-            </p>
-          </div>
-        </div>
-
-        {/* Search Input & Action */}
-        <div ref={searchContainerRef} className="relative mt-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
-            <div className="relative flex-1">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchQuery}
-                onChange={(e) => {
-                  setSearchQuery(e.target.value);
-                  setSearchError('');
-                  setIsSearchDropdownOpen(true);
-                }}
-                onFocus={() => setIsSearchDropdownOpen(true)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    handleLaunchInvestigation();
-                  } else if (e.key === 'Escape') {
-                    setIsSearchDropdownOpen(false);
-                  }
-                }}
-                placeholder="Introdu CUI sau denumire companie (ex: 49508576 sau SMARTFLIX)..."
-                className={`w-full pl-11 pr-24 py-2.5 bg-gray-50 dark:bg-gray-900 border ${
-                  searchError ? 'border-red-400 ring-2 ring-red-100 dark:ring-red-900/30' : 'border-gray-200 dark:border-gray-700'
-                } rounded-full text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all`}
-              />
-              {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSearchQuery('');
-                    setSearchError('');
-                  }}
-                  className="absolute right-4 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 cursor-pointer"
-                  title="Șterge textul"
-                >
-                  <X size={15} />
-                </button>
-              )}
-            </div>
-            <button
-              onClick={() => handleLaunchInvestigation()}
-              className="px-5 py-2.5 bg-primary text-white text-sm font-medium rounded-full hover:bg-primary/90 transition-colors flex items-center justify-center gap-2 cursor-pointer shadow-sm shrink-0"
-            >
-              <Network size={16} />
-              <span>Deschide Graf</span>
-            </button>
-          </div>
-
-          {/* Inline Feedback / Warning */}
-          {searchError && (
-            <div className="mt-2 flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 font-medium pl-3 animate-in fade-in">
-              <AlertCircle size={14} className="shrink-0" />
-              <span>{searchError}</span>
-            </div>
-          )}
-
-          {/* Floating Autocomplete Dropdown */}
-          {isSearchDropdownOpen && (
-            <div className="absolute left-0 right-0 top-full mt-2 z-30 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-3 max-h-80 overflow-y-auto animate-in fade-in slide-in-from-top-2">
-              <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider px-2 py-1">
-                {searchQuery.trim() ? 'Rezultate potrivite în portofoliu' : 'Selectează o companie pentru Investigation Board'}
-              </div>
-
-              <div className="space-y-1 mt-1">
-                {matchingClients.map(client => {
-                  const risk = getRiskStyle(client.score, client.riskLevel);
-                  return (
-                    <button
-                      key={client.id}
-                      type="button"
-                      onClick={() => {
-                        setIsSearchDropdownOpen(false);
-                        navigate(`/clients/${client.id}?tab=investigation`);
-                      }}
-                      className="w-full text-left p-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-colors flex items-center justify-between gap-3 cursor-pointer group"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="p-2 rounded-lg bg-blue-50 dark:bg-blue-900/30 text-primary shrink-0">
-                          <Building2 size={16} />
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-semibold text-sm text-gray-900 dark:text-white truncate group-hover:text-primary transition-colors">
-                            {client.name}
-                          </div>
-                          <div className="text-xs text-gray-500">
-                            CUI: <span className="font-medium text-gray-700 dark:text-gray-300">{client.cui_cnp}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className={`px-2 py-0.5 rounded text-xs font-semibold border ${risk.bg}`}>
-                          {client.score !== null ? `${client.score}/100` : '-'}
-                        </span>
-                        <span className="text-xs text-primary font-medium flex items-center gap-1 group-hover:translate-x-0.5 transition-transform">
-                          <span>Graf</span>
-                          <ChevronRight size={14} />
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-
-                {matchingClients.length === 0 && !isNumericCui && (
-                  <div className="p-4 text-center text-xs text-gray-400">
-                    Nicio companie găsită pentru &quot;{searchQuery}&quot;. Introdu un CUI numeric pentru analiză OSINT.
-                  </div>
-                )}
-
-                {/* If numeric CUI not yet in local portfolio */}
-                {isNumericCui && !exactMatchingClient && (
-                  <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-700">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsSearchDropdownOpen(false);
-                        openCompanyIntel(cleanCui);
-                      }}
-                      className="w-full text-left p-2.5 rounded-xl bg-blue-50/60 dark:bg-blue-900/20 hover:bg-blue-100/70 dark:hover:bg-blue-900/40 border border-blue-200 dark:border-blue-800 transition-colors flex items-center justify-between gap-3 cursor-pointer"
-                    >
-                      <div className="flex items-center gap-2.5">
-                        <div className="p-2 rounded-lg bg-blue-600 text-white shrink-0">
-                          <Sparkles size={16} />
-                        </div>
-                        <div>
-                          <div className="font-semibold text-sm text-blue-900 dark:text-blue-100">
-                            Lansează analiză OSINT & Graf pentru CUI {cleanCui}
-                          </div>
-                          <div className="text-xs text-blue-700 dark:text-blue-300">
-                            Companie externă portofoliului. Deschide fișa completă și rețeaua de asociați.
-                          </div>
-                        </div>
-                      </div>
-                      <ArrowRight size={16} className="text-blue-600 dark:text-blue-400 shrink-0" />
-                    </button>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Quick chips - clean light styling */}
-        <div className="flex flex-wrap items-center gap-2 mt-4 pt-4 border-t border-gray-100 dark:border-gray-700/60 text-xs">
-          <span className="text-gray-500 dark:text-gray-400 font-medium mr-1">Companii recente:</span>
-          {clients.map(c => {
-            const risk = getRiskStyle(c.score, c.riskLevel);
-            return (
-              <button
-                key={c.id}
-                onClick={() => navigate(`/clients/${c.id}?tab=investigation`)}
-                className="px-3 py-1.5 rounded-full bg-gray-50 dark:bg-gray-900/60 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white transition-all flex items-center gap-1.5 cursor-pointer"
-              >
-                <Network size={12} className="text-primary" />
-                <span className="font-medium">{c.name}</span>
-                <span className={`px-1.5 py-0.5 rounded text-[11px] font-semibold border ${risk.bg}`}>
-                  {c.score !== null ? c.score : '-'}
-                </span>
-              </button>
-            );
-          })}
         </div>
       </div>
 
@@ -927,9 +638,9 @@ const Dashboard = () => {
 
         {/* Bulk Actions Header */}
         {selectedRows.length > 0 && (
-          <div className="bg-blue-50 dark:bg-blue-900/30 px-6 py-3 border-b border-blue-100 dark:border-blue-800/50 flex items-center justify-between animate-in fade-in">
-            <div className="flex items-center gap-2 text-sm text-blue-900 dark:text-blue-200 font-medium">
-              <span className="w-2 h-2 rounded-full bg-blue-600 dark:bg-blue-400"></span>
+          <div className="bg-gray-100 dark:bg-gray-800 px-6 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between animate-in fade-in">
+            <div className="flex items-center gap-2 text-sm text-gray-900 dark:text-gray-100 font-medium">
+              <span className="w-2 h-2 rounded-full bg-gray-900 dark:bg-white"></span>
               <span>{selectedRows.length} {selectedRows.length === 1 ? 'companie selectată' : 'companii selectate'}</span>
             </div>
             <div className="flex items-center gap-2">
@@ -938,10 +649,10 @@ const Dashboard = () => {
                   const first = clients.find(c => c.id === selectedRows[0]);
                   if (first) navigate(`/clients/${first.id}?tab=investigation`);
                 }}
-                className="px-3.5 py-1.5 bg-primary hover:bg-primary/90 text-white text-xs font-medium rounded-full flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                className="px-3.5 py-1.5 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 text-xs font-semibold rounded-full flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
               >
                 <Network size={14} />
-                <span>Lansează Investigation Board</span>
+                <span>Deschide Graf Relațional</span>
               </button>
               <button
                 onClick={() => setSelectedRows([])}
@@ -1114,8 +825,8 @@ const Dashboard = () => {
                           {/* Investigation Board Launch */}
                           <button
                             onClick={() => navigate(`/clients/${client.id}?tab=investigation`)}
-                            className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-blue-50 dark:hover:bg-blue-900/40 text-primary transition-colors cursor-pointer"
-                            title="Lansează Investigation Board"
+                            className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 transition-colors cursor-pointer"
+                            title="Deschide Graf Relațional"
                           >
                             <Network size={16} />
                           </button>

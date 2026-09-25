@@ -224,7 +224,7 @@ const CompanyIntelModal = ({
             {data?.existing_client_id ? (
               <Link
                 to={`/clients/${data.existing_client_id}?tab=investigation`}
-                className="px-4 py-2 bg-primary text-white rounded-full text-xs font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+                className="px-4 py-2 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
               >
                 <Eye size={14} />
                 <span>Profil Client Axis</span>
@@ -234,7 +234,7 @@ const CompanyIntelModal = ({
                 type="button"
                 onClick={handleRunEvaluation}
                 disabled={evaluating || loading}
-                className="px-4 py-2 bg-primary text-white rounded-full text-xs font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer disabled:opacity-60"
+                className="px-4 py-2 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer disabled:opacity-60"
               >
                 {evaluating ? (
                   <>
@@ -1136,7 +1136,7 @@ const CompanyIntelModal = ({
                                 <button
                                   type="button"
                                   onClick={() => setSelectedMofPub(pub)}
-                                  className="px-2.5 py-1 bg-primary hover:bg-primary/90 text-white rounded-lg font-semibold text-[10px] transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm whitespace-nowrap"
+                                  className="px-2.5 py-1 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 rounded-lg font-semibold text-[10px] transition-all cursor-pointer inline-flex items-center gap-1 shadow-sm whitespace-nowrap"
                                   title="Deschide actul integral"
                                 >
                                   <Eye size={11} />
