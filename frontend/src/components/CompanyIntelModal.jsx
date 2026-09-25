@@ -191,32 +191,22 @@ const CompanyIntelModal = ({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {data?.cached ? (
-              <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-800 shadow-2xs">
-                Baza Axis (0 credite)
-              </span>
-            ) : data && !loading && (
-              <span className="px-2.5 py-1 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950/60 dark:text-blue-400 dark:border-blue-800 shadow-2xs">
-                Salvat în Baza Axis
-              </span>
-            )}
-
             <button
               type="button"
               onClick={handleRefreshApi}
               disabled={loading}
-              title="Re-interoghează sursele externe API (consumă 1 credit)"
-              className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors cursor-pointer"
+              title="Re-interoghează sursele externe API"
+              className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors cursor-pointer"
             >
-              <RefreshCw size={13} className={loading ? "animate-spin" : ""} />
+              <RefreshCw size={14} className={loading ? "animate-spin" : ""} />
             </button>
 
             {data?.existing_client_id ? (
               <Link
                 to={`/clients/${data.existing_client_id}`}
-                className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
+                className="px-4 py-2 bg-primary text-white rounded-full text-xs font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap"
               >
-                <Eye size={13} />
+                <Eye size={14} />
                 <span>Profil Client Axis</span>
               </Link>
             ) : onEvaluate && (
@@ -226,16 +216,17 @@ const CompanyIntelModal = ({
                   onEvaluate(cui, companyName);
                   onClose();
                 }}
-                className="px-3 py-1.5 bg-primary text-white rounded-lg text-xs font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer"
+                className="px-4 py-2 bg-primary text-white rounded-full text-xs font-semibold hover:bg-primary/90 transition-all flex items-center gap-1.5 shadow-sm whitespace-nowrap cursor-pointer"
               >
-                <RefreshCw size={13} />
+                <Sparkles size={14} />
                 <span>Evaluează în Axis</span>
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors cursor-pointer"
+              className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors cursor-pointer"
+              title="Închide"
             >
               <X size={18} />
             </button>
