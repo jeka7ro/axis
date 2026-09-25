@@ -1,6 +1,6 @@
 import React, { useRef, useMemo, useState, useEffect } from 'react';
 import ForceGraph2D from 'react-force-graph-2d';
-import { forceCollide } from 'd3-force-3d';
+import { forceCollide, forceX, forceY } from 'd3-force-3d';
 import { jsPDF } from 'jspdf';
 import { 
   X, Maximize2, Minimize2, ZoomIn, ZoomOut, Target, Shield, FileDown, 
@@ -10,19 +10,19 @@ import { fetchCompanyFullIntel, fetchPersonFullIntel } from '../services/api';
 
 const THEMES = {
   dark: {
-    company: { bg: '#0f172a', border: '#38bdf8', text: '#f8fafc', subtext: '#94a3b8', badge: '#0284c7', abbr: 'SRL', label: 'SUBIECT PRINCIPAL' },
-    related_company: { bg: '#18181b', border: '#52525b', text: '#f4f4f5', subtext: '#a1a1aa', badge: '#3f3f46', abbr: 'CO', label: 'FIRMĂ AFILIATĂ' },
-    person: { bg: '#18181b', border: '#52525b', text: '#f4f4f5', subtext: '#a1a1aa', badge: '#3f3f46', abbr: 'PERS', label: 'CONDUCERE / ASOCIAT' },
-    person_historical: { bg: '#111827', border: '#374151', text: '#9ca3af', subtext: '#6b7280', badge: '#374151', abbr: 'FOST', label: 'FOST MANDAT' },
-    address: { bg: '#0f172a', border: '#334155', text: '#f8fafc', subtext: '#94a3b8', badge: '#334155', abbr: 'SEDIU', label: 'SEDIU SOCIAL' },
+    company: { bg: '#080e1e', border: '#38bdf8', text: '#ffffff', subtext: '#94a3b8', badge: '#0284c7', abbr: 'SUBIECT', label: 'SUBIECT PRINCIPAL • VEDETĂ ANCHETĂ' },
+    related_company: { bg: '#081c24', border: '#06b6d4', text: '#ecfeff', subtext: '#67e8f9', badge: '#0891b2', abbr: 'CO', label: 'FIRMĂ AFILIATĂ' },
+    person: { bg: '#13112c', border: '#818cf8', text: '#f5f3ff', subtext: '#a5b4fc', badge: '#4f46e5', abbr: 'PERS', label: 'CONDUCERE / ASOCIAT' },
+    person_historical: { bg: '#0f172a', border: '#475569', text: '#94a3b8', subtext: '#64748b', badge: '#334155', abbr: 'FOST', label: 'FOST MANDAT' },
+    address: { bg: '#061a14', border: '#10b981', text: '#ecfdf5', subtext: '#6ee7b7', badge: '#059669', abbr: 'SEDIU', label: 'SEDIU SOCIAL' },
     risk: { bg: '#450a0a', border: '#dc2626', text: '#fca5a5', subtext: '#ef4444', badge: '#991b1b', abbr: 'RISC', label: 'ALERTĂ RISC' },
   },
   light: {
-    company: { bg: '#ffffff', border: '#0f172a', text: '#0f172a', subtext: '#475569', badge: '#0f172a', abbr: 'SRL', label: 'SUBIECT PRINCIPAL' },
-    related_company: { bg: '#ffffff', border: '#64748b', text: '#0f172a', subtext: '#64748b', badge: '#475569', abbr: 'CO', label: 'FIRMĂ AFILIATĂ' },
-    person: { bg: '#ffffff', border: '#64748b', text: '#0f172a', subtext: '#64748b', badge: '#334155', abbr: 'PERS', label: 'CONDUCERE / ASOCIAT' },
-    person_historical: { bg: '#f8fafc', border: '#cbd5e1', text: '#64748b', subtext: '#94a3b8', badge: '#94a3b8', abbr: 'FOST', label: 'FOST MANDAT' },
-    address: { bg: '#ffffff', border: '#64748b', text: '#0f172a', subtext: '#64748b', badge: '#475569', abbr: 'SEDIU', label: 'SEDIU SOCIAL' },
+    company: { bg: '#ffffff', border: '#1d4ed8', text: '#0f172a', subtext: '#1e3a8a', badge: '#1d4ed8', abbr: 'SUBIECT', label: 'SUBIECT PRINCIPAL • VEDETĂ ANCHETĂ' },
+    related_company: { bg: '#ffffff', border: '#0891b2', text: '#0f172a', subtext: '#0e7490', badge: '#0891b2', abbr: 'CO', label: 'FIRMĂ AFILIATĂ' },
+    person: { bg: '#ffffff', border: '#4f46e5', text: '#0f172a', subtext: '#4338ca', badge: '#4f46e5', abbr: 'PERS', label: 'CONDUCERE / ASOCIAT' },
+    person_historical: { bg: '#f8fafc', border: '#94a3b8', text: '#475569', subtext: '#64748b', badge: '#64748b', abbr: 'FOST', label: 'FOST MANDAT' },
+    address: { bg: '#ffffff', border: '#059669', text: '#0f172a', subtext: '#047857', badge: '#059669', abbr: 'SEDIU', label: 'SEDIU SOCIAL' },
     risk: { bg: '#fef2f2', border: '#dc2626', text: '#991b1b', subtext: '#b91c1c', badge: '#dc2626', abbr: 'RISC', label: 'ALERTĂ RISC' },
   },
 };
@@ -56,21 +56,21 @@ function formatCleanRoles(rawRoles, percent) {
 }
 
 const NODE_DIMENSIONS = {
-  company: { w: 136, h: 64 },
+  company: { w: 176, h: 78 }, // Vedetă VIP card
   related_company: { w: 104, h: 50 },
   person: { w: 104, h: 50 },
   person_historical: { w: 104, h: 50 },
-  address: { w: 134, h: 58 },
+  address: { w: 110, h: 42 }, // Compact & discrete sediu
   risk: { w: 72, h: 28 }, // Sleek, compact mini-tag for risk
 };
 
 const NODE_COLLISION_RADIUS = {
-  company: 100,
-  related_company: 82,
-  person: 82,
-  person_historical: 82,
-  address: 98,
-  risk: 52,
+  company: 130, // Generous breathing space for the star firm
+  related_company: 80,
+  person: 80,
+  person_historical: 80,
+  address: 62, // Small collision radius so address cluster does not overpower
+  risk: 50,
 };
 
 function normalizePersonName(name) {
@@ -193,12 +193,14 @@ function buildGraph(rawData, clientName, clientCui) {
   const addrCheck = rawData.address_check || {};
   const fullAddress = anaf.adresa || addrCheck.address;
 
-  // 1. ROOT NODE: VEDETA INVESTIGAȚIEI (Subiectul Principal - în centrul tablei)
+  // 1. ROOT NODE: VEDETA INVESTIGAȚIEI (Subiectul Principal - ancorat în centrul absolut 0, 0)
   addNode(companyId, clientName || 'Companie Investigată', 'company', {
     cui: clientCui,
     isRoot: true,
     fx: 0,
-    fy: 0, // Ancorată stabil în centrul absolut (0, 0)
+    fy: 0,
+    x: 0,
+    y: 0, // Ancorată stabil în centrul absolut (0, 0)
     stare: anaf.status || 'Activ',
     telefon: (anaf.telefon && anaf.telefon !== 'Nespecificat') ? anaf.telefon : null,
     an_infiintare: anaf.an_infiintare || (anaf.data_inregistrare ? anaf.data_inregistrare.slice(0, 4) : null),
@@ -206,7 +208,7 @@ function buildGraph(rawData, clientName, clientCui) {
 
   let addrId = null;
 
-  // 2. SEDIU SOCIAL (ADRESA COMPLETĂ LIZIBILĂ)
+  // 2. SEDIU SOCIAL (ADRESĂ SECUNDARĂ DISCRETĂ - ARIPA STÂNGĂ)
   if (fullAddress) {
     addrId = 'addr_main';
     const parsed = parseAddressDisplay(fullAddress);
@@ -215,15 +217,16 @@ function buildGraph(rawData, clientName, clientCui) {
       addrLine1: parsed.line1,
       addrLine2: parsed.line2,
       clusterCount: addrCheck.cluster_count || (addrCheck.companies ? addrCheck.companies.length : 1),
-      x: -210,
-      y: 35, // Poziționare logică inițială lateral-stânga pentru sediu
+      x: -280,
+      y: 0, // Aripa stângă orizontală
     });
     // Din VEDETĂ duce firul direct spre Sediu Social
     addLink(companyId, addrId, 'SEDIU SOCIAL', 'primary');
   }
 
-  // 3. FIRME CONEXE DIN CLUSTERUL DE LA SEDIU (Denumiri reale din baza de date)
+  // 3. FIRME CONEXE DIN CLUSTERUL DE LA SEDIU (Satelit organizat în coloane pe aripa stângă)
   const clusterCompanies = addrCheck.companies || [];
+  const totalCluster = Math.min(clusterCompanies.length, 15);
   clusterCompanies.slice(0, 15).forEach((comp, idx) => {
     const cuiClean = String(comp.cui || '').replace(/\D/g, '');
     if (cuiClean && cuiClean === cleanClientCui) return;
@@ -244,6 +247,13 @@ function buildGraph(rawData, clientName, clientCui) {
       if (roomMatch) room = roomMatch[0].trim();
     }
 
+    // Dispunere în două coloane orizontale la stânga adresei
+    const col = idx % 2;
+    const row = Math.floor(idx / 2);
+    const numRows = Math.ceil(totalCluster / 2) || 1;
+    const initX = col === 0 ? -460 : -620;
+    const initY = (row - (numRows - 1) / 2) * 56;
+
     addNode(relId, shortName, 'related_company', {
       cui: comp.cui,
       fullName: name,
@@ -252,6 +262,8 @@ function buildGraph(rawData, clientName, clientCui) {
       room: room,
       relation: 'Sediu Comun',
       fullAddr: comp.adresa || fullAddress,
+      x: initX,
+      y: initY,
     });
 
     // Firul pleacă de la nodul SEDIU spre firmele care stau la aceeași adresă
@@ -515,10 +527,16 @@ function buildGraph(rawData, clientName, clientCui) {
     }
   });
 
-  // 5. EXTINDERE PÂNZĂ DE PĂIANJEN (Spiderweb)
+  // 5. EXTINDERE PÂNZĂ DE PĂIANJEN (ARIPA DREAPTĂ - CONDUCERE & REȚEA ASOCIAȚI)
+  let pIdx = 0;
+  const pCount = personMap.size || 1;
   personMap.forEach((pData) => {
     const personId = `person_${pData.normKey.replace(/[^A-Z0-9]/g, '_')}`;
     const rolesStr = Array.from(pData.roles).join(' / ') || (pData.isHistorical ? 'Fost Administrator' : 'Conducere');
+
+    const pInitX = 280;
+    const pInitY = (pIdx - (pCount - 1) / 2) * 75;
+    pIdx++;
 
     addNode(personId, pData.displayName, 'person', {
       fullName: pData.displayName,
@@ -530,8 +548,8 @@ function buildGraph(rawData, clientName, clientCui) {
       age: pData.age,
       birthplace: pData.birthplace,
       stare: pData.isHistorical ? 'Istoric' : pData.stare,
-      x: 210,
-      y: -35, // Poziționare logică inițială lateral-dreapta pentru conducere
+      x: pInitX,
+      y: pInitY,
     });
 
     // Firul principal direct de la VEDETĂ la administrator / asociat
@@ -593,6 +611,9 @@ function buildGraph(rawData, clientName, clientCui) {
       const name = firma.denumire || `Firmă ${fIdx + 1}`;
       const shortName = name.length > 22 ? name.slice(0, 19) + '...' : name;
 
+      const fInitX = 480 + (fIdx % 2) * 130;
+      const fInitY = pInitY + (fIdx - ((relatedFirme.length - 1) / 2)) * 52;
+
       addNode(firmaId, shortName, 'related_company', {
         cui: firma.cui,
         fullName: name,
@@ -600,6 +621,8 @@ function buildGraph(rawData, clientName, clientCui) {
         isHistorical: isHistoricalFirma,
         relation: isHistoricalFirma ? (periodStr ? `Fostă Afiliere (${periodStr})` : 'Fostă Afiliere') : (firma.calitate || 'Firmă Afiliată'),
         fullAddr: firma.sediu || firma.adresa,
+        x: fInitX,
+        y: fInitY,
       });
 
       // Din persoană duce în firma conexă
@@ -630,6 +653,8 @@ function buildGraph(rawData, clientName, clientCui) {
             fullName: formatPersonDisplayName(partnerName),
             roles: 'Asociat Conex',
             stare: 'Activ',
+            x: fInitX + 130,
+            y: fInitY + (partIdx - 0.5) * 45,
           });
           addLink(firmaId, partnerId, 'ASOCIAT', 'network');
         });
@@ -645,8 +670,8 @@ function buildGraph(rawData, clientName, clientCui) {
     addNode(alertId, `Risc Fiscal (${flags.length})`, 'risk', {
       fullText: allFlagTexts.join(' • '),
       flagCount: flags.length,
-      x: 0,
-      y: -130,
+      x: -45,
+      y: -80,
     });
     addLink(companyId, alertId, 'FACTORI RISC', 'risk');
   }
@@ -655,8 +680,8 @@ function buildGraph(rawData, clientName, clientCui) {
   if (bpi.has_insolvency) {
     addNode('bpi_alert', `Insolvență BPI (${bpi.count})`, 'risk', {
       fullText: `Compania figurează în Buletinul Procedurilor de Insolvență (${bpi.count} dosare).`,
-      x: 85,
-      y: -130,
+      x: 45,
+      y: -80,
     });
     addLink(companyId, 'bpi_alert', 'DOSAR BPI', 'risk');
   }
@@ -674,7 +699,7 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
     cfgType = 'person_historical';
   }
   const cfg = currentTheme[cfgType] || currentTheme.risk;
-  const dim = NODE_DIMENSIONS[cfgType] || NODE_DIMENSIONS[node.type] || { w: 90, h: 48 };
+  const dim = node.isRoot ? NODE_DIMENSIONS.company : (NODE_DIMENSIONS[cfgType] || NODE_DIMENSIONS[node.type] || { w: 90, h: 48 });
   const w = dim.w;
   const h = dim.h;
   const x = node.x - w / 2;
@@ -683,28 +708,58 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
   ctx.save();
 
   // Shadow
-  if (isDark) {
-    ctx.shadowColor = node.isRoot ? 'rgba(59, 130, 246, 0.35)' : isHistorical ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.55)';
-    ctx.shadowBlur = node.isRoot ? 16 : 8;
+  if (node.isRoot) {
+    if (isDark) {
+      ctx.shadowColor = 'rgba(56, 189, 248, 0.45)';
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 4;
+    } else {
+      ctx.shadowColor = 'rgba(29, 78, 216, 0.32)';
+      ctx.shadowBlur = 22;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 6;
+    }
+  } else if (node.type === 'address') {
+    ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(15, 23, 42, 0.06)';
+    ctx.shadowBlur = 4;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 2;
+  } else if (isDark) {
+    ctx.shadowColor = isHistorical ? 'rgba(0, 0, 0, 0.4)' : 'rgba(0, 0, 0, 0.55)';
+    ctx.shadowBlur = 8;
     ctx.shadowOffsetX = 2;
     ctx.shadowOffsetY = 4;
   } else {
-    ctx.shadowColor = node.isRoot ? 'rgba(37, 99, 235, 0.22)' : 'rgba(15, 23, 42, 0.12)';
-    ctx.shadowBlur = node.isRoot ? 14 : 7;
+    ctx.shadowColor = 'rgba(15, 23, 42, 0.12)';
+    ctx.shadowBlur = 7;
     ctx.shadowOffsetX = 1;
     ctx.shadowOffsetY = 3;
   }
 
   // Background body
   ctx.beginPath();
-  drawRoundedRect(ctx, x, y, w, h, 6);
+  drawRoundedRect(ctx, x, y, w, h, node.isRoot ? 8 : 6);
   ctx.fillStyle = cfg.bg;
   ctx.fill();
 
-  // Border
-  ctx.lineWidth = node.isRoot ? 2.5 : node.type === 'risk' ? 1.2 : 1.5;
-  ctx.strokeStyle = cfg.border;
-  ctx.stroke();
+  // Border & Double ring for Root
+  if (node.isRoot) {
+    ctx.lineWidth = isDark ? 3 : 3.2;
+    ctx.strokeStyle = cfg.border;
+    ctx.stroke();
+
+    // Outer subtle halo ring
+    ctx.beginPath();
+    drawRoundedRect(ctx, x - 3.5, y - 3.5, w + 7, h + 7, 11);
+    ctx.lineWidth = 1.2;
+    ctx.strokeStyle = isDark ? 'rgba(56, 189, 248, 0.35)' : 'rgba(37, 99, 235, 0.28)';
+    ctx.stroke();
+  } else {
+    ctx.lineWidth = node.type === 'risk' ? 1.4 : 1.8;
+    ctx.strokeStyle = cfg.border;
+    ctx.stroke();
+  }
 
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
@@ -737,60 +792,61 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
   if (node.type !== 'risk') {
     ctx.save();
     ctx.beginPath();
-    drawRoundedRect(ctx, x, y, w, h, 6);
+    drawRoundedRect(ctx, x, y, w, h, node.isRoot ? 8 : 6);
     ctx.clip();
 
     ctx.fillStyle = cfg.border;
-    ctx.fillRect(x, y, w, node.isRoot ? 12 : 10);
+    const tabHeight = node.isRoot ? 14 : node.type === 'address' ? 8 : 10;
+    ctx.fillRect(x, y, w, tabHeight);
 
-    ctx.font = `bold ${node.isRoot ? '5.5px' : '5px'} Inter, -apple-system, sans-serif`;
+    ctx.font = `bold ${node.isRoot ? '6.2px' : node.type === 'address' ? '4.8px' : '5px'} Inter, -apple-system, sans-serif`;
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(headerLabel, node.x, y + (node.isRoot ? 6 : 5));
+    ctx.fillText(headerLabel, node.x, y + tabHeight / 2);
     ctx.restore();
   }
 
   // Abbreviation pill badge (skip for risk)
   if (node.type !== 'risk') {
-    const badgeW = 16;
-    const badgeH = 9;
-    const badgeX = x + 6;
-    const badgeY = y + (node.isRoot ? 17 : 14);
+    const badgeW = node.isRoot ? 28 : node.type === 'address' ? 14 : 16;
+    const badgeH = node.isRoot ? 11 : node.type === 'address' ? 7.5 : 9;
+    const badgeX = x + (node.isRoot ? 7 : 5);
+    const badgeY = y + (node.isRoot ? 19 : node.type === 'address' ? 12 : 14);
     ctx.fillStyle = cfg.badge;
     ctx.beginPath();
     drawRoundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 2.5);
     ctx.fill();
-    ctx.font = 'bold 5.5px Inter, sans-serif';
+    ctx.font = `bold ${node.isRoot ? '6px' : node.type === 'address' ? '4.5px' : '5.5px'} Inter, sans-serif`;
     ctx.fillStyle = '#ffffff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(badgeText, badgeX + badgeW / 2, badgeY + badgeH / 2);
   }
 
-  // Content for ADDRESS (Two readable lines)
+  // Content for ADDRESS (Compact & Discrete)
   if (node.type === 'address') {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
 
-    // Line 1: Street & Number / Floor
-    ctx.font = 'bold 6.8px Inter, -apple-system, sans-serif';
-    ctx.fillStyle = isDark ? '#ffffff' : '#0f172a';
+    // Line 1: Street & Number
+    ctx.font = 'bold 5.6px Inter, -apple-system, sans-serif';
+    ctx.fillStyle = isDark ? '#ecfdf5' : '#0f172a';
     const l1 = node.addrLine1 || node.label || '';
-    ctx.fillText(l1.length > 30 ? l1.slice(0, 28) + '...' : l1, x + 25, y + 18.5);
+    ctx.fillText(l1.length > 25 ? l1.slice(0, 23) + '...' : l1, x + 23, y + 16);
 
     // Line 2: City / Sector
-    ctx.font = '5.8px Inter, sans-serif';
-    ctx.fillStyle = isDark ? '#a7f3d0' : '#047857';
+    ctx.font = '5px Inter, sans-serif';
+    ctx.fillStyle = isDark ? '#6ee7b7' : '#047857';
     const l2 = node.addrLine2 || 'Sediu Social';
-    ctx.fillText(l2, x + 6, y + 32);
+    ctx.fillText(l2.length > 30 ? l2.slice(0, 28) + '...' : l2, x + 5, y + 26);
 
     // Bottom cluster summary
-    const statusY = y + h - 8;
+    const statusY = y + h - 6;
     ctx.textAlign = 'left';
-    ctx.font = '5px Inter, sans-serif';
-    ctx.fillStyle = isDark ? '#6ee7b7' : '#059669';
-    ctx.fillText(`${node.clusterCount || 1} entități la acest sediu`, x + 6, statusY);
+    ctx.font = '4.8px Inter, sans-serif';
+    ctx.fillStyle = isDark ? '#34d399' : '#059669';
+    ctx.fillText(`${node.clusterCount || 1} entități la sediu`, x + 5, statusY);
   } else if (node.type === 'risk') {
     // SLEEK, COMPACT MINI-TAG FOR RISK
     ctx.textAlign = 'center';
@@ -801,14 +857,14 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
     ctx.font = '4.5px Inter, sans-serif';
     ctx.fillStyle = isDark ? '#f87171' : '#dc2626';
     ctx.fillText('Vezi detalii la hover', node.x, node.y + 6);
-  } else {
-    // Normal node (Company, Person, Related Company)
+  } else if (node.isRoot) {
+    // ROOT VEDETĂ ANCHETĂ
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.font = `bold ${node.isRoot ? '8px' : '7px'} Inter, -apple-system, sans-serif`;
+    ctx.font = 'bold 9.5px Inter, -apple-system, sans-serif';
     ctx.fillStyle = cfg.text;
 
-    const maxTextW = w - (node.isRoot ? 32 : 28);
+    const maxTextW = w - 46;
     let title = node.fullName || node.label || '';
     if (ctx.measureText(title).width > maxTextW) {
       while (ctx.measureText(title + '…').width > maxTextW && title.length > 2) {
@@ -816,7 +872,48 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
       }
       title += '…';
     }
-    ctx.fillText(title, x + 25, y + (node.isRoot ? 21.5 : 18.5));
+    ctx.fillText(title, x + 40, y + 24.5);
+
+    // Subtitle with CUI & details
+    let subtitle = `CUI: ${node.cui || ''}`;
+    if (node.an_infiintare) subtitle += ` • Înființat: ${node.an_infiintare}`;
+    if (node.telefon) subtitle += ` • Tel: ${node.telefon}`;
+
+    ctx.font = 'bold 6.2px Inter, sans-serif';
+    ctx.fillStyle = cfg.subtext;
+    ctx.fillText(subtitle, x + 8, y + 42);
+
+    // Status bar at bottom
+    const statusY = y + h - 12;
+    ctx.beginPath();
+    ctx.arc(x + 11, statusY, 3.2, 0, Math.PI * 2);
+    ctx.fillStyle = '#10b981';
+    ctx.fill();
+
+    ctx.font = 'bold 6px Inter, sans-serif';
+    ctx.fillStyle = isDark ? '#a7f3d0' : '#047857';
+    ctx.fillText('Activ (Registrul Comerțului)', x + 18, statusY);
+
+    ctx.textAlign = 'right';
+    ctx.font = '5.5px Inter, sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('TINTĂ PRINCIPALĂ', x + w - 8, statusY);
+  } else {
+    // Normal node (Person, Related Company)
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.font = 'bold 7px Inter, -apple-system, sans-serif';
+    ctx.fillStyle = cfg.text;
+
+    const maxTextW = w - 28;
+    let title = node.fullName || node.label || '';
+    if (ctx.measureText(title).width > maxTextW) {
+      while (ctx.measureText(title + '…').width > maxTextW && title.length > 2) {
+        title = title.slice(0, -1);
+      }
+      title += '…';
+    }
+    ctx.fillText(title, x + 25, y + 18.5);
 
     // Subtitle
     let subtitle = '';
@@ -836,21 +933,21 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
         }
         subDisplay += '…';
       }
-      ctx.fillText(subDisplay, x + 6, y + (node.isRoot ? 36 : 32));
+      ctx.fillText(subDisplay, x + 6, y + 32);
     }
 
     // Status dot
-    const statusY = y + h - (node.isRoot ? 10 : 8);
+    const statusY = y + h - 8;
     if (node.stare) {
       const isHistoricalNode = node.isHistorical || node.stare === 'Istoric' || node.stare === 'Mandat Încheiat' || node.stare === 'Inactiv';
       const isActive = !isHistoricalNode && (node.stare === 'Activ' || node.stare === 'Activa' || node.stare === 'funcţiune');
 
       ctx.beginPath();
-      ctx.arc(x + 9, statusY, node.isRoot ? 2.5 : 2, 0, Math.PI * 2);
+      ctx.arc(x + 9, statusY, 2, 0, Math.PI * 2);
       ctx.fillStyle = isActive ? '#10b981' : isHistoricalNode ? '#94a3b8' : '#f43f5e';
       ctx.fill();
 
-      ctx.font = `${node.isRoot ? '5.5px' : '5px'} Inter, sans-serif`;
+      ctx.font = '5px Inter, sans-serif';
       if (isDark) {
         ctx.fillStyle = isActive ? '#a7f3d0' : isHistoricalNode ? '#cbd5e1' : '#fecdd3';
       } else {
@@ -858,9 +955,7 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
       }
 
       let statusDisplay = node.stare;
-      if (node.isRoot) {
-        statusDisplay = 'Activ (Înregistrat)';
-      } else if (isHistoricalNode) {
+      if (isHistoricalNode) {
         statusDisplay = node.mandatPeriod ? `Mandat Încheiat (${node.mandatPeriod})` : 'Mandat Încheiat';
       }
       ctx.fillText(statusDisplay, x + 15, statusY);
@@ -1022,6 +1117,7 @@ function drawLinkLabel(link, ctx, isDark = true) {
 export default function InvestigationBoard({ rawData, clientName, clientCui, onClose, onOpenCompany, onOpenPerson }) {
   const graphRef = useRef();
   const containerRef = useRef();
+  const hasAutoCentered = useRef(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [hoveredNode, setHoveredNode] = useState(null);
@@ -1074,6 +1170,7 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
   const [graphData, setGraphData] = useState(() => initialGraphData);
 
   useEffect(() => {
+    hasAutoCentered.current = false;
     setGraphData(initialGraphData);
   }, [initialGraphData]);
 
@@ -1445,34 +1542,88 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
     return () => window.removeEventListener('resize', updateSize);
   }, [isFullscreen]);
 
+  const centerOnRoot = (duration = 400) => {
+    if (!graphRef.current) return;
+    const currentNodes = graphData?.nodes || [];
+    if (!currentNodes.length) return;
+
+    // Găsim firma vedetă (root)
+    const rootNode = currentNodes.find((n) => n.isRoot) || currentNodes[0];
+    const rx = typeof rootNode.x === 'number' ? rootNode.x : 0;
+    const ry = typeof rootNode.y === 'number' ? rootNode.y : 0;
+
+    const cWidth = containerRef.current?.offsetWidth || 1200;
+    const cHeight = containerRef.current?.offsetHeight || 800;
+
+    // Calculăm distanța maximă de la root la orice alt nod pentru a asigura vizibilitatea completă în format LANDSCAPE
+    let maxDistX = 300;
+    let maxDistY = 120;
+
+    currentNodes.forEach((n) => {
+      if (typeof n.x === 'number' && typeof n.y === 'number') {
+        const dx = Math.abs(n.x - rx);
+        const dy = Math.abs(n.y - ry);
+        if (dx > maxDistX) maxDistX = dx;
+        if (dy > maxDistY) maxDistY = dy;
+      }
+    });
+
+    const paddingX = 160;
+    const paddingY = 110;
+    const fitZoomX = cWidth / (2 * maxDistX + paddingX);
+    const fitZoomY = cHeight / (2 * maxDistY + paddingY);
+    const targetZoom = Math.min(Math.max(Math.min(fitZoomX, fitZoomY), 0.5), 1.25);
+
+    graphRef.current.zoom(targetZoom, duration);
+    graphRef.current.centerAt(rx, ry, duration);
+  };
+
   useEffect(() => {
     if (graphRef.current) {
-      // Collision force to prevent any card from overlapping
+      // 1. FORȚĂ Y: restricționează deviația pe verticală, forțând alinierea pe orizontală LANDSCAPE
+      graphRef.current.d3Force('y', forceY(0).strength(0.24));
+
+      // 2. FORȚĂ X: organizează aripa stângă (sediu & cluster) și aripa dreaptă (conducere & asociați)
+      graphRef.current.d3Force(
+        'x',
+        forceX((node) => {
+          if (node.isRoot) return 0;
+          if (node.type === 'risk') return -45;
+          if (node.type === 'address') return -280;
+          if (node.type === 'related_company' && node.relation === 'Sediu Comun') return -500;
+          if (node.type === 'person') return 280;
+          if (node.type === 'related_company') return 520;
+          return node.x < 0 ? -320 : 320;
+        }).strength(0.18)
+      );
+
+      // 3. Collision force cu spațiu adecvat
       graphRef.current.d3Force(
         'collide',
-        forceCollide((node) => NODE_COLLISION_RADIUS[node.type] || 82).iterations(4)
+        forceCollide((node) => (node.isRoot ? 120 : (NODE_COLLISION_RADIUS[node.type] || 75))).iterations(4)
       );
-      // Strong repulsion to spread nodes across canvas
-      graphRef.current.d3Force('charge')?.strength(-1150);
+
+      // 4. Repulsie echilibrată
+      graphRef.current.d3Force('charge')?.strength(-750);
+
+      // 5. Link distances optimizate pentru landscape
       graphRef.current.d3Force('link')?.distance((link) => {
-        if (link.type === 'primary' || link.type === 'primary_historical') return 220;
-        if (link.type === 'address_branch') return 195;
-        if (link.type === 'network' || link.type === 'network_historical') return 190;
-        if (link.type === 'risk') return 110;
-        return 195;
+        if (link.type === 'primary' || link.type === 'primary_historical') return 210;
+        if (link.type === 'address_branch') return 110;
+        if (link.type === 'network' || link.type === 'network_historical') return 140;
+        if (link.type === 'risk') return 75;
+        return 130;
       }).strength((link) => {
         if (link.type === 'primary' || link.type === 'primary_historical') return 0.85;
+        if (link.type === 'address_branch') return 0.7;
         if (link.type === 'risk') return 0.95;
-        return 0.45;
+        return 0.5;
       });
 
-      // Recenter and zoom to fit nicely with generous padding
+      // Centrare automată pe firma vedetă la încărcarea datelor
       const timer = setTimeout(() => {
-        if (graphRef.current) {
-          graphRef.current.centerAt(0, 0, 400);
-          graphRef.current.zoomToFit(500, 70);
-        }
-      }, 500);
+        centerOnRoot(500);
+      }, 450);
       return () => clearTimeout(timer);
     }
   }, [graphData]);
@@ -1480,22 +1631,27 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
   const handleZoomIn = () => graphRef.current?.zoom(graphRef.current.zoom() * 1.4, 300);
   const handleZoomOut = () => graphRef.current?.zoom(graphRef.current.zoom() * 0.6, 300);
   const handleCenter = () => {
-    if (graphRef.current) {
-      graphRef.current.centerAt(0, 0, 400);
-      graphRef.current.zoomToFit(500, 85);
-    }
+    centerOnRoot(400);
   };
 
   const handleResetLayout = () => {
     if (graphData && graphData.nodes) {
       graphData.nodes.forEach((node) => {
-        node.fx = undefined;
-        node.fy = undefined;
+        if (node.isRoot) {
+          node.fx = 0;
+          node.fy = 0;
+          node.x = 0;
+          node.y = 0;
+        } else {
+          node.fx = undefined;
+          node.fy = undefined;
+        }
       });
       if (graphRef.current) {
         graphRef.current.d3ReheatSimulation();
-        graphRef.current.centerAt(0, 0, 400);
-        graphRef.current.zoomToFit(500, 85);
+        setTimeout(() => {
+          centerOnRoot(400);
+        }, 350);
       }
     }
   };
@@ -2470,7 +2626,7 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             }
           }}
           nodePointerAreaPaint={(node, color, ctx) => {
-            const dim = NODE_DIMENSIONS[node.type] || { w: 90, h: 48 };
+            const dim = node.isRoot ? NODE_DIMENSIONS.company : (NODE_DIMENSIONS[node.type] || { w: 90, h: 48 });
             ctx.beginPath();
             ctx.rect(node.x - dim.w / 2 - 2, node.y - dim.h / 2 - 2, dim.w + 4, dim.h + 4);
             ctx.fillStyle = color;
@@ -2493,13 +2649,26 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             node.fy = node.y;
           }}
           onNodeRightClick={(node) => {
-            node.fx = undefined;
-            node.fy = undefined;
+            if (node.isRoot) {
+              node.fx = 0;
+              node.fy = 0;
+              node.x = 0;
+              node.y = 0;
+            } else {
+              node.fx = undefined;
+              node.fy = undefined;
+            }
             if (graphRef.current) {
               graphRef.current.d3ReheatSimulation();
             }
           }}
           onBackgroundClick={() => setSelectedNode(null)}
+          onEngineStop={() => {
+            if (!hasAutoCentered.current) {
+              hasAutoCentered.current = true;
+              centerOnRoot(400);
+            }
+          }}
           cooldownTicks={160}
           warmupTicks={80}
           d3AlphaDecay={0.02}
