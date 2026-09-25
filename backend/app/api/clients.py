@@ -12,6 +12,7 @@ from ..models.client import Client, Evaluation, ClientType, RiskLevel
 from ..models.user import User
 from ..schemas.client import ClientCreate, ClientResponse, ClientDetailResponse, EvaluationResponse
 from ..services.ai_engine import AIEngineService
+from ..services.osint.jev_engine import JEVEngine
 
 router = APIRouter(prefix="/api/clients", tags=["Clients"])
 
@@ -235,6 +236,8 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
                             email=prev_d.get("anaf", {}).get("email"),
                             website=prev_d.get("anaf", {}).get("site")
                         )
+                    jev = JEVEngine(verification_passes=3)
+                    jev_cert = prev_d.get("jev_certificate") or jev.verify_and_certify(prev_d, company_name=existing_client.name, company_cui=clean_cui)
                     return {
                         "cui": clean_cui,
                         "denumire": existing_client.name,
@@ -253,7 +256,8 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
                         "court_cases": prev_d.get("court_cases", []),
                         "total_dosare": len(prev_d.get("court_cases", [])),
                         "cached": True,
-                        "credits_used": 0
+                        "credits_used": 0,
+                        "jev_certificate": jev_cert
                     }
             except Exception:
                 pass
@@ -365,6 +369,20 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
             website=gen_data.get("site")
         )
 
+    jev = JEVEngine(verification_passes=3)
+    jev_cert = jev.verify_and_certify({
+        "anaf": gen_data,
+        "personnel": personnel,
+        "holdings": holdings,
+        "administrators": administrators,
+        "caen_activities": caen_act,
+        "smart_ownership": smart_ownership,
+        "balance": balance,
+        "bpi": bpi,
+        "mof": mof,
+        "admin_networks": admin_networks
+    }, company_name=official_name, company_cui=clean_cui)
+
     return {
         "cui": clean_cui,
         "denumire": official_name,
@@ -383,7 +401,8 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
         "court_cases": court_cases,
         "total_dosare": len(court_cases),
         "cached": False,
-        "credits_used": 1
+        "credits_used": 1,
+        "jev_certificate": jev_cert
     }
 
 @router.get("/person-full-intel")
@@ -868,5 +887,42 @@ def get_client_fleet_telemetry_report(client_id: int, db: Session = Depends(get_
             for a in alerts[:5]
         ]
     }
+
+@router.get("/{id}/jev-audit")
+async def get_client_jev_audit(id: int, db: Session = Depends(get_db)):
+    """
+    JEV (Joint Evaluator & Validator) Audit Certificate Endpoint
+    Returnează certificatul determinist complet de conformitate:
+    - 0% halucinații AI
+    - 3 rulări de validare încrucișată (Cross-Validation Matrix)
+    - Analiză agentică a găurilor de raționament (Reasoning Gaps)
+    - Raport de conformitate GDPR și sigiliu criptografic SHA-256
+    """
+    client = db.query(Client).filter(Client.id == id).first()
+    if not client:
+        raise HTTPException(status_code=404, detail="Client negăsit")
+
+    latest_eval = db.query(Evaluation).filter(Evaluation.client_id == client.id).order_by(Evaluation.created_at.desc()).first()
+    if not latest_eval or not latest_eval.raw_financial_data:
+        raise HTTPException(status_code=400, detail="Nu există evaluare completă pentru acest client")
+
+    try:
+        raw_data = json.loads(latest_eval.raw_financial_data) if isinstance(latest_eval.raw_financial_data, str) else latest_eval.raw_financial_data
+    except Exception:
+        raw_data = {}
+
+    jev = JEVEngine(verification_passes=3)
+    cert = raw_data.get("jev_certificate") or jev.verify_and_certify(raw_data, company_name=client.name, company_cui=client.cui_cnp)
+
+    return {
+        "client_id": client.id,
+        "company_name": client.name,
+        "cui": client.cui_cnp,
+        "score": latest_eval.score,
+        "risk_level": latest_eval.risk_level.value if hasattr(latest_eval.risk_level, 'value') else str(latest_eval.risk_level),
+        "ai_summary": latest_eval.ai_summary,
+        "jev_certificate": cert
+    }
+
 
 

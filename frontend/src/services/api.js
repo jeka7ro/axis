@@ -55,6 +55,12 @@ export const lookupClientByCui = async (cui) => {
   return response.json();
 };
 
+export const fetchClientJEVAudit = async (id) => {
+  const response = await fetch(`${API_URL}/clients/${id}/jev-audit`);
+  if (!response.ok) throw new Error('Failed to fetch JEV audit certificate');
+  return response.json();
+};
+
 export const fetchAdminNetwork = async (name, contextCui = '') => {
   const url = `${API_URL}/clients/admin-network?name=${encodeURIComponent(name)}${contextCui ? `&context_cui=${encodeURIComponent(contextCui)}` : ''}`;
   const response = await fetch(url);

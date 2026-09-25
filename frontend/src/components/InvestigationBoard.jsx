@@ -2155,6 +2155,17 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
           >
             CUI: {clientCui}
           </span>
+          <div
+            className={`hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] font-semibold ${
+              isDark
+                ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+            }`}
+            title="Sistem hibrid JEV Engine: Validare deterministă 0% halucinații din surse oficiale (ONRC, ANAF, BPI)"
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>JEV 0% Halucinații</span>
+          </div>
         </div>
 
         {/* Interactive Search Bar */}

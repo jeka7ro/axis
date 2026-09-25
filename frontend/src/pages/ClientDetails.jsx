@@ -11,13 +11,14 @@ import {
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
-import { fetchClient, evaluateClient, evaluateCompanyByCui, fetchAdminNetwork, fetchClientFleetTelemetryReport } from '../services/api';
+import { fetchClient, evaluateClient, evaluateCompanyByCui, fetchAdminNetwork, fetchClientFleetTelemetryReport, fetchClientJEVAudit } from '../services/api';
 import CompanyIntelModal from '../components/CompanyIntelModal';
 import PersonIntelModal from '../components/PersonIntelModal';
 import MofDocumentModal from '../components/MofDocumentModal';
 import FinancialPerformanceCard from '../components/FinancialPerformanceCard';
 import OwnershipAndGovernanceCard from '../components/OwnershipAndGovernanceCard';
 import InvestigationBoard from '../components/InvestigationBoard';
+import JEVValidationCard from '../components/JEVValidationCard';
 import { getCaenInfo, getCaenDescription } from '../utils/caenHelper';
 import { generateCreditCommitteeReport } from '../utils/creditCommitteeReportGenerator';
 
@@ -157,6 +158,19 @@ const ClientDetails = () => {
     }
   };
 
+  const [jevAudit, setJevAudit] = useState(null);
+
+  const loadJevAudit = async () => {
+    try {
+      const data = await fetchClientJEVAudit(id);
+      if (data?.jev_certificate) {
+        setJevAudit(data.jev_certificate);
+      }
+    } catch (err) {
+      console.error("JEV Audit fetch error:", err);
+    }
+  };
+
   const loadClient = async () => {
     try {
       const data = await fetchClient(id);
@@ -171,6 +185,7 @@ const ClientDetails = () => {
   useEffect(() => {
     loadClient();
     loadTelemetryReport();
+    loadJevAudit();
   }, [id]);
 
   useEffect(() => {
@@ -199,6 +214,7 @@ const ClientDetails = () => {
     try {
       await evaluateClient(id, forceRefresh);
       await loadClient(); // Reload to get new evaluation
+      await loadJevAudit();
     } catch (error) {
       console.error("OSINT API Error:", error);
     } finally {
@@ -693,6 +709,17 @@ const ClientDetails = () => {
             </div>
           ) : (
             <>
+              {/* JEV Engine v2.4 - Validare Deterministă Hibridă (0% Halucinații & Cross-Validation) */}
+              {(rawDataObj?.jev_certificate || jevAudit) && (
+                <div className="w-full mt-6 animate-in fade-in">
+                  <JEVValidationCard 
+                    certificate={rawDataObj?.jev_certificate || jevAudit} 
+                    companyName={client?.name}
+                    cui={client?.cui_cnp}
+                  />
+                </div>
+              )}
+
               {/* Full Width Information Card */}
               <div className="w-full bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6 animate-in fade-in">
                 <h4 className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2 text-base">
