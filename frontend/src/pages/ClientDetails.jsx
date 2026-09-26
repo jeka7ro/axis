@@ -843,13 +843,17 @@ const ClientDetails = () => {
 
               const GOOGLE_MAPS_KEY = "AIzaSyC0K3Je-Wg4PQ68BltbA5xtz_zbbp3qPG4";
 
+              const panoParam = addrCheck.streetview_metadata?.pano_id 
+                ? `&pano=${addrCheck.streetview_metadata.pano_id}` 
+                : '';
+
               const googleStreetViewPhotos = [
                 {
                   id: "gsv_front",
                   title: "Google Street View: Fațadă Principală (0° Nord)",
                   angle: "Nivel Stradal — Fațadă Clădire",
                   heading: 0,
-                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=0&pitch=0&key=${GOOGLE_MAPS_KEY}`,
+                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}${panoParam}&radius=500&source=outdoor&fov=90&heading=0&pitch=0&key=${GOOGLE_MAPS_KEY}`,
                   type: "street_view"
                 },
                 {
@@ -857,7 +861,7 @@ const ClientDetails = () => {
                   title: "Google Street View: Unghi Lateral (90° Est)",
                   angle: "Nivel Stradal — Ax Stradă Est",
                   heading: 90,
-                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=90&pitch=0&key=${GOOGLE_MAPS_KEY}`,
+                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}${panoParam}&radius=500&source=outdoor&fov=90&heading=90&pitch=0&key=${GOOGLE_MAPS_KEY}`,
                   type: "street_view"
                 },
                 {
@@ -865,7 +869,7 @@ const ClientDetails = () => {
                   title: "Google Street View: Perspectivă Stradă (180° Sud)",
                   angle: "Nivel Stradal — Ansamblu Sud",
                   heading: 180,
-                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=180&pitch=0&key=${GOOGLE_MAPS_KEY}`,
+                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}${panoParam}&radius=500&source=outdoor&fov=90&heading=180&pitch=0&key=${GOOGLE_MAPS_KEY}`,
                   type: "street_view"
                 },
                 {
@@ -873,14 +877,29 @@ const ClientDetails = () => {
                   title: "Google Street View: Unghi Lateral (270° Vest)",
                   angle: "Nivel Stradal — Ax Stradă Vest",
                   heading: 270,
-                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}&fov=90&heading=270&pitch=0&key=${GOOGLE_MAPS_KEY}`,
+                  url: `https://maps.googleapis.com/maps/api/streetview?size=800x500&location=${coordinates.lat},${coordinates.lon}${panoParam}&radius=500&source=outdoor&fov=90&heading=270&pitch=0&key=${GOOGLE_MAPS_KEY}`,
                   type: "street_view"
                 }
               ];
 
-              const photos = (addrCheck.photos && addrCheck.photos.length > 0 && addrCheck.photos.some(p => p.url?.includes('maps.googleapis.com')))
+              const rawPhotos = (addrCheck.photos && addrCheck.photos.length > 0)
                 ? addrCheck.photos
                 : googleStreetViewPhotos;
+
+              const photos = rawPhotos.map(p => {
+                if (!p.url || !p.url.includes('maps.googleapis.com/maps/api/streetview')) return p;
+                let cleanUrl = p.url;
+                if (!cleanUrl.includes('radius=')) {
+                  cleanUrl += '&radius=500';
+                }
+                if (!cleanUrl.includes('source=')) {
+                  cleanUrl += '&source=outdoor';
+                }
+                if (panoParam && !cleanUrl.includes('&pano=')) {
+                  cleanUrl += panoParam;
+                }
+                return { ...p, url: cleanUrl };
+              });
 
               const activePhoto = photos[selectedPhotoIndex] || photos[0];
 

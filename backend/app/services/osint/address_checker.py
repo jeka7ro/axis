@@ -190,11 +190,11 @@ class AddressChecker:
                     if eval_row and eval_row.raw_financial_data:
                         raw = json.loads(eval_row.raw_financial_data) if isinstance(eval_row.raw_financial_data, str) else eval_row.raw_financial_data
                         cached_addr = raw.get("address_check")
-                        if cached_addr and cached_addr.get("companies"):
-                            print(f"[DB CACHE HIT] Verificare adresă pentru CUI {clean_cui} încărcată din baza de date.")
+                        if cached_addr and (cached_addr.get("photos") or cached_addr.get("coordinates") or cached_addr.get("companies")):
+                            print(f"[DB CACHE HIT] Verificare adresa si poze pentru CUI {clean_cui} incarcate direct din baza de date (0 apeluri Google API).")
                             return cached_addr
-            except Exception:
-                pass
+            except Exception as cache_err:
+                print(f"[CACHE CHECK ERR]: {cache_err}")
 
         # 1. Extragere informații structurate
         loc_info = self._extract_location_info(address)
@@ -265,7 +265,7 @@ class AddressChecker:
                     "title": f"Google Street View: Fațadă Imobil ({h_front}°)",
                     "angle": "Nivel Stradal — Fațadă Clădire",
                     "heading": h_front,
-                    "url": f"https://maps.googleapis.com/maps/api/streetview?size=800x500&location={lat},{lon}{pano_param}&fov=90&heading={h_front}&pitch=0&key={g_key}",
+                    "url": f"https://maps.googleapis.com/maps/api/streetview?size=800x500&location={lat},{lon}{pano_param}&radius=500&source=outdoor&fov=90&heading={h_front}&pitch=0&key={g_key}",
                     "type": "street_view"
                 },
                 {
@@ -273,7 +273,7 @@ class AddressChecker:
                     "title": f"Google Street View: Unghi Lateral Dreapta ({h_east}°)",
                     "angle": "Nivel Stradal — Ax Stradă",
                     "heading": h_east,
-                    "url": f"https://maps.googleapis.com/maps/api/streetview?size=800x500&location={lat},{lon}{pano_param}&fov=90&heading={h_east}&pitch=0&key={g_key}",
+                    "url": f"https://maps.googleapis.com/maps/api/streetview?size=800x500&location={lat},{lon}{pano_param}&radius=500&source=outdoor&fov=90&heading={h_east}&pitch=0&key={g_key}",
                     "type": "street_view"
                 },
                 {
@@ -281,7 +281,7 @@ class AddressChecker:
                     "title": f"Google Street View: Perspectivă Stradă Opusă ({h_south}°)",
                     "angle": "Nivel Stradal — Ansamblu Stradă",
                     "heading": h_south,
-                    "url": f"https://maps.googleapis.com/maps/api/streetview?size=800x500&location={lat},{lon}{pano_param}&fov=90&heading={h_south}&pitch=0&key={g_key}",
+                    "url": f"https://maps.googleapis.com/maps/api/streetview?size=800x500&location={lat},{lon}{pano_param}&radius=500&source=outdoor&fov=90&heading={h_south}&pitch=0&key={g_key}",
                     "type": "street_view"
                 },
                 {
@@ -289,10 +289,23 @@ class AddressChecker:
                     "title": f"Google Street View: Unghi Lateral Stânga ({h_west}°)",
                     "angle": "Nivel Stradal — Ax Stradă Opus",
                     "heading": h_west,
-                    "url": f"https://maps.googleapis.com/maps/api/streetview?size=800x500&location={lat},{lon}{pano_param}&fov=90&heading={h_west}&pitch=0&key={g_key}",
+                    "url": f"https://maps.googleapis.com/maps/api/streetview?size=800x500&location={lat},{lon}{pano_param}&radius=500&source=outdoor&fov=90&heading={h_west}&pitch=0&key={g_key}",
                     "type": "street_view"
                 }
             ]
+
+            # Descarcă și persistă imaginile local în base64 pentru a garanta 0 apeluri ulterioare către Google Cloud (Cost 0)
+            import base64
+            async with httpx.AsyncClient(timeout=10.0) as img_client:
+                for p in photos:
+                    try:
+                        resp = await img_client.get(p["url"])
+                        if resp.status_code == 200 and len(resp.content) > 10000:
+                            b64 = base64.b64encode(resp.content).decode("utf-8")
+                            p["url"] = f"data:image/jpeg;base64,{b64}"
+                            p["cached_locally"] = True
+                    except Exception as img_err:
+                        print(f"[StreetView Download Cache Error]: {img_err}")
 
         return {
             "address": address,
@@ -314,7 +327,7 @@ class AddressChecker:
         a obține data capturii (ex: 2024-05), camera location și pano_id-ul unic.
         """
         try:
-            url = f"https://maps.googleapis.com/maps/api/streetview/metadata?location={lat},{lon}&radius=100&source=outdoor&key={api_key}"
+            url = f"https://maps.googleapis.com/maps/api/streetview/metadata?location={lat},{lon}&radius=500&source=outdoor&key={api_key}"
             async with httpx.AsyncClient() as client:
                 resp = await client.get(url, timeout=5.0)
                 if resp.status_code == 200:

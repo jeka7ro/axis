@@ -9,13 +9,13 @@ export default {
     extend: {
       borderRadius: {
         'none': '0',
-        'sm': '0.75rem',
-        DEFAULT: '1rem',
-        'md': '1.25rem',
-        'lg': '1.5rem',
-        'xl': '2rem',
-        '2xl': '2.5rem',
-        '3xl': '3rem',
+        'sm': '0.25rem',     // 4px
+        DEFAULT: '0.375rem', // 6px
+        'md': '0.5rem',      // 8px (campuri / inputs / butoane)
+        'lg': '0.625rem',    // 10px (butoane mari / select-uri)
+        'xl': '0.75rem',     // 12px (carduri / blocuri medii)
+        '2xl': '0.875rem',   // 14px (carduri KPI / sub-containere)
+        '3xl': '1.125rem',   // 18px (containere principale / panouri mari)
         'full': '9999px',
       },
       colors: {
