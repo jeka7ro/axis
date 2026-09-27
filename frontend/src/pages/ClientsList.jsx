@@ -1,19 +1,21 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Link } from 'react-router-dom';
+import { createPortal } from 'react-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { 
   Plus, Search, Building2, User, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, 
   CheckSquare, Trash, AlertCircle, FileText, Check, CreditCard, ScanLine, Upload, 
   Link2 as LinkIcon, Briefcase, Sparkles, ShieldAlert, UserX, Loader2, CheckCircle2, ShieldBan,
-  RefreshCw, ExternalLink, X, Scale, TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Activity
+  RefreshCw, ExternalLink, X, Scale, TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Activity, Globe
 } from 'lucide-react';
 import { 
   fetchClients, fetchClient, createClient, updateClient, deleteClient, lookupClientByCui,
-  evaluateClient, addClientToBlacklist, removeClientFromBlacklist
+  searchPublicCompanies, evaluateClient, addClientToBlacklist, removeClientFromBlacklist
 } from '../services/api';
 import { extractTextFromFile, parseRomanianIDCard, extractFaceFromIDCard } from '../utils/pdfOcr';
 import { getCaenInfo, getCaenDescription } from '../utils/caenHelper';
 
 const ClientsList = () => {
+  const location = useLocation();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
@@ -31,6 +33,12 @@ const ClientsList = () => {
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [addingFromAnaf, setAddingFromAnaf] = useState(false);
   const searchContainerRef = useRef(null);
+
+  // Internet / Public Open Registry Search State (CUI + Name)
+  const [publicSearchLoading, setPublicSearchLoading] = useState(false);
+  const [publicSearchResults, setPublicSearchResults] = useState([]);
+  const [publicSearchError, setPublicSearchError] = useState(null);
+  const [importingCui, setImportingCui] = useState(null);
 
   // Table state
   const [selectedIds, setSelectedIds] = useState([]);
@@ -304,6 +312,39 @@ const ClientsList = () => {
     loadClients();
   }, []);
 
+  useEffect(() => {
+    if (location.state?.prefillCui) {
+      const cui = String(location.state.prefillCui);
+      const name = location.state.prefillName || '';
+      setNewClient({
+        type: 'PJ',
+        name: name,
+        cui_cnp: cui,
+        representative_cnp: '',
+        representative_address: ''
+      });
+      setIsEditing(false);
+      setIsModalOpen(true);
+
+      lookupClientByCui(cui).then(data => {
+        if (data) {
+          setNewClient(prev => ({
+            ...prev,
+            name: data.name || prev.name,
+            address: data.address || prev.address,
+            reg_com: data.reg_com || prev.reg_com,
+            contact_phone: data.phone || prev.contact_phone,
+            caen: data.caen || prev.caen,
+            caen_descriere: data.caen_descriere || prev.caen_descriere,
+            caen_sectiune: data.caen_sectiune || prev.caen_sectiune
+          }));
+        }
+      }).catch(err => console.error("Prefill lookup error:", err));
+
+      window.history.replaceState({}, document.title);
+    }
+  }, [location.state]);
+
   const handleAddClient = async (e) => {
     e.preventDefault();
     setFormError("");
@@ -518,37 +559,124 @@ const ClientsList = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Debounced live ANAF lookup when typing an unmonitored CUI
+  // Debounced live Internet & ANAF search when typing CUI or Company Name
   useEffect(() => {
-    if (isCuiPattern && !existingClientWithCui) {
-      setAnafLookupError(null);
-      const timer = setTimeout(async () => {
-        try {
-          setAnafLookupLoading(true);
-          const data = await lookupClientByCui(cleanCui);
-          if (data && data.name) {
-            setAnafLookupResult(data);
-            setAnafLookupError(null);
-          } else {
-            setAnafLookupResult(null);
-            setAnafLookupError(`CUI-ul ${cleanCui} nu a fost găsit în registrul public ANAF.`);
-          }
-        } catch (err) {
-          console.warn('ANAF search error:', err);
-          setAnafLookupResult(null);
-          setAnafLookupError(`Eroare la interogarea ANAF pentru CUI ${cleanCui}.`);
-        } finally {
-          setAnafLookupLoading(false);
-        }
-      }, 450);
-
-      return () => clearTimeout(timer);
-    } else {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 3) {
+      setPublicSearchResults([]);
+      setPublicSearchError(null);
+      setPublicSearchLoading(false);
       setAnafLookupResult(null);
       setAnafLookupError(null);
       setAnafLookupLoading(false);
+      return;
     }
-  }, [cleanCui, isCuiPattern, existingClientWithCui]);
+
+    const timer = setTimeout(async () => {
+      // 1. If it's a numeric CUI pattern
+      if (isCuiPattern) {
+        if (!existingClientWithCui) {
+          try {
+            setAnafLookupLoading(true);
+            const data = await lookupClientByCui(cleanCui);
+            if (data && data.name) {
+              setAnafLookupResult(data);
+              setAnafLookupError(null);
+            } else {
+              setAnafLookupResult(null);
+            }
+          } catch (err) {
+            console.warn('ANAF search error:', err);
+            setAnafLookupResult(null);
+          } finally {
+            setAnafLookupLoading(false);
+          }
+        }
+      }
+
+      // 2. Search on the public internet (Registru Public / Open Data)
+      try {
+        setPublicSearchLoading(true);
+        setPublicSearchError(null);
+        const publicRes = await searchPublicCompanies(trimmed);
+        setPublicSearchResults(publicRes || []);
+      } catch (err) {
+        console.warn('Public search error:', err);
+        setPublicSearchResults([]);
+      } finally {
+        setPublicSearchLoading(false);
+      }
+    }, 380);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery, cleanCui, isCuiPattern, existingClientWithCui]);
+
+  const handleManualPublicSearch = async () => {
+    const trimmed = searchQuery.trim();
+    if (trimmed.length < 2) return;
+    try {
+      setPublicSearchLoading(true);
+      setIsSearchFocused(true);
+      const res = await searchPublicCompanies(trimmed);
+      setPublicSearchResults(res || []);
+    } catch (e) {
+      console.warn('Manual search error:', e);
+    } finally {
+      setPublicSearchLoading(false);
+    }
+  };
+
+  const handleImportPublicCompany = async (companyItem) => {
+    if (!companyItem || !companyItem.cui) return;
+    const cui = String(companyItem.cui).replace(/^RO/i, '').trim();
+
+    const existing = clients.find(c => c.cui_cnp === cui);
+    if (existing) {
+      showToast(`Compania ${existing.name} există deja în portofoliu!`, 'info');
+      setSearchQuery(cui);
+      setIsSearchFocused(false);
+      return;
+    }
+
+    setImportingCui(cui);
+    try {
+      let anafData = null;
+      try {
+        anafData = await lookupClientByCui(cui);
+      } catch (e) {
+        console.warn('ANAF lookup during import warning:', e);
+      }
+
+      const payload = {
+        type: 'PJ',
+        name: anafData?.name || companyItem.name,
+        cui_cnp: cui,
+        reg_com: anafData?.reg_com || null,
+        address: anafData?.address || (companyItem.locality ? `${companyItem.locality}, ${companyItem.county}` : null),
+        contact_phone: anafData?.phone || null
+      };
+
+      const created = await createClient(payload);
+      showToast(`Compania ${created.name} a fost adăugată din registrul public!`, 'success');
+
+      setSearchQuery(created.cui_cnp);
+      setPublicSearchResults([]);
+      setAnafLookupResult(null);
+      setIsSearchFocused(false);
+
+      await loadClients();
+
+      // Automatic evaluation in background
+      evaluateClient(created.id)
+        .then(() => loadClients())
+        .catch(err => console.warn('Background evaluation err:', err));
+    } catch (err) {
+      console.error('Eroare importare companie din registru public:', err);
+      showToast(err.message || 'Eroare la importarea companiei.', 'error');
+    } finally {
+      setImportingCui(null);
+    }
+  };
 
   const handleTriggerAnafLookup = async () => {
     if (!cleanCui || !isCuiPattern) return;
@@ -645,7 +773,7 @@ const ClientsList = () => {
             setNewClient({ type: 'PJ', name: '', cui_cnp: '', representative_cnp: '', representative_address: '' });
             setIsModalOpen(true);
           }}
-          className="flex items-center gap-2 bg-primary text-white px-5 py-2.5 rounded-full hover:bg-primary/90 transition-all shadow-md font-medium cursor-pointer"
+          className="flex items-center gap-2 bg-primary text-primary-foreground px-5 py-2.5 rounded-full hover:bg-primary/90 transition-all shadow-md font-medium cursor-pointer"
         >
           <Plus size={18} />
           <span>Client Nou</span>
@@ -660,7 +788,7 @@ const ClientsList = () => {
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
             <input 
               type="text" 
-              placeholder="Caută în portofoliu sau introdu CUI nou pentru adăugare instant din ANAF..." 
+              placeholder="Caută în portofoliu sau introdu Nume / CUI pentru căutare pe internet..." 
               value={searchQuery}
               onFocus={() => setIsSearchFocused(true)}
               onChange={(e) => {
@@ -669,14 +797,18 @@ const ClientsList = () => {
                 setIsSearchFocused(true);
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && isCuiPattern && !existingClientWithCui) {
+                if (e.key === 'Enter') {
                   e.preventDefault();
-                  handleTriggerAnafLookup();
+                  if (isCuiPattern && !existingClientWithCui) {
+                    handleTriggerAnafLookup();
+                  } else {
+                    handleManualPublicSearch();
+                  }
                 } else if (e.key === 'Escape') {
                   setIsSearchFocused(false);
                 }
               }}
-              className="w-full pl-11 pr-28 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-primary focus:border-primary dark:text-white shadow-sm text-sm"
+              className="w-full pl-11 pr-32 py-2.5 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 rounded-full focus:ring-primary focus:border-primary dark:text-white shadow-sm text-sm"
             />
 
             {/* Quick Action Button & Clear inside search input */}
@@ -688,6 +820,7 @@ const ClientsList = () => {
                     setSearchQuery('');
                     setAnafLookupResult(null);
                     setAnafLookupError(null);
+                    setPublicSearchResults([]);
                   }}
                   className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
                   title="Șterge căutarea"
@@ -696,40 +829,40 @@ const ClientsList = () => {
                 </button>
               )}
 
-              {isCuiPattern && !existingClientWithCui && (
+              {searchQuery.trim().length >= 2 && (
                 <button
                   type="button"
-                  onClick={handleTriggerAnafLookup}
+                  onClick={handleManualPublicSearch}
                   className="px-2.5 py-1 bg-gray-900 hover:bg-black text-white dark:bg-white dark:text-gray-900 dark:hover:bg-gray-100 text-xs font-semibold rounded-full flex items-center gap-1 shadow-xs transition-colors cursor-pointer"
-                  title="Interoghează ANAF"
+                  title="Caută pe internet în registrul național de firme"
                 >
-                  {anafLookupLoading ? (
+                  {publicSearchLoading ? (
                     <Loader2 size={13} className="animate-spin" />
                   ) : (
-                    <Building2 size={13} />
+                    <Globe size={13} />
                   )}
-                  <span>Caută ANAF</span>
+                  <span>Caută pe Net</span>
                 </button>
               )}
             </div>
 
-            {/* Floating Dropdown Panel for ANAF & Dual Search Results */}
-            {isSearchFocused && (anafLookupLoading || anafLookupResult || anafLookupError || (isCuiPattern && !existingClientWithCui)) && (
+            {/* Floating Dropdown Panel for Dual Search Results (Internet + ANAF) */}
+            {isSearchFocused && searchQuery.trim().length >= 2 && (
               <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-4 animate-in fade-in slide-in-from-top-2">
                 {/* Loading State */}
-                {anafLookupLoading && (
+                {(anafLookupLoading || publicSearchLoading) && (
                   <div className="flex items-center gap-3 py-2 text-sm text-gray-600 dark:text-gray-300">
                     <Loader2 size={18} className="animate-spin text-blue-600" />
                     <div>
-                      <div className="font-medium text-gray-900 dark:text-white">Interogare în timp real în registrul public ANAF...</div>
-                      <div className="text-xs text-gray-400">Verificare identificatori și status TVA pentru CUI {cleanCui}</div>
+                      <div className="font-medium text-gray-900 dark:text-white">Căutare pe internet în registrul național de firme...</div>
+                      <div className="text-xs text-gray-400">Interogare după „{searchQuery}” în ANAF și Registrul Public</div>
                     </div>
                   </div>
                 )}
 
-                {/* Found Company in ANAF */}
+                {/* Found Company in ANAF (Direct CUI Match) */}
                 {!anafLookupLoading && anafLookupResult && (
-                  <div className="space-y-3">
+                  <div className="space-y-3 pb-3 border-b border-gray-100 dark:border-gray-700">
                     <div className="flex items-start justify-between gap-3">
                       <div className="space-y-1">
                         <div className="flex items-center gap-2">
@@ -767,7 +900,7 @@ const ClientsList = () => {
                       </div>
                     </div>
 
-                    <div className="pt-2.5 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                    <div className="pt-2 flex items-center justify-between">
                       <span className="text-xs text-gray-500 dark:text-gray-400">
                         Compania nu există în portofoliul local
                       </span>
@@ -793,33 +926,105 @@ const ClientsList = () => {
                   </div>
                 )}
 
-                {/* Not Found in ANAF / Error */}
-                {!anafLookupLoading && anafLookupError && (
-                  <div className="flex items-center justify-between gap-3 text-xs text-red-600 dark:text-red-400 py-1">
-                    <span>{anafLookupError}</span>
-                    <button
-                      type="button"
-                      onClick={handleTriggerAnafLookup}
-                      className="text-blue-600 hover:text-blue-500 font-semibold underline"
-                    >
-                      Reîncearcă
-                    </button>
+                {/* Public Internet Search Results (By Name or CUI) */}
+                {!publicSearchLoading && publicSearchResults.length > 0 && (
+                  <div className="space-y-2 mt-2">
+                    <div className="flex items-center justify-between pb-1.5 border-b border-gray-100 dark:border-gray-700">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 rounded-full border border-blue-200 dark:border-blue-800">
+                          Internet Open Data
+                        </span>
+                        <span className="text-xs font-semibold text-gray-800 dark:text-gray-200">
+                          Companii identificate online ({publicSearchResults.length})
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">0 credite</span>
+                    </div>
+
+                    <div className="max-h-64 overflow-y-auto space-y-2 pr-1 divide-y divide-gray-100 dark:divide-gray-800">
+                      {publicSearchResults.map((comp) => {
+                        const isAlreadyLocal = clients.some(c => String(c.cui_cnp) === String(comp.cui));
+                        const isImporting = importingCui === comp.cui;
+
+                        return (
+                          <div key={comp.cui} className="pt-2 first:pt-0 flex items-center justify-between gap-3 group">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <h5 className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                                  {comp.name}
+                                </h5>
+                                {isAlreadyLocal && (
+                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200">
+                                    În portofoliu
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-0.5">
+                                <span>CUI: <strong className="text-gray-700 dark:text-gray-300 font-semibold">{comp.cui}</strong></span>
+                                {comp.locality && <span className="truncate">• {comp.locality}{comp.county ? `, ${comp.county}` : ''}</span>}
+                              </div>
+                            </div>
+
+                            <div className="shrink-0">
+                              {isAlreadyLocal ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSearchQuery(comp.cui);
+                                    setIsSearchFocused(false);
+                                  }}
+                                  className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+                                >
+                                  Filtrează
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => handleImportPublicCompany(comp)}
+                                  disabled={isImporting}
+                                  className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white transition-all flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
+                                >
+                                  {isImporting ? (
+                                    <Loader2 size={12} className="animate-spin" />
+                                  ) : (
+                                    <Plus size={12} />
+                                  )}
+                                  <span>{isImporting ? 'Se adaugă...' : 'Adaugă Client'}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
 
-                {/* Prompt to query ANAF if debounce hasn't triggered */}
-                {!anafLookupLoading && !anafLookupResult && !anafLookupError && isCuiPattern && !existingClientWithCui && (
-                  <div className="flex items-center justify-between gap-3 py-1">
-                    <div className="text-xs text-gray-600 dark:text-gray-400">
-                      CUI-ul <strong className="font-medium text-gray-800 dark:text-gray-200">{cleanCui}</strong> nu există în baza locală.
-                    </div>
+                {/* Not Found state when both local and public search return nothing */}
+                {!publicSearchLoading && !anafLookupLoading && filteredClients.length === 0 && publicSearchResults.length === 0 && !anafLookupResult && searchQuery.trim().length >= 3 && (
+                  <div className="py-2 text-center space-y-2">
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      Nicio companie găsită în portofoliu sau pe internet pentru „<strong>{searchQuery}</strong>”.
+                    </p>
                     <button
                       type="button"
-                      onClick={handleTriggerAnafLookup}
-                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 shadow-xs transition-colors"
+                      onClick={() => {
+                        setFormError("");
+                        setIsEditing(false);
+                        setNewClient({
+                          type: 'PJ',
+                          name: isCuiPattern ? '' : searchQuery.trim(),
+                          cui_cnp: isCuiPattern ? cleanCui : '',
+                          representative_cnp: '',
+                          representative_address: ''
+                        });
+                        setIsModalOpen(true);
+                        setIsSearchFocused(false);
+                      }}
+                      className="inline-flex items-center gap-1 px-3.5 py-1.5 rounded-full text-xs font-semibold bg-gray-900 text-white dark:bg-white dark:text-gray-900 cursor-pointer"
                     >
-                      <Building2 size={13} />
-                      <span>Interoghează ANAF</span>
+                      <Plus size={13} />
+                      <span>Completează Manual Formularul</span>
                     </button>
                   </div>
                 )}
@@ -910,11 +1115,250 @@ const ClientsList = () => {
                   </td>
                 </tr>
               ) : paginatedClients.length === 0 ? (
-                <tr>
-                  <td colSpan="8" className="px-6 py-10 text-center text-gray-500">
-                    Nu s-a găsit niciun client. Adaugă unul nou.
-                  </td>
-                </tr>
+                searchQuery.trim().length >= 2 ? (
+                  <>
+                    {(publicSearchLoading || anafLookupLoading) ? (
+                      <tr>
+                        <td colSpan="8" className="px-6 py-12 text-center bg-gray-50/50 dark:bg-gray-800/50">
+                          <div className="flex flex-col items-center justify-center gap-2 max-w-md mx-auto">
+                            <div className="w-8 h-8 border-3 border-gray-200 border-t-primary rounded-full animate-spin"></div>
+                            <span className="font-semibold text-gray-900 dark:text-white text-sm">
+                              Firma nu există în portofoliu. Se caută automat pe internet...
+                            </span>
+                            <span className="text-xs text-gray-500 dark:text-gray-400">
+                              Interogare în timp real în Registrul Național al Companiilor și serverele ANAF pentru „{searchQuery}”
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (publicSearchResults.length > 0 || anafLookupResult) ? (
+                      <>
+                        <tr className="bg-blue-50/80 dark:bg-blue-950/40 border-b border-blue-100 dark:border-blue-900/50">
+                          <td colSpan="8" className="px-6 py-3">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <Globe size={16} className="text-blue-600 dark:text-blue-400" />
+                                <span className="text-xs font-bold uppercase tracking-wider text-blue-900 dark:text-blue-200">
+                                  Companii identificate online pe internet (Registrul Public)
+                                </span>
+                                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300">
+                                  {publicSearchResults.length + (anafLookupResult ? 1 : 0)} găsite
+                                </span>
+                              </div>
+                              <span className="text-xs text-gray-500 dark:text-gray-400">
+                                Apasă pe «Adaugă Client» pentru a importa instant firma cu datele oficiale
+                              </span>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Rând rezultat ANAF direct dacă există */}
+                        {anafLookupResult && (
+                          <tr className="hover:bg-blue-50/30 dark:hover:bg-blue-900/10 border-b border-gray-100 dark:border-gray-700/50 transition-colors bg-white dark:bg-gray-800">
+                            <td className="px-6 py-4">
+                              <input type="checkbox" disabled className="w-4 h-4 rounded border-gray-300 text-primary opacity-40 cursor-not-allowed" />
+                            </td>
+                            <td className="px-4 py-4 font-medium text-gray-400">1</td>
+                            <td className="px-6 py-4">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 flex items-center justify-center font-bold text-xs shrink-0">
+                                  {anafLookupResult.name ? anafLookupResult.name.charAt(0) : 'A'}
+                                </div>
+                                <div>
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-bold text-gray-900 dark:text-white">
+                                      {anafLookupResult.name}
+                                    </span>
+                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                      ANAF Oficial
+                                    </span>
+                                    {anafLookupResult.tva_activ && (
+                                      <span className="text-[10px] font-semibold px-1.5 py-0.5 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/40 dark:text-indigo-300 rounded">
+                                        Plătitor TVA
+                                      </span>
+                                    )}
+                                  </div>
+                                  {anafLookupResult.address && (
+                                    <div className="text-xs text-gray-400 mt-0.5 line-clamp-1">
+                                      {anafLookupResult.address}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="px-6 py-4 font-semibold text-gray-800 dark:text-gray-200">
+                              {cleanCui}
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="flex items-center gap-2">
+                                <Building2 size={16} />
+                                PJ
+                              </span>
+                            </td>
+                            <td className="px-6 py-4">
+                              <span className="text-xs text-gray-400 italic">Evaluare automată la import</span>
+                            </td>
+                            <td className="px-6 py-4 text-xs text-gray-500">
+                              Registru ANAF v9
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <button
+                                type="button"
+                                onClick={() => handleInstantAddFromAnaf(anafLookupResult, cleanCui)}
+                                disabled={addingFromAnaf}
+                                className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-semibold rounded-full shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                              >
+                                {addingFromAnaf ? (
+                                  <>
+                                    <Loader2 size={13} className="animate-spin" />
+                                    <span>Se importă...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus size={13} />
+                                    <span>Adaugă Client</span>
+                                  </>
+                                )}
+                              </button>
+                            </td>
+                          </tr>
+                        )}
+
+                        {/* Rânduri companii din Registrul Public */}
+                        {publicSearchResults.map((comp, idx) => {
+                          const isAlreadyLocal = clients.some(c => String(c.cui_cnp) === String(comp.cui));
+                          const isImporting = importingCui === comp.cui;
+                          const rowNumber = (anafLookupResult ? 2 : 1) + idx;
+
+                          return (
+                            <tr key={comp.cui} className="hover:bg-blue-50/20 dark:hover:bg-blue-900/10 border-b border-gray-100 dark:border-gray-700/50 transition-colors bg-white dark:bg-gray-800">
+                              <td className="px-6 py-4">
+                                <input type="checkbox" disabled className="w-4 h-4 rounded border-gray-300 text-primary opacity-40 cursor-not-allowed" />
+                              </td>
+                              <td className="px-4 py-4 font-medium text-gray-400">{rowNumber}</td>
+                              <td className="px-6 py-4">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-8 h-8 rounded-full bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 flex items-center justify-center font-bold text-xs shrink-0 border border-emerald-200 dark:border-emerald-800">
+                                    {comp.name ? comp.name.charAt(0) : 'C'}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="font-bold text-gray-900 dark:text-white">
+                                        {comp.name}
+                                      </span>
+                                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                        Registru Național
+                                      </span>
+                                      {isAlreadyLocal && (
+                                        <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-800">
+                                          Există în Portofoliu
+                                        </span>
+                                      )}
+                                    </div>
+                                    {(comp.locality || comp.county) && (
+                                      <div className="text-xs text-gray-400 mt-0.5">
+                                        {comp.locality ? `${comp.locality}, ` : ''}{comp.county}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 font-semibold text-gray-800 dark:text-gray-200">
+                                {comp.cui}
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="flex items-center gap-2">
+                                  <Building2 size={16} />
+                                  PJ
+                                </span>
+                              </td>
+                              <td className="px-6 py-4">
+                                <span className="text-xs text-gray-400 italic">Evaluare automată la import</span>
+                              </td>
+                              <td className="px-6 py-4 text-xs text-gray-500">
+                                {comp.status || 'Înregistrată'}
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                {isAlreadyLocal ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSearchQuery(comp.cui);
+                                      setIsSearchFocused(false);
+                                    }}
+                                    className="px-3.5 py-1.5 text-xs font-semibold rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+                                  >
+                                    Filtrează
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleImportPublicCompany(comp)}
+                                    disabled={isImporting}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white text-xs font-semibold rounded-full shadow-sm transition-all cursor-pointer disabled:opacity-50"
+                                  >
+                                    {isImporting ? (
+                                      <>
+                                        <Loader2 size={13} className="animate-spin" />
+                                        <span>Se importă...</span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Plus size={13} />
+                                        <span>Adaugă Client</span>
+                                      </>
+                                    )}
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <tr>
+                        <td colSpan="8" className="px-6 py-12 text-center text-gray-500">
+                          <div className="flex flex-col items-center justify-center gap-3 max-w-md mx-auto">
+                            <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-full text-gray-400">
+                              <Search size={24} />
+                            </div>
+                            <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                              Nicio companie găsită în portofoliu sau pe internet pentru „{searchQuery}”
+                            </div>
+                            <p className="text-xs text-gray-400">
+                              Poți adăuga manual acest client completând datele lui:
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFormError("");
+                                setIsEditing(false);
+                                setNewClient({
+                                  type: 'PJ',
+                                  name: isCuiPattern ? '' : searchQuery.trim(),
+                                  cui_cnp: isCuiPattern ? cleanCui : '',
+                                  representative_cnp: '',
+                                  representative_address: ''
+                                });
+                                setIsModalOpen(true);
+                              }}
+                              className="mt-1 inline-flex items-center gap-2 px-5 py-2.5 rounded-full text-xs font-semibold bg-primary hover:bg-primary/90 text-white shadow-sm transition-all cursor-pointer"
+                            >
+                              <Plus size={15} />
+                              <span>Adaugă Manual acest Client</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </>
+                ) : (
+                  <tr>
+                    <td colSpan="8" className="px-6 py-10 text-center text-gray-500">
+                      Nu s-a găsit niciun client. Adaugă unul nou.
+                    </td>
+                  </tr>
+                )
               ) : (
                 paginatedClients.map((client, idx) => (
                   <tr 
@@ -1093,13 +1537,18 @@ const ClientsList = () => {
 
       </div>
 
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl max-w-xl w-full border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh]">
-            <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center shrink-0">
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">{isEditing ? 'Editare Client' : 'Adaugă Client Nou'}</h3>
-              <button onClick={() => { setIsModalOpen(false); setIsEditing(false); setNewClient({ type: 'PJ', name: '', cui_cnp: '' }); }} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
-                <X size={18} />
+      {isModalOpen && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-950/70 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl max-w-xl w-full border border-gray-200 dark:border-gray-700 flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex justify-between items-center shrink-0">
+              <h3 className="text-lg font-bold text-gray-900 dark:text-white">{isEditing ? 'Editare Client' : 'Adaugă Client Nou'}</h3>
+              <button 
+                type="button"
+                onClick={() => { setIsModalOpen(false); setIsEditing(false); setNewClient({ type: 'PJ', name: '', cui_cnp: '' }); }} 
+                className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                title="Închide"
+              >
+                <X size={16} />
               </button>
             </div>
             
@@ -1461,31 +1910,62 @@ const ClientsList = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
       {/* Custom Delete Confirmation Modal */}
-      {deleteConfirm.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200">
-            <div className="flex flex-col items-center text-center space-y-4">
-              <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700/50 rounded-full flex items-center justify-center text-gray-900 dark:text-gray-200">
-                <Trash size={32} strokeWidth={1.5} />
+      {deleteConfirm.isOpen && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-950/70 backdrop-blur-md animate-in fade-in duration-200">
+          <div 
+            className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-5 border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-start justify-between gap-4 shrink-0">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-900/60 flex items-center justify-center text-red-600 dark:text-red-400 shrink-0 shadow-xs">
+                  <Trash size={20} strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white truncate">
+                    Confirmare Ștergere
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Acțiune permanentă și ireversibilă
+                  </p>
+                </div>
               </div>
-              <h3 className="text-xl font-bold text-gray-900 dark:text-white">Confirmare Ștergere</h3>
-              <p className="text-sm text-gray-500 dark:text-gray-400">
+
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm({ isOpen: false, id: null, isBulk: false })}
+                className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                title="Închide"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6">
+              <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
                 {deleteConfirm.isBulk 
-                  ? "Ești sigur că vrei să ștergi clienții selectați? Această acțiune este ireversibilă." 
-                  : "Ești sigur că vrei să ștergi acest client? Această acțiune este ireversibilă."}
+                  ? `Ești sigur că dorești să ștergi cei ${selectedIds.length} clienți selectați? Datele asociate vor fi eliminate definitiv din baza de date.` 
+                  : "Ești sigur că dorești să ștergi acest client? Această acțiune este ireversibilă și va elimina toate asocierile din sistem."}
               </p>
             </div>
-            <div className="flex items-center gap-3 mt-8">
-              <button 
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-center justify-end gap-3 shrink-0">
+              <button
+                type="button"
                 onClick={() => setDeleteConfirm({ isOpen: false, id: null, isBulk: false })}
-                className="flex-1 py-2.5 px-4 text-sm font-medium text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600 transition-colors"
+                className="px-5 py-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-full transition-colors cursor-pointer"
               >
                 Anulează
               </button>
               <button 
+                type="button"
                 onClick={async () => {
                   try {
                     if (deleteConfirm.isBulk) {
@@ -1504,60 +1984,88 @@ const ClientsList = () => {
                     setDeleteConfirm({ isOpen: false, id: null, isBulk: false });
                   }
                 }}
-                className="flex-1 py-2.5 px-4 text-sm font-medium text-white bg-gray-900 rounded-xl hover:bg-gray-800 dark:bg-gray-600 dark:hover:bg-gray-500 transition-colors shadow-sm"
+                className="px-5 py-2.5 text-xs font-bold text-white bg-red-600 hover:bg-red-700 active:scale-95 rounded-full transition-all shadow-sm cursor-pointer"
               >
-                Da, Șterge
+                Da, Șterge definitiv
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal Adăugare în Black List */}
-      {blacklistModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200 border border-gray-100 dark:border-gray-700">
-            <div className="flex items-start gap-4 mb-4">
-              <div className="w-12 h-12 bg-rose-100 dark:bg-rose-900/40 rounded-2xl flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
-                <ShieldAlert size={26} strokeWidth={1.8} />
+      {blacklistModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-950/70 backdrop-blur-md animate-in fade-in duration-200">
+          <div 
+            className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-5 border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-start justify-between gap-4 shrink-0">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0 shadow-xs">
+                  <ShieldAlert size={22} strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-bold text-gray-900 dark:text-white truncate">
+                      Adăugare în Black List
+                    </h3>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-950/60 dark:text-rose-300 dark:border-rose-800/60">
+                      Risc Critic
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                    Client: <strong className="text-gray-800 dark:text-gray-200">{blacklistModal.client?.name}</strong> {blacklistModal.client?.cui_cnp ? `(${blacklistModal.client?.cui_cnp})` : ''}
+                  </p>
+                </div>
               </div>
-              <div className="flex-1">
-                <h3 className="text-lg font-bold text-gray-900 dark:text-white">Adăugare în Black List</h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                  Clientul <span className="font-semibold text-gray-900 dark:text-white">{blacklistModal.client?.name}</span> va fi marcat ca entitate cu risc critic și blocat pentru operațiuni automate.
-                </p>
-              </div>
+
+              <button
+                type="button"
+                onClick={() => setBlacklistModal({ isOpen: false, client: null, reason: '', severity: 'Critic', loading: false })}
+                className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                title="Închide fereastra"
+              >
+                <X size={16} />
+              </button>
             </div>
 
-            <div className="space-y-4 my-2">
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
                   Nivel Severitate
                 </label>
                 <div className="grid grid-cols-3 gap-2">
-                  {['Critic', 'Înalt', 'Mediu'].map((sev) => (
-                    <button
-                      key={sev}
-                      type="button"
-                      onClick={() => setBlacklistModal(prev => ({ ...prev, severity: sev }))}
-                      className={`py-2 px-3 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                        blacklistModal.severity === sev
-                          ? sev === 'Critic' 
-                            ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                            : sev === 'Înalt'
-                            ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
-                            : 'bg-yellow-500 text-white border-yellow-500 shadow-sm'
-                          : 'bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      {sev}
-                    </button>
-                  ))}
+                  {[
+                    { id: 'Critic', label: 'Critic', color: 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600' },
+                    { id: 'Înalt', label: 'Înalt', color: 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600' },
+                    { id: 'Mediu', label: 'Mediu', color: 'bg-yellow-500 hover:bg-yellow-600 text-white border-yellow-500' }
+                  ].map((sev) => {
+                    const isSelected = blacklistModal.severity === sev.id;
+                    return (
+                      <button
+                        key={sev.id}
+                        type="button"
+                        onClick={() => setBlacklistModal(prev => ({ ...prev, severity: sev.id }))}
+                        className={`py-2 px-4 text-xs font-semibold rounded-full border transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs ${
+                          isSelected
+                            ? `${sev.color} shadow-sm font-bold scale-[1.02]`
+                            : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/60'
+                        }`}
+                      >
+                        {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                        <span>{sev.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
+                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
                   Motiv Blocare / Notă Risc
                 </label>
                 <textarea
@@ -1565,17 +2073,25 @@ const ClientsList = () => {
                   value={blacklistModal.reason}
                   onChange={(e) => setBlacklistModal(prev => ({ ...prev, reason: e.target.value }))}
                   placeholder="Ex: Datorii mari neachitate, litigii comerciale, risc de insolvență..."
-                  className="w-full px-3.5 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all resize-none"
+                  className="w-full px-4 py-3 bg-gray-50/80 dark:bg-gray-900/80 border border-gray-200 dark:border-gray-700 rounded-2xl text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all resize-none"
                 />
+              </div>
+
+              <div className="p-3 bg-rose-50/70 dark:bg-rose-950/30 border border-rose-200/60 dark:border-rose-900/40 rounded-2xl text-[11px] text-rose-800 dark:text-rose-300 flex items-start gap-2.5">
+                <AlertTriangle size={15} className="shrink-0 mt-0.5 text-rose-600 dark:text-rose-400" />
+                <span>
+                  Clientul va fi blocat automat pentru emitere de oferte noi, contracte de leasing și aprobări automate.
+                </span>
               </div>
             </div>
 
-            <div className="flex items-center gap-3 mt-6 pt-3 border-t border-gray-100 dark:border-gray-700">
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-center justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setBlacklistModal({ isOpen: false, client: null, reason: '', severity: 'Critic', loading: false })}
                 disabled={blacklistModal.loading}
-                className="flex-1 py-2.5 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700/70 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                className="px-5 py-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-full transition-colors cursor-pointer"
               >
                 Anulează
               </button>
@@ -1583,48 +2099,80 @@ const ClientsList = () => {
                 type="button"
                 onClick={confirmAddToBlacklist}
                 disabled={blacklistModal.loading}
-                className="flex-1 py-2.5 px-4 text-sm font-semibold text-white bg-rose-600 rounded-full hover:bg-rose-700 active:bg-rose-800 transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="px-5 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-95 rounded-full transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {blacklistModal.loading ? (
                   <>
-                    <Loader2 size={16} className="animate-spin" />
+                    <Loader2 size={15} className="animate-spin" />
                     <span>Se salvează...</span>
                   </>
                 ) : (
                   <>
-                    <ShieldAlert size={16} />
+                    <ShieldAlert size={15} />
                     <span>Blochează în Black List</span>
                   </>
                 )}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal Scoate din Black List */}
-      {unblacklistModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-sm overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200 border border-gray-100 dark:border-gray-700 text-center">
-            <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-900/40 rounded-full flex items-center justify-center text-emerald-600 dark:text-emerald-400 mx-auto mb-3">
-              <ShieldBan size={28} strokeWidth={1.8} />
-            </div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Deblocare Client</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-              Ești sigur că vrei să scoți clientul <span className="font-semibold text-gray-900 dark:text-white">{unblacklistModal.client?.name}</span> din Black List?
-            </p>
-            {unblacklistModal.client?.blacklist_reason && (
-              <div className="mt-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-2xl text-xs text-gray-600 dark:text-gray-300 text-left border border-gray-200 dark:border-gray-600">
-                <span className="font-semibold block text-gray-700 dark:text-gray-200 mb-0.5">Motiv anterior:</span>
-                {unblacklistModal.client.blacklist_reason}
+      {unblacklistModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-950/70 backdrop-blur-md animate-in fade-in duration-200">
+          <div 
+            className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="p-5 border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-start justify-between gap-4 shrink-0">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 shadow-xs">
+                  <ShieldBan size={22} strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white truncate">
+                    Deblocare Client din Black List
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                    Client: <strong className="text-gray-800 dark:text-gray-200">{unblacklistModal.client?.name}</strong>
+                  </p>
+                </div>
               </div>
-            )}
-            <div className="flex items-center gap-3 mt-6">
+
+              <button
+                type="button"
+                onClick={() => setUnblacklistModal({ isOpen: false, client: null, loading: false })}
+                className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                title="Închide"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-4">
+              <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                Ești sigur că dorești să elimini clientul <strong className="text-gray-900 dark:text-white">{unblacklistModal.client?.name}</strong> din Black List? Entitatea va redeveni eligibilă pentru fluxurile operaționale.
+              </p>
+
+              {unblacklistModal.client?.blacklist_reason && (
+                <div className="p-3.5 bg-gray-50 dark:bg-gray-900/60 rounded-2xl text-xs text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700">
+                  <span className="font-semibold block text-gray-700 dark:text-gray-200 mb-1">Motiv blocare anterior:</span>
+                  <p className="text-gray-500 dark:text-gray-400 italic">"{unblacklistModal.client.blacklist_reason}"</p>
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-center justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setUnblacklistModal({ isOpen: false, client: null, loading: false })}
                 disabled={unblacklistModal.loading}
-                className="flex-1 py-2.5 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700/70 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                className="px-5 py-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-full transition-colors cursor-pointer"
               >
                 Anulează
               </button>
@@ -1632,25 +2180,26 @@ const ClientsList = () => {
                 type="button"
                 onClick={confirmRemoveFromBlacklist}
                 disabled={unblacklistModal.loading}
-                className="flex-1 py-2.5 px-4 text-sm font-semibold text-white bg-emerald-600 rounded-full hover:bg-emerald-700 transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-full transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {unblacklistModal.loading ? (
                   <>
-                    <Loader2 size={16} className="animate-spin" />
+                    <Loader2 size={15} className="animate-spin" />
                     <span>Se deblochează...</span>
                   </>
                 ) : (
-                  <span>Deblochează</span>
+                  <span>Confirmă Deblocarea</span>
                 )}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Fereastra cu Analiza AI (Interactive Analysis Window) Modal */}
-      {analysisModal.isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
+      {analysisModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-950/70 backdrop-blur-md animate-in fade-in duration-200">
           <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-gray-100 dark:border-gray-700">
             {/* Modal Header */}
             <div className="p-6 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50 shrink-0">
@@ -2087,7 +2636,8 @@ const ClientsList = () => {
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Toast Notification */}

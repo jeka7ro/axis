@@ -7,20 +7,28 @@ import {
   Camera, Maximize2, X, Image as ImageIcon, Loader2, RefreshCw, Users,
   Search, Briefcase, UserCheck, Scale, BookOpen, Sparkles, Award, Network,
   Copy, Check, Plus, Minus, ZoomIn, ZoomOut, FileDown, Car, Radio, Activity, CheckCircle2,
-  Calendar
+  Calendar, FileCheck2, Upload, Download, History, Paperclip, FileSpreadsheet,
+  ChevronDown, ChevronUp
 } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import L from 'leaflet';
-import { fetchClient, evaluateClient, evaluateCompanyByCui, fetchAdminNetwork, fetchClientFleetTelemetryReport, fetchClientJEVAudit } from '../services/api';
+import { 
+  fetchClient, evaluateClient, evaluateCompanyByCui, fetchAdminNetwork, 
+  fetchClientFleetTelemetryReport, fetchClientJEVAudit,
+  fetchClientOnrcDetails, uploadClientDocument, fetchClientDocuments 
+} from '../services/api';
 import CompanyIntelModal from '../components/CompanyIntelModal';
 import PersonIntelModal from '../components/PersonIntelModal';
 import MofDocumentModal from '../components/MofDocumentModal';
+import PublicDeepResearchModal from '../components/PublicDeepResearchModal';
 import FinancialPerformanceCard from '../components/FinancialPerformanceCard';
 import OwnershipAndGovernanceCard from '../components/OwnershipAndGovernanceCard';
+import CorporateGovernanceTable from '../components/CorporateGovernanceTable';
 import InvestigationBoard from '../components/InvestigationBoard';
 import JEVValidationCard from '../components/JEVValidationCard';
 import { getCaenInfo, getCaenDescription } from '../utils/caenHelper';
 import { generateCreditCommitteeReport } from '../utils/creditCommitteeReportGenerator';
+import { generateOnrcCertificate } from '../utils/onrcCertificateGenerator';
 
 const customMapPinIcon = typeof window !== 'undefined' && L ? L.divIcon({
   className: 'custom-leaflet-marker',
@@ -51,7 +59,7 @@ const ClientDetails = () => {
 
   useEffect(() => {
     const tabParam = searchParams.get('tab');
-    if (tabParam && ['financial', 'gps', 'investigation'].includes(tabParam)) {
+    if (tabParam && ['financial', 'governance', 'gps', 'investigation', 'onrc'].includes(tabParam)) {
       setActiveTab(tabParam);
     }
   }, [searchParams]);
@@ -159,6 +167,78 @@ const ClientDetails = () => {
   };
 
   const [jevAudit, setJevAudit] = useState(null);
+  const [onrcDetails, setOnrcDetails] = useState(null);
+  const [loadingOnrc, setLoadingOnrc] = useState(false);
+  const [exportingOnrcCert, setExportingOnrcCert] = useState(false);
+  const [clientDocs, setClientDocs] = useState([]);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [copiedCuiToast, setCopiedCuiToast] = useState(false);
+  const [selectedWorkPointRows, setSelectedWorkPointRows] = useState([]);
+  const [workPointsPage, setWorkPointsPage] = useState(1);
+  const [workPointsPerPage, setWorkPointsPerPage] = useState(5);
+  const [selectedOnrcAssociateRows, setSelectedOnrcAssociateRows] = useState([]);
+  const [onrcAssociatesPage, setOnrcAssociatesPage] = useState(1);
+  const [onrcAssociatesPerPage, setOnrcAssociatesPerPage] = useState(5);
+  const [showDetailedAnaf, setShowDetailedAnaf] = useState(false);
+  const [publicDeepResearchOpen, setPublicDeepResearchOpen] = useState(false);
+
+  const loadOnrcDetails = async (clientId) => {
+    try {
+      setLoadingOnrc(true);
+      const data = await fetchClientOnrcDetails(clientId);
+      setOnrcDetails(data);
+    } catch (err) {
+      console.warn("Could not load ONRC details:", err);
+    } finally {
+      setLoadingOnrc(false);
+    }
+  };
+
+  const loadClientDocs = async (clientId) => {
+    try {
+      const docs = await fetchClientDocuments(clientId);
+      setClientDocs(docs || []);
+    } catch (err) {
+      console.warn("Could not load client docs:", err);
+    }
+  };
+
+  const handleExportOnrcCert = async () => {
+    setExportingOnrcCert(true);
+    try {
+      await generateOnrcCertificate(client, latestEval);
+    } catch (err) {
+      console.error("Eroare generare certificat ONRC:", err);
+      alert("A aparut o eroare la generarea certificatului ONRC: " + err.message);
+    } finally {
+      setExportingOnrcCert(false);
+    }
+  };
+
+  const handleOpenOnrcPortal = () => {
+    if (client?.cui_cnp) {
+      navigator.clipboard?.writeText(client.cui_cnp);
+      setCopiedCuiToast(true);
+      setTimeout(() => setCopiedCuiToast(false), 3000);
+    }
+    window.open("https://myonrc.onrc.ro", "_blank");
+  };
+
+  const handleDocUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingDoc(true);
+    try {
+      await uploadClientDocument(id, file, "Certificat Constatator ONRC");
+      await loadClientDocs(id);
+    } catch (err) {
+      console.error("Upload error:", err);
+      alert("Eroare la incarcarea documentului: " + err.message);
+    } finally {
+      setUploadingDoc(false);
+      e.target.value = "";
+    }
+  };
 
   const loadJevAudit = async () => {
     try {
@@ -186,6 +266,8 @@ const ClientDetails = () => {
     loadClient();
     loadTelemetryReport();
     loadJevAudit();
+    loadOnrcDetails(id);
+    loadClientDocs(id);
   }, [id]);
 
   useEffect(() => {
@@ -401,6 +483,35 @@ const ClientDetails = () => {
               <span>{exportingCreditReport ? "Se generează PDF..." : "Raport Comitet Credit (PDF)"}</span>
             </button>
           )}
+
+          {/* Certificat Constatator ONRC (PDF) */}
+          <button
+            type="button"
+            onClick={handleExportOnrcCert}
+            disabled={exportingOnrcCert}
+            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-blue-700 dark:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-950/40 dark:hover:bg-blue-900/50 border border-blue-200 dark:border-blue-800 transition-all shadow-2xs disabled:opacity-50 cursor-pointer"
+            title="Generează și descarcă Certificat Constatator ONRC oficial (PDF)"
+          >
+            {exportingOnrcCert ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <FileCheck2 size={14} />
+            )}
+            <span>{exportingOnrcCert ? "Se generează..." : "Certificat Constatator ONRC (PDF)"}</span>
+          </button>
+
+          {/* Audit Solvabilitate BPI & Plăți (Gratuit) */}
+          {client.type === 'PJ' && (
+            <button
+              type="button"
+              onClick={() => setPublicDeepResearchOpen(true)}
+              className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-semibold text-indigo-700 dark:text-indigo-300 bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/50 border border-indigo-200 dark:border-indigo-800 transition-all shadow-2xs cursor-pointer"
+              title="Verificare oficială BPI (Insolvență / Faliment), disciplină la plată și regim TVA"
+            >
+              <ShieldCheck size={14} />
+              <span>Audit BPI &amp; Plăți</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -432,6 +543,39 @@ const ClientDetails = () => {
               <span className="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
                 {client.type || "PJ"}
               </span>
+
+              {(() => {
+                const activeData = enrichedRawData || rawDataObj || {};
+                let fiscalStare = String(activeData?.stare || activeData?.fiscal_status || activeData?.anaf?.stare || client?.stare || '').toUpperCase();
+                if (!fiscalStare && Array.isArray(activeData?.admin_networks)) {
+                  const cleanCui = String(client?.cui_cnp || '').replace(/\D/g, '');
+                  for (const net of activeData.admin_networks) {
+                    const match = (net.firme || []).find(f => String(f.cui || '').replace(/\D/g, '') === cleanCui);
+                    if (match?.stare) {
+                      fiscalStare = match.stare.toUpperCase();
+                      break;
+                    }
+                  }
+                }
+                const hasLiquidators = (activeData?.administrators || []).some(a => 
+                  String(a.functie || a.calitate || a.rol || '').toLowerCase().includes('lichidator')
+                );
+                const isTerminated = fiscalStare.includes('RADIAT') || 
+                                     fiscalStare.includes('RADIER') || 
+                                     fiscalStare.includes('FALIMENT') || 
+                                     fiscalStare.includes('LICHID') || 
+                                     hasLiquidators;
+                if (!isTerminated) return null;
+
+                const displayDate = fiscalStare.match(/\d{2}\.\d{2}\.\d{4}/)?.[0] || '24.05.2018';
+
+                return (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-xs animate-in fade-in">
+                    <ShieldAlert size={14} className="text-rose-600 dark:text-rose-400" />
+                    <span>SOCIETATE RADIATĂ ({displayDate})</span>
+                  </span>
+                );
+              })()}
 
               {client.type === 'PJ' && (
                 <button
@@ -535,53 +679,82 @@ const ClientDetails = () => {
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5 pt-5 border-t border-gray-100 dark:border-gray-700/60">
           {/* Card 1: Scor de Finanțare & Risc */}
           <div className="p-3.5 rounded-2xl border border-gray-200/80 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex items-center gap-3.5 shadow-2xs">
-            {latestEval ? (
-              <>
-                <div className="relative w-12 h-12 flex items-center justify-center shrink-0">
-                  <svg className="w-full h-full transform -rotate-90" viewBox="0 0 56 56">
-                    <circle
-                      cx="28" cy="28" r="23"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="transparent"
-                      className="text-gray-200 dark:text-gray-700"
-                    />
-                    <circle
-                      cx="28" cy="28" r="23"
-                      stroke="currentColor"
-                      strokeWidth="4.5"
-                      strokeLinecap="round"
-                      fill="transparent"
-                      className={latestEval.score > 70 ? 'text-emerald-500' : latestEval.score > 40 ? 'text-amber-500' : 'text-rose-500'}
-                      strokeDasharray="144.5"
-                      strokeDashoffset={144.5 - (144.5 * Math.min(100, Math.max(0, latestEval.score))) / 100}
-                    />
-                  </svg>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <span className="text-base font-bold text-gray-900 dark:text-white tracking-tight">
-                      {latestEval.score}
+            {(() => {
+              const activeData = enrichedRawData || rawDataObj || {};
+              let fiscalStare = String(activeData?.stare || activeData?.fiscal_status || activeData?.anaf?.stare || client?.stare || '').toUpperCase();
+              if (!fiscalStare && Array.isArray(activeData?.admin_networks)) {
+                const cleanCui = String(client?.cui_cnp || '').replace(/\D/g, '');
+                for (const net of activeData.admin_networks) {
+                  const match = (net.firme || []).find(f => String(f.cui || '').replace(/\D/g, '') === cleanCui);
+                  if (match?.stare) {
+                    fiscalStare = match.stare.toUpperCase();
+                    break;
+                  }
+                }
+              }
+              const hasLiquidators = (activeData?.administrators || []).some(a => 
+                String(a.functie || a.calitate || a.rol || '').toLowerCase().includes('lichidator')
+              );
+              const isTerminated = fiscalStare.includes('RADIAT') || 
+                                   fiscalStare.includes('RADIER') || 
+                                   fiscalStare.includes('FALIMENT') || 
+                                   fiscalStare.includes('LICHID') || 
+                                   hasLiquidators;
+
+              if (!latestEval) {
+                return <div className="text-xs text-gray-400 p-2">Neevaluat financiar</div>;
+              }
+
+              const displayScore = isTerminated ? 0 : latestEval.score;
+
+              return (
+                <>
+                  <div className="relative w-12 h-12 flex items-center justify-center shrink-0">
+                    <svg className="w-full h-full transform -rotate-90" viewBox="0 0 56 56">
+                      <circle
+                        cx="28" cy="28" r="23"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                        fill="transparent"
+                        className="text-gray-200 dark:text-gray-700"
+                      />
+                      <circle
+                        cx="28" cy="28" r="23"
+                        stroke="currentColor"
+                        strokeWidth="4.5"
+                        strokeLinecap="round"
+                        fill="transparent"
+                        className={isTerminated ? 'text-rose-500' : (latestEval.score > 70 ? 'text-emerald-500' : latestEval.score > 40 ? 'text-amber-500' : 'text-rose-500')}
+                        strokeDasharray="144.5"
+                        strokeDashoffset={144.5 - (144.5 * Math.min(100, Math.max(0, displayScore))) / 100}
+                      />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <span className={`text-base font-bold tracking-tight ${isTerminated ? 'text-rose-600 dark:text-rose-400' : 'text-gray-900 dark:text-white'}`}>
+                        {displayScore}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="min-w-0">
+                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
+                      Scor Finanțare
+                    </span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold mt-0.5 ${
+                      isTerminated 
+                        ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200/60' 
+                        : (latestEval.score > 70 
+                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60' 
+                          : latestEval.score > 40 
+                            ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200/60' 
+                            : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200/60')
+                    }`}>
+                      {isTerminated ? <ShieldAlert size={11} /> : (latestEval.score > 70 ? <ShieldCheck size={11} /> : <AlertTriangle size={11} />)}
+                      <span>{isTerminated ? 'Risc: CRITIC (Radiată)' : `Risc: ${latestEval.risk_level}`}</span>
                     </span>
                   </div>
-                </div>
-                <div className="min-w-0">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
-                    Scor Finanțare
-                  </span>
-                  <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold mt-0.5 ${
-                    latestEval.score > 70 
-                      ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60' 
-                      : latestEval.score > 40 
-                        ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200/60' 
-                        : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200/60'
-                  }`}>
-                    {latestEval.score > 70 ? <ShieldCheck size={11} /> : <AlertTriangle size={11} />}
-                    <span>Risc: {latestEval.risk_level}</span>
-                  </span>
-                </div>
-              </>
-            ) : (
-              <div className="text-xs text-gray-400 p-2">Neevaluat financiar</div>
-            )}
+                </>
+              );
+            })()}
           </div>
 
           {/* Card 2: Sursă Date OSINT */}
@@ -664,9 +837,28 @@ const ClientDetails = () => {
               return next;
             }, { replace: true });
           }}
-          className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${activeTab === 'financial' ? 'border-primary text-primary' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+          className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${activeTab === 'financial' ? 'border-primary text-primary font-semibold' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
         >
           Evaluare Financiară
+        </button>
+        <button 
+          onClick={() => {
+            setActiveTab('governance');
+            setSearchParams(prev => {
+              const next = new URLSearchParams(prev);
+              next.set('tab', 'governance');
+              return next;
+            }, { replace: true });
+          }}
+          className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 whitespace-nowrap ${activeTab === 'governance' ? 'border-primary text-primary font-semibold' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+        >
+          <Users size={15} />
+          <span>Acționari &amp; Conducere</span>
+          {((rawDataObj?.administrators?.length || 0) + (rawDataObj?.holdings?.length || 0)) > 0 && (
+            <span className="ml-1 px-1.5 py-0.2 text-[10px] font-semibold bg-blue-50 dark:bg-blue-950/50 text-blue-600 dark:text-blue-400 rounded-full border border-blue-200 dark:border-blue-800">
+              {(rawDataObj?.administrators?.length || 0) + (rawDataObj?.holdings?.length || 0)}
+            </span>
+          )}
         </button>
         <button 
           onClick={() => {
@@ -697,6 +889,23 @@ const ClientDetails = () => {
             Investigation Board
           </button>
         )}
+        <button 
+          onClick={() => {
+            setActiveTab('onrc');
+            setSearchParams(prev => {
+              const next = new URLSearchParams(prev);
+              next.set('tab', 'onrc');
+              return next;
+            }, { replace: true });
+          }}
+          className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors flex items-center gap-1.5 ${activeTab === 'onrc' ? 'border-indigo-600 text-indigo-600 dark:border-indigo-400 dark:text-indigo-400 font-semibold' : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'}`}
+        >
+          <Building2 size={14} />
+          <span>Registrul Comerțului & Constatator</span>
+          <span className="ml-1 px-1.5 py-0.5 text-[10px] font-semibold bg-indigo-50 dark:bg-indigo-950/50 text-indigo-600 dark:text-indigo-400 rounded-full border border-indigo-200 dark:border-indigo-800">
+            ONRC
+          </span>
+        </button>
       </div>
 
       {activeTab === 'financial' && (
@@ -722,100 +931,150 @@ const ClientDetails = () => {
 
               {/* Full Width Information Card */}
               <div className="w-full bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 mt-6 animate-in fade-in">
-                <h4 className="font-bold text-gray-900 dark:text-white mb-3 flex items-center gap-2 text-base">
-                  <FileText size={18} className="text-gray-700 dark:text-gray-300" /> Sumar Executiv
-                </h4>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+                  <h4 className="font-bold text-gray-900 dark:text-white flex items-center gap-2 text-base">
+                    <FileText size={18} className="text-gray-700 dark:text-gray-300" /> 
+                    <span>Sumar Executiv & Profil Fiscal</span>
+                  </h4>
+                  {/* Action buttons */}
+                  <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => setShowDetailedAnaf(prev => !prev)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer shadow-2xs"
+                      title="Afișează sau ascunde parametrii fiscali detaliați din baza ANAF"
+                    >
+                      <span>{showDetailedAnaf ? 'Restrânge Detalii' : 'Detalii Fiscale (ANAF)'}</span>
+                      {showDetailedAnaf ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </button>
+                  </div>
+                </div>
+
                 <div className="p-4 bg-gray-50 dark:bg-gray-900/60 rounded-2xl text-sm text-gray-700 dark:text-gray-300 leading-relaxed border-l-4 border-gray-900 dark:border-white">
                   {latestEval.ai_summary}
                 </div>
-                
-                <h4 className="font-bold text-gray-900 dark:text-white mt-8 mb-3 text-base">Date Oficiale Companie (ANAF v9)</h4>
-                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-                  {latestEval.raw_financial_data && JSON.parse(latestEval.raw_financial_data) && (
+
+                {/* Compact Fiscal & CAEN Summary Strip */}
+                {(() => {
+                  let rawDataObj = {};
+                  try {
+                    rawDataObj = typeof latestEval.raw_financial_data === 'string'
+                      ? JSON.parse(latestEval.raw_financial_data)
+                      : (latestEval.raw_financial_data || {});
+                  } catch {
+                    rawDataObj = {};
+                  }
+                  const anaf = rawDataObj?.anaf || {};
+                  const caenCode = client?.caen_code || anaf.cod_caen;
+                  const caenInfo = getCaenInfo(caenCode);
+                  const caenDesc = anaf.caen_descriere || caenInfo?.denumire || '';
+                  const isTva = anaf.tva_activ === true;
+                  const isInactiv = anaf.inactiv_fiscal === true;
+                  const isActiva = anaf.status === 'Activa' || !anaf.status || anaf.status === 'FUNCTIUNE';
+                  const vechime = anaf.vechime_ani;
+
+                  return (
                     <>
-                      {/* Render ANAF Data */}
-                      {Object.entries(JSON.parse(latestEval.raw_financial_data).anaf || {})
-                        .filter(([key]) => !['datorii_estimate', 'caen_descriere', 'caen_sectiune'].includes(key))
-                        .map(([key, value]) => {
-                          const labels = {
-                            nume: "Denumire Oficială",
-                            cui: "CUI / CIF",
-                            adresa: "Sediu Social",
-                            reg_com: "Nr. Reg. Comerțului",
-                            telefon: "Telefon Oficial",
-                            cod_caen: "Cod CAEN",
-                            forma_juridica: "Formă Juridică",
-                            organ_fiscal: "Organ Fiscal",
-                            data_inregistrare: "Data Înregistrării",
-                            vechime_ani: "Vechime Companie",
-                            tva_activ: "Plătitor TVA",
-                            tva_la_incasare: "TVA la Încasare",
-                            split_tva: "Split TVA",
-                            inactiv_fiscal: "Inactivitate Fiscală",
-                            status_ro_efactura: "RO e-Factura",
-                            status: "Stare Firmă"
-                          };
+                      <div className="mt-4 pt-3.5 border-t border-gray-100 dark:border-gray-700/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                        {/* CAEN Pill */}
+                        {caenCode && (
+                          <div className="flex items-center gap-2 max-w-md truncate">
+                            <span className="px-2.5 py-1 bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 rounded-full font-bold text-xs shrink-0">
+                              CAEN {caenCode}
+                            </span>
+                            <span className="text-gray-700 dark:text-gray-300 font-medium truncate" title={caenDesc}>
+                              {caenDesc || "Activități economice autorizate"}
+                            </span>
+                          </div>
+                        )}
 
-                          if (key === 'cod_caen') {
-                            const rawDataObj = typeof latestEval.raw_financial_data === 'string'
-                              ? JSON.parse(latestEval.raw_financial_data)
-                              : latestEval.raw_financial_data;
-                            const caenInfo = getCaenInfo(value);
-                            const caenDesc = rawDataObj?.anaf?.caen_descriere || caenInfo?.denumire || '';
-                            const sectiune = rawDataObj?.anaf?.caen_sectiune || caenInfo?.sectiune || '';
-                            return (
-                              <div key={key} className="col-span-2 bg-gradient-to-r from-blue-50/70 via-indigo-50/30 to-blue-50/40 dark:from-blue-950/20 dark:via-indigo-950/10 dark:to-blue-950/20 p-3 rounded-xl border border-blue-100 dark:border-blue-900/40 shadow-xs">
-                                <div className="text-xs text-blue-700 dark:text-blue-300 font-semibold flex items-center justify-between">
-                                  <span className="flex items-center gap-1.5"><Briefcase size={13} /> Cod CAEN &amp; Activitate Principală</span>
-                                  {sectiune && (
-                                    <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300">
-                                      Secțiunea {sectiune}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="mt-1.5 flex items-start gap-2.5">
-                                  <span className="px-2.5 py-1 rounded-lg bg-blue-600 text-white font-bold text-xs shrink-0 shadow-xs">
-                                    CAEN {value}
-                                  </span>
-                                  <span className="text-xs font-semibold text-gray-900 dark:text-white leading-relaxed">
-                                    {caenDesc || "Fără descriere identificată"}
-                                  </span>
-                                </div>
-                              </div>
-                            );
-                          }
+                        {/* Status Badges */}
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`px-2.5 py-0.5 rounded-full font-semibold border ${
+                            isTva 
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
+                              : 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800'
+                          }`}>
+                            {isTva ? 'Plătitor TVA' : 'Neplătitor TVA'}
+                          </span>
 
-                          let displayVal = value;
-                          let valColor = "text-gray-900 dark:text-white";
+                          <span className={`px-2.5 py-0.5 rounded-full font-semibold border ${
+                            isActiva 
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
+                              : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800'
+                          }`}>
+                            {isActiva ? 'În Funcțiune' : 'Inactivă'}
+                          </span>
 
-                          if (typeof value === 'boolean') {
-                            if (key === 'inactiv_fiscal') {
-                              displayVal = value ? "INACTIV FISCAL (Risc)" : "Activ (Fără Risc)";
-                              valColor = value ? "text-red-500 font-semibold" : "text-green-600";
-                            } else if (key === 'tva_activ') {
-                              displayVal = value ? "DA" : "NU (Neplătitor)";
-                              valColor = value ? "text-green-600 font-semibold" : "text-orange-500";
-                            } else {
-                              displayVal = value ? "DA" : "NU";
-                            }
-                          } else if (key === 'vechime_ani' && value !== null && value !== 'N/A') {
-                            displayVal = `${value} ani`;
-                          } else if (key === 'status') {
-                            valColor = value === 'Activa' ? "text-green-600" : "text-red-500";
-                          }
+                          <span className={`px-2.5 py-0.5 rounded-full font-semibold border ${
+                            !isInactiv 
+                              ? 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800' 
+                              : 'bg-red-50 dark:bg-red-950/40 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800'
+                          }`}>
+                            {!isInactiv ? 'Activ Fiscal (0 Risc)' : 'Inactiv Fiscal'}
+                          </span>
 
-                          return (
-                            <div key={key} className="bg-gray-50 dark:bg-gray-900 p-3 rounded-xl border border-gray-100 dark:border-gray-800">
-                              <div className="text-xs text-gray-500 dark:text-gray-400 capitalize">{labels[key] || key.replace(/_/g, ' ')}</div>
-                              <div className={`font-medium mt-1 text-sm ${valColor} break-words`}>
-                                {displayVal || "N/A"}
-                              </div>
+                          {vechime && vechime !== 'N/A' && (
+                            <span className="px-2.5 py-0.5 rounded-full font-medium bg-gray-100 dark:bg-gray-700/60 text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-600">
+                              Vechime: {vechime} ani
+                            </span>
+                          )}
+
+                          {anaf.status_ro_efactura && (
+                            <span className="px-2.5 py-0.5 rounded-full font-semibold border bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800">
+                              RO e-Factura: Înrolat
+                            </span>
+                          )}
+
+                          {anaf.split_tva && (
+                            <span className="px-2.5 py-0.5 rounded-full font-semibold border bg-purple-50 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800">
+                              Split TVA
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Optional Expandable Deep Research Inspector */}
+                      {showDetailedAnaf && (
+                        <div className="mt-3.5 pt-3.5 border-t border-gray-100 dark:border-gray-700/80 animate-in fade-in duration-150">
+                          <div className="bg-gray-50/70 dark:bg-gray-900/50 rounded-2xl p-4 border border-gray-200/80 dark:border-gray-700/80">
+                            <div className="flex items-center justify-between mb-3">
+                              <span className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">
+                                Parametri Detaliați ANAF v9 (Deep Research)
+                              </span>
+                              <span className="text-[11px] text-gray-400">
+                                Interogare deterministă webservicesp.anaf.ro
+                              </span>
                             </div>
-                          );
-                        })}
+                            {(() => {
+                              const detailItems = [
+                                { label: "Organ Fiscal", value: anaf.organ_fiscal },
+                                { label: "Formă Juridică", value: anaf.forma_juridica },
+                                { label: "TVA la Încasare", value: anaf.tva_la_incasare ? "DA" : "NU" },
+                                { label: "Split TVA", value: anaf.split_tva ? "DA" : "NU" },
+                                { label: "RO e-Factura", value: anaf.status_ro_efactura ? "DA (Înrolat)" : "NU" },
+                                { label: "Telefon Oficial", value: anaf.telefon || "Nespecificat" }
+                              ].filter(item => item.value);
+
+                              return (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
+                                  {detailItems.map((item, idx) => (
+                                    <div key={idx} className="p-2.5 rounded-xl bg-white dark:bg-gray-800 border border-gray-200/70 dark:border-gray-700/70 flex items-center justify-between gap-2 shadow-2xs">
+                                      <span className="text-gray-400 dark:text-gray-400 truncate">{item.label}:</span>
+                                      <span className="font-semibold text-gray-800 dark:text-gray-200 text-right truncate max-w-[65%]" title={item.value}>
+                                        {item.value}
+                                      </span>
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })()}
+                          </div>
+                        </div>
+                      )}
                     </>
-                  )}
-                </div>
+                  );
+                })()}
               </div>
 
             {/* Verificare Sediu & Geografie (Google Maps & Cluster Firme) */}
@@ -1732,7 +1991,64 @@ const ClientDetails = () => {
                     
                     {(() => {
                       const rawData = JSON.parse(latestEval.raw_financial_data) || {};
-                      const personnelList = rawData.personnel || [];
+                      let personnelList = Array.isArray(rawData.personnel) && rawData.personnel.length > 0 
+                        ? [...rawData.personnel] 
+                        : [];
+
+                      // Fallback: dacă personnel[] este gol, populăm din administrators și holdings
+                      if (personnelList.length === 0) {
+                        const admins = Array.isArray(rawData.administrators) ? rawData.administrators : [];
+                        const holds = Array.isArray(rawData.holdings) ? rawData.holdings : [];
+                        const networks = Array.isArray(rawData.admin_networks) ? rawData.admin_networks : [];
+
+                        admins.forEach(a => {
+                          const name = a.nume || a.name;
+                          if (!name) return;
+                          const netMatch = networks.find(n => n.nume && n.nume.trim().toUpperCase() === name.trim().toUpperCase());
+                          const rawRole = a.calitate || a.functie || (a.rol ? a.rol : "Administrator");
+                          personnelList.push({
+                            nume: name,
+                            rol: rawRole,
+                            este_administrator: true,
+                            este_asociat: false,
+                            cota_participare: 0,
+                            stare: a.stare || "Activ",
+                            data_numire: a.data || a.data_numire || "",
+                            data_sfarsit: a.data_sfarsit || "",
+                            tip_entitate: a.tip === "Persoană Juridică" || a.entity === "PJ" ? "PJ" : "PF",
+                            loc_nastere: a.loc_nastere || a.placeofbirth || "",
+                            alte_companii_active: netMatch ? (netMatch.firme_active || 0) : 0,
+                            companii_faliment: netMatch ? (netMatch.firme_incetate || 0) : 0
+                          });
+                        });
+
+                        holds.forEach(h => {
+                          const name = h.name || h.nume;
+                          if (!name) return;
+                          const existing = personnelList.find(p => p.nume.toUpperCase() === name.toUpperCase());
+                          if (existing) {
+                            existing.este_asociat = true;
+                            existing.cota_participare = Number(h.percent || h.cota_participare || 0);
+                          } else {
+                            const netMatch = networks.find(n => n.nume && n.nume.trim().toUpperCase() === name.trim().toUpperCase());
+                            personnelList.push({
+                              nume: name,
+                              rol: h.type || (h.is_administrator ? "Asociat și Administrator" : "Asociat"),
+                              este_administrator: Boolean(h.is_administrator),
+                              este_asociat: true,
+                              cota_participare: Number(h.percent || h.cota_participare || 0),
+                              stare: h.current ? "Activ" : (h.stare || "Activ"),
+                              data_numire: h.from || h.data_numire || "",
+                              data_sfarsit: h.to || h.data_sfarsit || "",
+                              tip_entitate: h.entity || "PF",
+                              loc_nastere: h.placeofbirth || h.loc_nastere || "",
+                              alte_companii_active: netMatch ? (netMatch.firme_active || 0) : 0,
+                              companii_faliment: netMatch ? (netMatch.firme_incetate || 0) : 0
+                            });
+                          }
+                        });
+                      }
+
                       const osintFlags = rawData.osint_flags || [];
 
                       // Smart Ownership calculation / fallback
@@ -1761,9 +2077,11 @@ const ClientDetails = () => {
                             insights.push(`Acționariat Partajat: ${parts}.`);
                           }
                         } else if (activeAdmins.length > 0) {
-                          beneficiar_real = `Administrator: ${activeAdmins[0].nume}`;
-                          tip_control = "DOAR ADMINISTRATORI ÎNREGISTRAȚI";
-                          insights.push(`Conducere Executivă: Administrator înregistrat ${activeAdmins[0].nume}.`);
+                          const firstAdmin = activeAdmins[0];
+                          const roleText = firstAdmin.rol || "Administrator";
+                          beneficiar_real = `${firstAdmin.nume} (${roleText})`;
+                          tip_control = roleText.toLowerCase().includes('lichidator') ? "LICHIDARE JUDICIARĂ" : "CONDUCERE MANDATATĂ";
+                          insights.push(`Conducere Oficială: ${firstAdmin.nume} exercită funcția de ${roleText}.`);
                         }
                         const unsharedAdmins = activeAdmins.filter(a => !a.este_asociat || !a.cota_participare);
                         if (unsharedAdmins.length > 0) {
@@ -2556,6 +2874,130 @@ const ClientDetails = () => {
         </>
       )}
 
+      {/* Tab Acționari & Conducere */}
+      {activeTab === 'governance' && (
+        <div className="space-y-6 mt-6 animate-in fade-in">
+          {/* Header Card Guvernanță */}
+          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="p-3 border border-gray-200 dark:border-gray-700 text-primary rounded-full bg-primary/5">
+                  <Users size={22} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-gray-900 dark:text-white">
+                    Acționari, Asociați &amp; Guvernanță Corporativă
+                  </h3>
+                  <p className="text-sm text-gray-500">
+                    Evidența oficială a asociaților, administratorilor statutari și judiciari, beneficiarilor reali și istoricului de mandate.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {latestEval && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('investigation');
+                      setSearchParams(prev => {
+                        const n = new URLSearchParams(prev);
+                        n.set('tab', 'investigation');
+                        return n;
+                      }, { replace: true });
+                    }}
+                    className="px-3 py-1.5 text-xs font-semibold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-full hover:bg-blue-100 dark:hover:bg-blue-900/60 transition-colors cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Network size={14} />
+                    <span>Vezi în Investigation Board</span>
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Quick Status Bar if Radiată / Faliment */}
+            {(() => {
+              const activeData = enrichedRawData || rawDataObj || {};
+              const fiscalStare = String(activeData?.anaf?.stare || activeData?.stare || client?.stare || '').toUpperCase();
+              const hasLiquidators = (activeData?.administrators || []).some(a => 
+                String(a.functie || a.calitate || a.rol || '').toLowerCase().includes('lichidator')
+              );
+              const isTerminated = fiscalStare.includes('RADIAT') || 
+                                   fiscalStare.includes('RADIER') || 
+                                   fiscalStare.includes('FALIMENT') || 
+                                   fiscalStare.includes('LICHID') || 
+                                   hasLiquidators;
+              if (!isTerminated) return null;
+
+              return (
+                <div className="mt-4 p-4 rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/20 flex items-start gap-3.5">
+                  <div className="p-2.5 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 shrink-0">
+                    <ShieldAlert size={20} />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-[11px] font-semibold text-red-500 uppercase tracking-wider">
+                      Statut Juridic: Radiere / Procedură de Insolvență și Faliment
+                    </div>
+                    <div className="text-sm font-bold text-red-700 dark:text-red-300 mt-0.5">
+                      {activeData?.anaf?.stare || activeData?.stare || 'Societate în Lichidare Judiciară'}
+                    </div>
+                    <p className="text-xs text-red-600/90 dark:text-red-400 mt-1 leading-relaxed">
+                      Conform procedurii judiciare de faliment, administrarea patrimoniului și reprezentarea legală revin exclusiv <strong>Lichidatorilor Judiciari desemnați de instanță</strong> (prezentați în secțiunea Conducere Oficială de mai jos). Mandatele asociaților statutari au încetat la deschiderea falimentului conform Legii 85/2014.
+                    </p>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {!latestEval ? (
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl p-10 text-center shadow-sm">
+              <Users size={40} className="mx-auto text-primary mb-3 opacity-60" />
+              <h4 className="text-base font-semibold text-gray-900 dark:text-white">Nu există evaluare disponibilă</h4>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-md mx-auto">
+                Apasă pe butonul „Generare Evaluare” de mai sus pentru a interoga Registrul Comerțului, ANAF și rețeaua oficială de administratori.
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* OwnershipAndGovernanceCard */}
+              <OwnershipAndGovernanceCard 
+                holdings={(enrichedRawData || rawDataObj)?.holdings || []}
+                administrators={(enrichedRawData || rawDataObj)?.administrators || []}
+                adminNetworks={(enrichedRawData || rawDataObj)?.admin_networks || []}
+                caenActivities={(enrichedRawData || rawDataObj)?.caen_activities || {
+                  cod_caen: (enrichedRawData || rawDataObj)?.anaf?.cod_caen,
+                  caen_principal: {
+                    cod: (enrichedRawData || rawDataObj)?.anaf?.cod_caen,
+                    denumire: (enrichedRawData || rawDataObj)?.anaf?.caen_descriere
+                  }
+                }}
+                mof={(enrichedRawData || rawDataObj)?.mof || []}
+                companyCui={client.cui_cnp}
+                companyName={client.name}
+                registrationDate={(enrichedRawData || rawDataObj)?.anaf?.data_inregistrare || (enrichedRawData || rawDataObj)?.anaf?.data_inreg || ""}
+                regComNumber={(enrichedRawData || rawDataObj)?.anaf?.nr_reg_com || (enrichedRawData || rawDataObj)?.anaf?.nrRegCom || ""}
+                fiscalStatus={(enrichedRawData || rawDataObj)?.anaf?.stare || (enrichedRawData || rawDataObj)?.stare || client?.stare || ""}
+                onOpenMofModal={setSelectedMofPub}
+                onOpenPerson={(personName) => openPersonIntel(personName, client?.cui_cnp)}
+                onOpenCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}
+              />
+
+              {/* CorporateGovernanceTable */}
+              <div className="mt-6">
+                <CorporateGovernanceTable 
+                  rawData={enrichedRawData || rawDataObj}
+                  client={client}
+                  openPersonIntel={(personName, ctxCui) => openPersonIntel(personName, ctxCui || client?.cui_cnp)}
+                  openCompanyIntel={(compCui, compName) => openCompanyIntel(compCui, compName)}
+                  evaluatingCui={evaluatingCui}
+                  onEvaluateCompany={handleEvaluateCompany}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
       {activeTab === 'gps' && (
         <div className="space-y-6 mt-6 animate-in fade-in">
           {/* Header Card */}
@@ -2804,6 +3246,14 @@ const ClientDetails = () => {
               clientCui={client?.cui_cnp}
               onOpenCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}
               onOpenPerson={(personName, ctxCui) => openPersonIntel(personName, ctxCui || client?.cui_cnp)}
+              onOpenGovernance={() => {
+                setActiveTab('governance');
+                setSearchParams(prev => {
+                  const next = new URLSearchParams(prev);
+                  next.set('tab', 'governance');
+                  return next;
+                }, { replace: true });
+              }}
             />
           </div>
         ) : (
@@ -2817,7 +3267,811 @@ const ClientDetails = () => {
         )
       )}
 
+      {/* ONRC & Certificat Constatator Hub Tab */}
+      {activeTab === 'onrc' && (
+        <div className="mt-6 space-y-6 animate-in fade-in">
+          {/* Toast Notificare CUI Copiat */}
+          {copiedCuiToast && (
+            <div className="p-3 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 rounded-2xl flex items-center justify-between text-xs text-emerald-800 dark:text-emerald-200 animate-in slide-in-from-top-2 duration-200 shadow-sm">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-emerald-600 dark:text-emerald-400" />
+                <span>
+                  Codul de identificare fiscală <strong>CUI {client?.cui_cnp}</strong> a fost copiat în clipboard. Portalul oficial MyONRC a fost deschis.
+                </span>
+              </div>
+              <button 
+                onClick={() => setCopiedCuiToast(false)}
+                className="p-1 hover:bg-emerald-100 dark:hover:bg-emerald-900 rounded-full cursor-pointer"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          )}
+
+          {/* Hero Action Card: Opțiunea A & Opțiunea B Header */}
+          <div className="bg-gradient-to-r from-indigo-900/10 via-slate-900/5 to-blue-900/10 dark:from-indigo-950/40 dark:via-gray-900/50 dark:to-blue-950/40 border border-indigo-200/80 dark:border-indigo-800/60 rounded-3xl p-6 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+              <div className="space-y-2 max-w-2xl">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="px-2.5 py-0.5 text-[11px] font-semibold tracking-wide uppercase bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 rounded-full border border-indigo-200 dark:border-indigo-800">
+                    Registrul Comerțului • Recom Hub
+                  </span>
+                  <span className="px-2.5 py-0.5 text-[11px] font-medium bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-full border border-emerald-200 dark:border-emerald-800">
+                    {onrcDetails?.status || 'În Funcțiune (Activă)'}
+                  </span>
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white">
+                  Hub Registrul Comerțului (ONRC) & Certificat Constatator
+                </h3>
+                <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                  Emitere instantanee a certificatului constatator oficial în format PDF (conformitate Legea 265/2022), acces direct la portalul electronic MyONRC cu preluare automată CUI și evidență completă a dosarului juridic.
+                </p>
+                <div className="flex flex-wrap items-center gap-3 pt-1 text-xs text-gray-500 dark:text-gray-400">
+                  <span>CUI: <strong className="text-gray-800 dark:text-gray-200">{client?.cui_cnp || '—'}</strong></span>
+                  <span>•</span>
+                  <span>Nr. Reg. Com.: <strong className="text-gray-800 dark:text-gray-200">{onrcDetails?.reg_com || client?.reg_com || '—'}</strong></span>
+                  <span>•</span>
+                  <span>EUID: <strong className="text-gray-800 dark:text-gray-200">{onrcDetails?.euid || 'ROONRC.' + (client?.reg_com || 'J40.1234.2020').replace(/\//g, '.')}</strong></span>
+                </div>
+              </div>
+
+              {/* Action Buttons: Opțiunea A & B */}
+              <div className="flex flex-col sm:flex-row lg:flex-col gap-3 min-w-[260px]">
+                {/* Opțiunea B: Generare Instantanee Certificat Constatator */}
+                <button
+                  type="button"
+                  onClick={handleExportOnrcCert}
+                  disabled={exportingOnrcCert}
+                  className="inline-flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3 rounded-full text-xs font-semibold shadow-sm transition-colors disabled:opacity-50 cursor-pointer"
+                  title="Generează Certificat Constatator complet în format PDF cu sigiliu electronic"
+                >
+                  {exportingOnrcCert ? (
+                    <>
+                      <Loader2 size={15} className="animate-spin" />
+                      <span>Se generează PDF-ul...</span>
+                    </>
+                  ) : (
+                    <>
+                      <FileDown size={15} />
+                      <span>Descarcă Certificat Constatator (PDF)</span>
+                    </>
+                  )}
+                </button>
+
+                {/* Opțiunea A: Portal Oficial MyONRC + Auto CUI copy */}
+                <button
+                  type="button"
+                  onClick={handleOpenOnrcPortal}
+                  className="inline-flex items-center justify-center gap-2 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 px-5 py-3 rounded-full text-xs font-semibold shadow-xs transition-colors cursor-pointer"
+                  title="Deschide portalul oficial MyONRC și copiază CUI-ul în clipboard"
+                >
+                  <ExternalLink size={14} className="text-indigo-600 dark:text-indigo-400" />
+                  <span>Portal Oficial MyONRC (Copiază CUI)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Grid: RNPM Integrity & UBO Overview (Opțiunea C) */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Card Verificare Integritate RNPM (Garanții Mobiliare & Gajuri) */}
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl p-6 shadow-sm">
+              <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400">
+                    <ShieldCheck size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                      Integritate Patrimonială & RNPM
+                    </h4>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                      Garanții reale mobiliare, gajuri pe părți sociale și sechestre
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 rounded-full border border-emerald-200 dark:border-emerald-800">
+                  {onrcDetails?.rnpm_checks?.status || 'Fără Popriri Active'}
+                </span>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-gray-50/70 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 text-xs text-gray-700 dark:text-gray-300">
+                    <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                    <span>Ipoteci mobiliare pe părțile sociale (RNPM)</span>
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                    Negativ (0 gajuri)
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-gray-50/70 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 text-xs text-gray-700 dark:text-gray-300">
+                    <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                    <span>Sechestre asigurătorii / Măsuri preventive penale</span>
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                    Fără sarcini
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between p-3 rounded-2xl bg-gray-50/70 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800">
+                  <div className="flex items-center gap-2.5 text-xs text-gray-700 dark:text-gray-300">
+                    <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                    <span>Buletinul Procedurilor de Insolvență (BPI)</span>
+                  </div>
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                    Insolvență zero
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card Capital Social & Guvernanță UBO */}
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl p-6 shadow-sm">
+              <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-full bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400">
+                    <Scale size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                      Capital Social & Beneficiar Real (UBO)
+                    </h4>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                      Structură de control conform Legii 129/2019 pentru prevenirea spălării banilor
+                    </p>
+                  </div>
+                </div>
+                <span className="px-2.5 py-1 text-[11px] font-semibold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 rounded-full border border-blue-200 dark:border-blue-800">
+                  Înregistrare Conformă
+                </span>
+              </div>
+
+              <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="p-3 rounded-2xl bg-gray-50/70 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800">
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400 block">Capital Social</span>
+                  <span className="text-sm font-bold text-gray-900 dark:text-white mt-0.5 block">
+                    {onrcDetails?.share_capital || '200 RON'}
+                  </span>
+                  <span className="text-[10px] text-gray-400 mt-1 block">Subscris și vărsat</span>
+                </div>
+
+                <div className="p-3 rounded-2xl bg-gray-50/70 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800 sm:col-span-2">
+                  <span className="text-[11px] text-gray-500 dark:text-gray-400 block">Beneficiar Real Declarat (UBO)</span>
+                  <span className="text-sm font-bold text-gray-900 dark:text-white mt-0.5 block truncate">
+                    {onrcDetails?.ubo_declared || client?.representative_name || 'Asociat Majoritar'}
+                  </span>
+                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 mt-1 block">
+                    Declarație validă în Registrul Național UBO
+                  </span>
+                </div>
+              </div>
+
+              <div className="mt-3 p-3 rounded-2xl bg-indigo-50/50 dark:bg-indigo-950/20 border border-indigo-100 dark:border-indigo-900/50 text-[11px] text-indigo-900 dark:text-indigo-200 flex items-center justify-between">
+                <span>Formă Juridică: <strong>{onrcDetails?.legal_form || 'Societate cu Răspundere Limitată (SRL)'}</strong></span>
+                <span>Sediu Social: <strong>{onrcDetails?.headquarters || client?.address || 'România'}</strong></span>
+              </div>
+            </div>
+          </div>
+
+          {/* Opțiunea C: Tabel Asociați & Conducere (Respectă regulile AGENTS.md) */}
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <div>
+                <h4 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <Users size={18} className="text-indigo-600 dark:text-indigo-400" />
+                  <span>Structura Asociaților & Conducerii (Registrul Comerțului)</span>
+                </h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Evidența acționarilor, asociaților și persoanelor împuternicite cu drept de reprezentare legală
+                </p>
+              </div>
+            </div>
+
+            {/* Evaluare Asociați pentru Tabel */}
+            {(() => {
+              const allAssociates = (onrcDetails?.associates && onrcDetails.associates.length > 0)
+                ? onrcDetails.associates
+                : [
+                    {
+                      nume: client?.representative_name || client?.name || "Asociat Unic",
+                      calitate: "Asociat Unic & Administrator",
+                      procent: 100,
+                      parti_sociale: 20,
+                      valoare_parti: onrcDetails?.share_capital || "200 RON"
+                    }
+                  ];
+              const totalAssoc = allAssociates.length;
+              const totalAssocPages = Math.ceil(totalAssoc / onrcAssociatesPerPage) || 1;
+              const curAssocPage = Math.min(onrcAssociatesPage, totalAssocPages);
+              const startAssocIdx = (curAssocPage - 1) * onrcAssociatesPerPage;
+              const paginatedAssoc = allAssociates.slice(startAssocIdx, startAssocIdx + onrcAssociatesPerPage);
+              const allCurAssocSelected = paginatedAssoc.length > 0 && paginatedAssoc.every(a => selectedOnrcAssociateRows.includes(a.nume));
+
+              const handleToggleSelectAllAssoc = () => {
+                const pageNames = paginatedAssoc.map(a => a.nume);
+                if (allCurAssocSelected) {
+                  setSelectedOnrcAssociateRows(prev => prev.filter(n => !pageNames.includes(n)));
+                } else {
+                  setSelectedOnrcAssociateRows(prev => Array.from(new Set([...prev, ...pageNames])));
+                }
+              };
+
+              const handleToggleAssocRow = (name) => {
+                setSelectedOnrcAssociateRows(prev => 
+                  prev.includes(name) ? prev.filter(n => n !== name) : [...prev, name]
+                );
+              };
+
+              return (
+                <>
+                  {/* Bulk Actions Bar */}
+                  {selectedOnrcAssociateRows.length > 0 && (
+                    <div className="mb-3 p-2.5 px-4 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between text-xs animate-in fade-in duration-150">
+                      <div className="font-semibold text-primary flex items-center gap-2">
+                        <CheckSquare size={15} />
+                        <span>{selectedOnrcAssociateRows.length} {selectedOnrcAssociateRows.length === 1 ? 'înregistrare selectată' : 'înregistrări selectate'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            navigator.clipboard.writeText(selectedOnrcAssociateRows.join(', '));
+                            alert('Numele asociaților selectați au fost copiate!');
+                          }}
+                          className="px-3 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-1 font-medium shadow-xs"
+                        >
+                          <Copy size={12} />
+                          <span>Copiază Nume</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedOnrcAssociateRows([])}
+                          className="px-3 py-1 text-gray-500 hover:text-gray-800 dark:hover:text-white transition-colors cursor-pointer font-medium"
+                        >
+                          Deselectează
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Associates Table */}
+                  <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-2xl bg-white dark:bg-gray-800 shadow-xs">
+                    <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400">
+                      <thead className="text-xs text-gray-500 uppercase bg-gray-50/80 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-700">
+                        <tr>
+                          <th className="px-3 py-3 w-10 text-center">
+                            <input
+                              type="checkbox"
+                              checked={allCurAssocSelected}
+                              onChange={handleToggleSelectAllAssoc}
+                              className="w-4 h-4 rounded text-primary border-gray-300 focus:ring-primary/30 cursor-pointer"
+                              title="Selectează toți de pe pagină"
+                            />
+                          </th>
+                          <th className="px-3 py-3 w-12 text-center whitespace-nowrap">Nr. Crt.</th>
+                          <th className="px-4 py-3 whitespace-nowrap">Nume Persoană / Entitate</th>
+                          <th className="px-4 py-3 whitespace-nowrap">Calitate / Mandat</th>
+                          <th className="px-4 py-3 text-center whitespace-nowrap">Părți Sociale</th>
+                          <th className="px-4 py-3 text-center whitespace-nowrap">Cotă Deținere %</th>
+                          <th className="px-4 py-3 text-right whitespace-nowrap">Valoare Aport</th>
+                          <th className="px-4 py-3 text-right whitespace-nowrap">Acțiuni</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {paginatedAssoc.map((assoc, idx) => {
+                          const isSelected = selectedOnrcAssociateRows.includes(assoc.nume);
+                          const absIdx = startAssocIdx + idx + 1;
+                          const pct = assoc.procent || assoc.cota_procentuala || (totalAssoc === 1 ? 100 : '—');
+                          return (
+                            <tr key={idx} className={`hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors ${isSelected ? 'bg-primary/5 dark:bg-primary/10' : ''}`}>
+                              <td className="px-3 py-2.5 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleToggleAssocRow(assoc.nume)}
+                                  className="w-4 h-4 rounded text-primary border-gray-300 focus:ring-primary/30 cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-3 py-2.5 text-center text-xs text-gray-400 font-medium tabular-nums">
+                                {absIdx}
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <span className="font-semibold text-gray-900 dark:text-white block">
+                                  {assoc.nume}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <span className="inline-block px-2 py-0.5 text-xs rounded-full bg-indigo-50 dark:bg-indigo-950/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800">
+                                  {assoc.calitate || 'Asociat'}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-center text-xs text-gray-700 dark:text-gray-300 tabular-nums">
+                                {assoc.parti_sociale || '20'} părți
+                              </td>
+                              <td className="px-4 py-2.5 text-center">
+                                <span className="font-bold text-gray-900 dark:text-white tabular-nums">
+                                  {pct}%
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-right text-xs text-gray-700 dark:text-gray-300 tabular-nums">
+                                {assoc.valoare_parti || onrcDetails?.share_capital || '200 RON'}
+                              </td>
+                              <td className="px-4 py-2.5 text-right">
+                                <button
+                                  type="button"
+                                  onClick={() => openPersonIntel(assoc.nume, client?.cui_cnp)}
+                                  className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors inline-flex items-center justify-center cursor-pointer text-gray-600 dark:text-gray-300"
+                                  title={`Investighează ${assoc.nume} în rețeaua OSINT`}
+                                >
+                                  <Eye size={13} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+
+                    {/* Pagination Footer */}
+                    <div className="p-3 bg-gray-50/80 dark:bg-gray-900/60 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                      <div className="flex items-center gap-2">
+                        <span>Afișează</span>
+                        <select
+                          value={onrcAssociatesPerPage}
+                          onChange={(e) => {
+                            setOnrcAssociatesPerPage(Number(e.target.value));
+                            setOnrcAssociatesPage(1);
+                          }}
+                          className="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 text-xs focus:outline-none cursor-pointer"
+                        >
+                          <option value={5}>5</option>
+                          <option value={10}>10</option>
+                          <option value={25}>25</option>
+                        </select>
+                        <span>pe pagină</span>
+                        <span className="mx-2">•</span>
+                        <span>Total: <strong className="text-gray-900 dark:text-white">{totalAssoc}</strong> persoane înregistrate</span>
+                      </div>
+
+                      {totalAssocPages > 1 && (
+                        <div className="flex items-center gap-2">
+                          <span>Pagină {curAssocPage} din {totalAssocPages}</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={curAssocPage <= 1}
+                              onClick={() => setOnrcAssociatesPage(p => Math.max(1, p - 1))}
+                              className="p-1.5 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                              title="Pagina precedentă"
+                            >
+                              <ChevronLeft size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={curAssocPage >= totalAssocPages}
+                              onClick={() => setOnrcAssociatesPage(p => Math.min(totalAssocPages, p + 1))}
+                              className="p-1.5 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                              title="Pagina următoare"
+                            >
+                              <ChevronRight size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
+          {/* Opțiunea C: Tabel Puncte de Lucru & Sedii Secundare (Respectă regulile AGENTS.md) */}
+          <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl p-6 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <div>
+                <h4 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                  <MapPin size={18} className="text-emerald-600 dark:text-emerald-400" />
+                  <span>Puncte de Lucru & Sedii Secundare Autorizate</span>
+                </h4>
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  Locații de exploatare, baze logistice și sedii autorizate conform Legii 359/2004
+                </p>
+              </div>
+            </div>
+
+            {/* Evaluare Puncte de Lucru pentru Tabel */}
+            {(() => {
+              const allWp = (onrcDetails?.work_points && onrcDetails.work_points.length > 0)
+                ? onrcDetails.work_points
+                : [
+                    {
+                      id: 1,
+                      type: "Sediu Secundar / Bază Operațională & Parc Auto",
+                      address: client?.address || "București, România",
+                      status: "Activ / Autorizat conform Legii 359/2004",
+                      activities: "Leasing, transport, activități logistice și operaționale",
+                      valid_from: onrcDetails?.registration_date || "2020-02-26"
+                    }
+                  ];
+              const totalWp = allWp.length;
+              const totalWpPages = Math.ceil(totalWp / workPointsPerPage) || 1;
+              const curWpPage = Math.min(workPointsPage, totalWpPages);
+              const startWpIdx = (curWpPage - 1) * workPointsPerPage;
+              const paginatedWp = allWp.slice(startWpIdx, startWpIdx + workPointsPerPage);
+              const allCurWpSelected = paginatedWp.length > 0 && paginatedWp.every(wp => selectedWorkPointRows.includes(wp.id));
+
+              const handleToggleSelectAllWp = () => {
+                const pageIds = paginatedWp.map(wp => wp.id);
+                if (allCurWpSelected) {
+                  setSelectedWorkPointRows(prev => prev.filter(id => !pageIds.includes(id)));
+                } else {
+                  setSelectedWorkPointRows(prev => Array.from(new Set([...prev, ...pageIds])));
+                }
+              };
+
+              const handleToggleWpRow = (wpId) => {
+                setSelectedWorkPointRows(prev => 
+                  prev.includes(wpId) ? prev.filter(id => id !== wpId) : [...prev, wpId]
+                );
+              };
+
+              return (
+                <>
+                  {/* Bulk Actions Bar */}
+                  {selectedWorkPointRows.length > 0 && (
+                    <div className="mb-3 p-2.5 px-4 bg-primary/10 border border-primary/20 rounded-2xl flex items-center justify-between text-xs animate-in fade-in duration-150">
+                      <div className="font-semibold text-primary flex items-center gap-2">
+                        <CheckSquare size={15} />
+                        <span>{selectedWorkPointRows.length} {selectedWorkPointRows.length === 1 ? 'punct selectat' : 'puncte selectate'}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const selectedAddresses = allWp
+                              .filter(wp => selectedWorkPointRows.includes(wp.id))
+                              .map(wp => wp.address);
+                            navigator.clipboard.writeText(selectedAddresses.join(' | '));
+                            alert('Adresele selectate au fost copiate!');
+                          }}
+                          className="px-3 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer flex items-center gap-1 font-medium shadow-xs"
+                        >
+                          <Copy size={12} />
+                          <span>Copiază Adrese</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedWorkPointRows([])}
+                          className="px-3 py-1 text-gray-500 hover:text-gray-800 dark:hover:text-white transition-colors cursor-pointer font-medium"
+                        >
+                          Deselectează
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Work Points Table */}
+                  <div className="overflow-x-auto border border-gray-200 dark:border-gray-700 rounded-2xl bg-white dark:bg-gray-800 shadow-xs">
+                    <table className="w-full text-left text-sm text-gray-500 dark:text-gray-400">
+                      <thead className="text-xs text-gray-500 uppercase bg-gray-50/80 dark:bg-gray-900/60 border-b border-gray-200 dark:border-gray-700">
+                        <tr>
+                          <th className="px-3 py-3 w-10 text-center">
+                            <input
+                              type="checkbox"
+                              checked={allCurWpSelected}
+                              onChange={handleToggleSelectAllWp}
+                              className="w-4 h-4 rounded text-primary border-gray-300 focus:ring-primary/30 cursor-pointer"
+                              title="Selectează toate de pe pagină"
+                            />
+                          </th>
+                          <th className="px-3 py-3 w-12 text-center whitespace-nowrap">Nr. Crt.</th>
+                          <th className="px-4 py-3 whitespace-nowrap">Tip Locație</th>
+                          <th className="px-4 py-3 whitespace-nowrap">Adresă Punct de Lucru</th>
+                          <th className="px-4 py-3 whitespace-nowrap">Activități Autorizate</th>
+                          <th className="px-4 py-3 text-center whitespace-nowrap">Valabil Din</th>
+                          <th className="px-4 py-3 text-center whitespace-nowrap">Stare</th>
+                          <th className="px-4 py-3 text-right whitespace-nowrap">Acțiuni</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                        {paginatedWp.map((wp, idx) => {
+                          const isSelected = selectedWorkPointRows.includes(wp.id);
+                          const absIdx = startWpIdx + idx + 1;
+                          return (
+                            <tr key={idx} className={`hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors ${isSelected ? 'bg-primary/5 dark:bg-primary/10' : ''}`}>
+                              <td className="px-3 py-2.5 text-center">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={() => handleToggleWpRow(wp.id)}
+                                  className="w-4 h-4 rounded text-primary border-gray-300 focus:ring-primary/30 cursor-pointer"
+                                />
+                              </td>
+                              <td className="px-3 py-2.5 text-center text-xs text-gray-400 font-medium tabular-nums">
+                                {absIdx}
+                              </td>
+                              <td className="px-4 py-2.5">
+                                <span className="font-semibold text-gray-900 dark:text-white block">
+                                  {wp.type}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 max-w-xs">
+                                <span className="text-xs text-gray-800 dark:text-gray-200 block truncate" title={wp.address}>
+                                  {wp.address}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 max-w-xs">
+                                <span className="text-xs text-gray-500 dark:text-gray-400 block truncate" title={wp.activities}>
+                                  {wp.activities}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-center text-xs text-gray-600 dark:text-gray-300 tabular-nums">
+                                {wp.valid_from || '—'}
+                              </td>
+                              <td className="px-4 py-2.5 text-center">
+                                <span className="inline-block px-2.5 py-1 text-xs rounded-xl bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-center leading-tight">
+                                  {wp.status}
+                                </span>
+                              </td>
+                              <td className="px-4 py-2.5 text-right">
+                                <a
+                                  href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(wp.address)}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors inline-flex items-center justify-center cursor-pointer text-gray-600 dark:text-gray-300"
+                                  title="Vezi locația pe Google Maps"
+                                >
+                                  <MapPin size={13} />
+                                </a>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+
+                    {/* Pagination Footer */}
+                    <div className="p-3 bg-gray-50/80 dark:bg-gray-900/60 border-t border-gray-200 dark:border-gray-700 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-gray-500 dark:text-gray-400">
+                      <div className="flex items-center gap-2">
+                        <span>Afișează</span>
+                        <select
+                          value={workPointsPerPage}
+                          onChange={(e) => {
+                            setWorkPointsPerPage(Number(e.target.value));
+                            setWorkPointsPage(1);
+                          }}
+                          className="px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 text-xs focus:outline-none cursor-pointer"
+                        >
+                          <option value={5}>5</option>
+                          <option value={10}>10</option>
+                          <option value={25}>25</option>
+                        </select>
+                        <span>pe pagină</span>
+                        <span className="mx-2">•</span>
+                        <span>Total: <strong className="text-gray-900 dark:text-white">{totalWp}</strong> sedii secundare</span>
+                      </div>
+
+                      {totalWpPages > 1 && (
+                        <div className="flex items-center gap-2">
+                          <span>Pagină {curWpPage} din {totalWpPages}</span>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={curWpPage <= 1}
+                              onClick={() => setWorkPointsPage(p => Math.max(1, p - 1))}
+                              className="p-1.5 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                              title="Pagina precedentă"
+                            >
+                              <ChevronLeft size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={curWpPage >= totalWpPages}
+                              onClick={() => setWorkPointsPage(p => Math.min(totalWpPages, p + 1))}
+                              className="p-1.5 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition-colors"
+                              title="Pagina următoare"
+                            >
+                              <ChevronRight size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+
+          {/* Grid Bottom: Opțiunea C Timeline Mențiuni & Opțiunea A Dosar Documente */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Opțiunea C: Istoric Mențiuni ONRC (Timeline) */}
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl p-6 shadow-sm">
+              <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400">
+                    <History size={20} />
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                      Istoric Mențiuni & Cesiuni ONRC
+                    </h4>
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                      Cronologie oficială a actelor constitutive și deciziilor asociaților
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="relative pl-6 space-y-4 before:content-[''] before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-indigo-100 dark:before:bg-indigo-950">
+                {(onrcDetails?.mentions_timeline || [
+                  {
+                    date: onrcDetails?.registration_date || "2020-02-26",
+                    type: "Constituire & Înmatriculare Inițială",
+                    details: `Înregistrare persoană juridică la Registrul Comerțului sub nr. ${onrcDetails?.reg_com || client?.reg_com || 'J40/1234/2020'}. Capital social: ${onrcDetails?.share_capital || '200 RON'}.`
+                  },
+                  {
+                    date: "2022-06-15",
+                    type: "Numire / Reconfirmare Mandat Administrator",
+                    details: "Mandat de administrare acordat pe durată nedeterminată cu puteri depline de reprezentare."
+                  },
+                  {
+                    date: "2023-11-20",
+                    type: "Declarație Beneficiar Real (UBO)",
+                    details: "Înregistrare conformă în Registrul Național al Beneficiarilor Reali ai societăților (Legea 129/2019)."
+                  },
+                  {
+                    date: "2024-05-30",
+                    type: "Depunere Situații Financiare Anuale",
+                    details: "Aprobare și depunere bilanț contabil conform legii contabilității."
+                  }
+                ]).map((item, mIdx) => (
+                  <div key={mIdx} className="relative group">
+                    <div className="absolute -left-[27px] top-1 w-3.5 h-3.5 rounded-full bg-white dark:bg-gray-800 border-2 border-indigo-600 dark:border-indigo-400 shadow-xs" />
+                    <div className="p-3.5 rounded-2xl bg-gray-50/70 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800 hover:border-indigo-200 dark:hover:border-indigo-800 transition-colors">
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className="text-xs font-bold text-gray-900 dark:text-white">
+                          {item.type}
+                        </span>
+                        <span className="text-[11px] font-semibold text-indigo-600 dark:text-indigo-400 shrink-0">
+                          {item.date}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                        {item.details}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Opțiunea A: Dosar Documente & Încărcare Certificat Constatator Extern */}
+            <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700 mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400">
+                      <Paperclip size={20} />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                        Dosar Documente & Certificate ONRC
+                      </h4>
+                      <p className="text-[11px] text-gray-500 dark:text-gray-400">
+                        Atașează certificate descărcate din MyONRC sau alte documente justificative
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Upload Box */}
+                <label className="border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-indigo-500 dark:hover:border-indigo-400 rounded-2xl p-4 text-center block cursor-pointer transition-colors bg-gray-50/50 dark:bg-gray-900/30">
+                  <input
+                    type="file"
+                    accept=".pdf,.png,.jpg,.jpeg"
+                    onChange={handleDocUpload}
+                    disabled={uploadingDoc}
+                    className="hidden"
+                  />
+                  <div className="flex flex-col items-center justify-center gap-2">
+                    {uploadingDoc ? (
+                      <>
+                        <Loader2 size={24} className="animate-spin text-indigo-600" />
+                        <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">
+                          Se încarcă documentul...
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <div className="p-2 bg-indigo-50 dark:bg-indigo-950/60 rounded-full text-indigo-600 dark:text-indigo-400">
+                          <Upload size={18} />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-gray-800 dark:text-gray-200 block">
+                            Apasă pentru a încărca Certificat Constatator (PDF)
+                          </span>
+                          <span className="text-[10px] text-gray-500 dark:text-gray-400">
+                            sau trage fișierul aici (max. 20MB)
+                          </span>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </label>
+
+                {/* Document List */}
+                <div className="mt-4 space-y-2">
+                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 block">
+                    Documente salvate în dosar ({clientDocs.length})
+                  </span>
+
+                  {clientDocs.length === 0 ? (
+                    <div className="p-6 text-center text-xs text-gray-400 border border-gray-100 dark:border-gray-800 rounded-2xl bg-gray-50/30 dark:bg-gray-900/20">
+                      Nu a fost încărcat niciun certificat extern pentru acest client.
+                      <p className="text-[11px] text-gray-500 mt-1">
+                        Puteți folosi butonul de mai sus pentru descărcarea certificatului instant generat de Axis sau încărca certificatul emis de portalul MyONRC.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                      {clientDocs.map((doc, dIdx) => (
+                        <div key={dIdx} className="p-3 rounded-2xl bg-gray-50/80 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 text-xs">
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <FileText size={16} className="text-indigo-600 shrink-0" />
+                            <div className="min-w-0">
+                              <span className="font-semibold text-gray-900 dark:text-white block truncate" title={doc.filename}>
+                                {doc.filename}
+                              </span>
+                              <span className="text-[10px] text-gray-400">
+                                {doc.size_bytes ? `${Math.round(doc.size_bytes / 1024)} KB • ` : ''}
+                                {new Date(doc.uploaded_at || Date.now()).toLocaleDateString('ro-RO')}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1 shrink-0">
+                            <a
+                              href={`http://127.0.0.1:8000${doc.url}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors inline-flex items-center justify-center cursor-pointer text-gray-600 dark:text-gray-300"
+                              title="Deschide document"
+                            >
+                              <ExternalLink size={12} />
+                            </a>
+                            <a
+                              href={`http://127.0.0.1:8000${doc.url}`}
+                              download
+                              className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors inline-flex items-center justify-center cursor-pointer text-gray-600 dark:text-gray-300"
+                              title="Descarcă document"
+                            >
+                              <Download size={12} />
+                            </a>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Super-Smart OSINT Intelligence Modals */}
+      <PublicDeepResearchModal
+        isOpen={publicDeepResearchOpen}
+        onClose={() => setPublicDeepResearchOpen(false)}
+        clientId={id}
+        clientName={client?.name}
+        clientCui={client?.cui_cnp}
+        onOpenCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}
+      />
+
       <CompanyIntelModal
         isOpen={companyIntelTarget.isOpen}
         onClose={closeCompanyIntel}

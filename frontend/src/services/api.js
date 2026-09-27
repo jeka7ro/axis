@@ -55,6 +55,13 @@ export const lookupClientByCui = async (cui) => {
   return response.json();
 };
 
+export const searchPublicCompanies = async (query) => {
+  if (!query || query.trim().length < 2) return [];
+  const response = await fetch(`${API_URL}/clients/public-search?q=${encodeURIComponent(query.trim())}`);
+  if (!response.ok) return [];
+  return response.json();
+};
+
 export const fetchClientJEVAudit = async (id) => {
   const response = await fetch(`${API_URL}/clients/${id}/jev-audit`);
   if (!response.ok) throw new Error('Failed to fetch JEV audit certificate');
@@ -230,4 +237,70 @@ export const fetchClientFleetTelemetryReport = async (clientId) => {
   if (!response.ok) throw new Error('Failed to fetch client fleet telemetry report');
   return response.json();
 };
+
+export const fetchClientOnrcDetails = async (clientId) => {
+  const response = await fetch(`${API_URL}/clients/${clientId}/onrc-details`);
+  if (!response.ok) throw new Error('Failed to fetch ONRC details');
+  return response.json();
+};
+
+export const uploadClientDocument = async (clientId, file, documentType = "Certificat Constatator ONRC") => {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("document_type", documentType);
+  const response = await fetch(`${API_URL}/clients/${clientId}/upload-document`, {
+    method: 'POST',
+    body: formData
+  });
+  if (!response.ok) throw new Error('Failed to upload client document');
+  return response.json();
+};
+
+export const fetchClientDocuments = async (clientId) => {
+  const response = await fetch(`${API_URL}/clients/${clientId}/documents`);
+  if (!response.ok) throw new Error('Failed to fetch client documents');
+  return response.json();
+};
+
+export const fetchClientPublicDeepResearch = async (clientId) => {
+  const response = await fetch(`${API_URL}/clients/${clientId}/public-deep-research`);
+  if (!response.ok) throw new Error('Failed to fetch public deep research');
+  return response.json();
+};
+
+export const sendAssistantMessage = async ({ query, clientId, context = {} }) => {
+  const response = await fetch(`${API_URL}/assistant/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query,
+      client_id: clientId || null,
+      context
+    })
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Eroare la comunicarea cu Asistentul AI Axis');
+  }
+  return response.json();
+};
+
+export const fetchSuggestedPrompts = async (clientId = null) => {
+  const url = clientId ? `${API_URL}/assistant/suggested-prompts?client_id=${clientId}` : `${API_URL}/assistant/suggested-prompts`;
+  const response = await fetch(url);
+  if (!response.ok) return { prompts: [] };
+  return response.json();
+};
+
+export const fetchAssistantConfig = async () => {
+  try {
+    const response = await fetch(`${API_URL}/assistant/config`);
+    if (!response.ok) return { configured: false };
+    return response.json();
+  } catch {
+    return { configured: false };
+  }
+};
+
+
 

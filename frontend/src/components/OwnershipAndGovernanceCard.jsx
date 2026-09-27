@@ -49,6 +49,19 @@ export const OwnershipAndGovernanceCard = ({
     return Array.from(firmsMap.values());
   };
 
+  // Determinăm dacă societatea este radiată / lichidată / dizolvată
+  const isCompanyTerminated = useMemo(() => {
+    const s = String(fiscalStatus || '').toUpperCase();
+    return s.includes('RADIER') || s.includes('RADIAT') || s.includes('LICHID') || s.includes('DIZOLV') || s.includes('FALIMENT');
+  }, [fiscalStatus]);
+
+  // Extragem data radierii din fiscalStatus dacă este specificată (ex: "RADIERE din data 19.10.2016")
+  const radiationDate = useMemo(() => {
+    if (!fiscalStatus) return null;
+    const match = fiscalStatus.match(/(\d{2}[./-]\d{2}[./-]\d{4})/);
+    return match ? match[1] : null;
+  }, [fiscalStatus]);
+
   // Normalize holdings (acționari / asociați cu cote reale de participare)
   const normalizedHoldings = useMemo(() => {
     if (!Array.isArray(holdings) || holdings.length === 0) {
@@ -71,41 +84,49 @@ export const OwnershipAndGovernanceCard = ({
       name: h.name || h.nume || "",
       percent: Number(h.percent ?? h.cota_participare ?? 0),
       from: h.from || h.data_numire || "",
-      to: h.to || h.data_sfarsit || null,
-      current: h.current ?? (h.stare === "Activ"),
+      to: h.to || h.data_sfarsit || (isCompanyTerminated && radiationDate ? radiationDate : null),
+      current: isCompanyTerminated ? false : (h.current ?? (h.stare === "Activ")),
       placeofbirth: h.placeofbirth || h.loc_nastere || "",
       type: h.type || (h.este_administrator || h.is_administrator ? "Asociat și Administrator (PF)" : "Asociat (PF)"),
       entity: h.entity || h.tip_entitate || "PF"
     }));
-  }, [holdings]);
+  }, [holdings, isCompanyTerminated, radiationDate]);
 
   // Normalize administrators (conducere executivă oficială înregistrată la ONRC)
   const normalizedAdmins = useMemo(() => {
     if (Array.isArray(administrators) && administrators.length > 0) {
-      return administrators.map(a => ({
-        ...a,
-        nume: a.nume || a.name || "",
-        calitate: a.calitate || a.functie || "Administrator",
-        tip: a.tip || (a.entity === "PJ" ? "Persoană Juridică" : "Persoană Fizică"),
-        stare: a.stare || "Activ",
-        data: a.data || a.data_numire || "",
-        loc_nastere: a.loc_nastere || a.placeofbirth || ""
-      }));
+      return administrators.map(a => {
+        const isEnded = isCompanyTerminated || a.mandat_activ === false || a.stare === "Încetat" || a.stare === "Inactiv" || a.stare === "Expirat" || (a.stare && String(a.stare).toLowerCase().includes("încetat"));
+        return {
+          ...a,
+          nume: a.nume || a.name || "",
+          calitate: a.calitate || a.functie || "Administrator",
+          tip: a.tip || (a.entity === "PJ" ? "Persoană Juridică" : "Persoană Fizică"),
+          stare: isEnded ? (isCompanyTerminated ? "Încetat (Radiere)" : "Încetat") : (a.stare || "Activ"),
+          isEnded,
+          data: a.data || a.data_numire || "",
+          loc_nastere: a.loc_nastere || a.placeofbirth || ""
+        };
+      });
     }
     // Fallback din holdings DOAR dacă o persoană din acționariat are marcat explicit rolul de administrator
     const adminHoldings = normalizedHoldings.filter(h => h.is_administrator || (h.type && h.type.includes("ADMINISTRATOR")));
     if (adminHoldings.length > 0) {
-      return adminHoldings.map(h => ({
-        nume: h.name || h.nume || "",
-        calitate: "Administrator",
-        tip: h.entity === "PJ" ? "Persoană Juridică" : "Persoană Fizică",
-        stare: h.current ? "Activ" : "Istoric",
-        data: h.from || "",
-        loc_nastere: h.placeofbirth || ""
-      }));
+      return adminHoldings.map(h => {
+        const isEnded = isCompanyTerminated || !h.current;
+        return {
+          nume: h.name || h.nume || "",
+          calitate: "Administrator",
+          tip: h.entity === "PJ" ? "Persoană Juridică" : "Persoană Fizică",
+          stare: isEnded ? (isCompanyTerminated ? "Încetat (Radiere)" : "Încetat") : "Activ",
+          isEnded,
+          data: h.from || "",
+          loc_nastere: h.placeofbirth || ""
+        };
+      });
     }
     return [];
-  }, [administrators, normalizedHoldings]);
+  }, [administrators, normalizedHoldings, isCompanyTerminated]);
 
   // Normalize CAEN Principal & Secundare
   const caenPrincipal = useMemo(() => {
@@ -335,9 +356,20 @@ export const OwnershipAndGovernanceCard = ({
                       Societatea figurează înmatriculată la data de <strong className="text-gray-900 dark:text-white font-semibold">{registrationDate}</strong>{regComNumber ? <> (Nr. Reg. Com: <strong className="text-gray-900 dark:text-white font-semibold">{regComNumber}</strong>)</> : ""}.
                     </p>
                   )}
-                  <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
-                    Datele detaliate privind asociații și cotele de participare nu au fost returnate în extrasul curent de la Registrul Comerțului. Consultați lista administratorilor alăturată sau extrasul detaliat ReCom.
-                  </p>
+                  {isCompanyTerminated ? (
+                    <div className="p-3.5 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-xl text-xs text-red-700 dark:text-red-300 mt-2 space-y-1">
+                      <p className="font-bold text-red-800 dark:text-red-200 flex items-center gap-1.5">
+                        <span>Societate Radiată / Lichidare Judiciară</span>
+                      </p>
+                      <p className="text-[11px] leading-relaxed text-red-600/90 dark:text-red-400">
+                        La deschiderea falimentului și radierea societății, drepturile asociaților statutari sunt ridicate conform Legii 85/2014. Gestiunea patrimoniului și reprezentarea revin exclusiv <strong>Lichidatorilor Judiciari desemnați de instanță</strong> (vezi coloana alăturată).
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                      Datele detaliate privind asociații și cotele de participare nu au fost returnate în extrasul curent de la Registrul Comerțului. Consultați lista administratorilor alăturată sau extrasul detaliat ReCom.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -380,19 +412,31 @@ export const OwnershipAndGovernanceCard = ({
                           <span className="group-hover:underline">{personName}</span>
                           <ExternalLink size={12} className="text-gray-400 group-hover:text-primary transition-colors shrink-0" />
                         </button>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200/60">
-                          {a.stare || "Activ"}
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                          a.isEnded
+                            ? 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700'
+                            : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200/60'
+                        }`}>
+                          {a.isEnded ? (isCompanyTerminated ? 'Mandat Încetat' : 'Încetat') : 'Activ'}
                         </span>
                       </div>
                       <div className="text-right">
-                        <span className="text-xs text-emerald-700 dark:text-emerald-400 block font-semibold">
-                          Mandat în vigoare ({a.stare || "Activ"})
+                        <span className={`text-xs block font-semibold ${
+                          a.isEnded ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-700 dark:text-emerald-400'
+                        }`}>
+                          {a.isEnded
+                            ? (isCompanyTerminated ? 'Mandat încetat (Societate radiată)' : 'Mandat încetat')
+                            : 'Mandat în vigoare (Activ)'}
                         </span>
-                        {a.data && (
+                        {isCompanyTerminated && radiationDate ? (
+                          <span className="text-[10px] text-gray-400 dark:text-gray-500 block">
+                            Radiere oficială: {radiationDate}
+                          </span>
+                        ) : a.data ? (
                           <span className="text-[10px] text-gray-400 dark:text-gray-500 block" title="Data ultimei verificări / sincronizări a evidenței cu Registrul Comerțului">
                             Sincronizat registru: {a.data}
                           </span>
-                        )}
+                        ) : null}
                       </div>
                     </div>
                     <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">

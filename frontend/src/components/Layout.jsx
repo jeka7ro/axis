@@ -2,16 +2,36 @@ import { useState, useEffect, useRef } from 'react';
 import { Outlet, Navigate, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, FileText, Car, Settings, LogOut, Sun, Moon, 
-  Shield, Megaphone, ShieldAlert, Cpu, MapPin, Bell, ChevronDown, UserCheck, Briefcase 
+  Shield, Megaphone, ShieldAlert, Cpu, MapPin, Bell, ChevronDown, UserCheck, Briefcase,
+  Camera, Upload, RotateCcw
 } from 'lucide-react';
 import useAuthStore from '../store/authStore';
+import AxisAiCopilot from './AxisAiCopilot';
 
 const Layout = () => {
-  const { isAuthenticated, logout, user, setRole } = useAuthStore();
+  const { isAuthenticated, logout, user, setRole, setAvatar } = useAuthStore();
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const profileDropdownRef = useRef(null);
+  const avatarInputRef = useRef(null);
   const location = useLocation();
+
+  const handleAvatarUpload = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 5 * 1024 * 1024) {
+      alert('Fișierul depășește limita de 5MB. Te rugăm să alegi o imagine mai mică.');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target.result;
+      setAvatar(base64);
+    };
+    reader.readAsDataURL(file);
+  };
 
   useEffect(() => {
     // Check local storage first
@@ -202,10 +222,18 @@ const Layout = () => {
                 onClick={() => setIsProfileOpen(prev => !prev)}
                 className="flex items-center gap-2.5 p-1 pl-1.5 pr-2.5 rounded-full border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700/60 transition-all shadow-sm group active:scale-[0.98]"
               >
-                {/* Avatar Icon / Logo */}
+                {/* Avatar Icon / Photo */}
                 <div className="relative">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-slate-900 via-slate-800 to-slate-700 text-white flex items-center justify-center font-bold text-xs shadow ring-2 ring-primary/20">
-                    {user?.initials || 'EC'}
+                  <div className="w-8 h-8 rounded-full overflow-hidden bg-gradient-to-tr from-slate-900 via-slate-800 to-slate-700 text-white flex items-center justify-center font-bold text-xs shadow ring-2 ring-primary/20">
+                    {user?.avatar ? (
+                      <img
+                        src={user.avatar}
+                        alt={user?.full_name || 'User'}
+                        className="w-full h-full object-cover select-none pointer-events-none"
+                      />
+                    ) : (
+                      user?.initials || 'EC'
+                    )}
                   </div>
                   {/* Live Online Badge */}
                   <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-500 border-2 border-white dark:border-gray-800 rounded-full"></span>
@@ -231,10 +259,34 @@ const Layout = () => {
               {isProfileOpen && (
                 <div className="absolute right-0 mt-2 w-72 bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-100 dark:border-gray-700/80 p-2.5 z-50 animate-in fade-in zoom-in-95 duration-150 backdrop-blur-xl">
                   {/* Profile Header */}
-                  <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/40 rounded-xl mb-2 border border-gray-100 dark:border-gray-700/50">
-                    <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-slate-900 to-slate-700 text-white flex items-center justify-center font-bold text-sm shadow">
-                      {user?.initials || 'EC'}
+                  <div className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/40 rounded-xl mb-1.5 border border-gray-100 dark:border-gray-700/50">
+                    {/* Interactive Avatar with upload trigger */}
+                    <div 
+                      className="relative group cursor-pointer shrink-0"
+                      onClick={() => avatarInputRef.current?.click()}
+                      title="Click pentru a schimba poza de profil"
+                    >
+                      <div className="w-12 h-12 rounded-full overflow-hidden bg-gradient-to-tr from-slate-900 to-slate-700 text-white flex items-center justify-center font-bold text-sm shadow ring-2 ring-primary/30">
+                        {user?.avatar ? (
+                          <img
+                            src={user.avatar}
+                            alt={user?.full_name || 'User'}
+                            className="w-full h-full object-cover select-none pointer-events-none"
+                          />
+                        ) : (
+                          user?.initials || 'EC'
+                        )}
+                      </div>
+                      {/* Hover overlay with Camera icon */}
+                      <div className="absolute inset-0 bg-black/55 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Camera size={16} className="text-white drop-shadow" />
+                      </div>
+                      {/* Little camera badge */}
+                      <div className="absolute -bottom-0.5 -right-0.5 w-4.5 h-4.5 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-md border-2 border-white dark:border-gray-800">
+                        <Camera size={9} />
+                      </div>
                     </div>
+
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-bold text-gray-900 dark:text-white truncate">
                         {user?.full_name || 'Eugeniu Cazmal'}
@@ -250,6 +302,39 @@ const Layout = () => {
                       </div>
                     </div>
                   </div>
+
+                  {/* Avatar Quick Action Bar */}
+                  <div className="flex items-center justify-between px-1 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-gray-700/80 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 transition-colors cursor-pointer"
+                    >
+                      <Upload size={11} />
+                      <span>Încarcă / Schimbă Poza</span>
+                    </button>
+
+                    {user?.avatar && user.avatar !== '/jeka.png' && (
+                      <button
+                        type="button"
+                        onClick={() => setAvatar('/jeka.png')}
+                        className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                        title="Revenire la poza jeka.png"
+                      >
+                        <RotateCcw size={10} />
+                        <span>Reset</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Hidden File Input for Avatar Upload */}
+                  <input
+                    type="file"
+                    ref={avatarInputRef}
+                    accept="image/*"
+                    onChange={handleAvatarUpload}
+                    className="hidden"
+                  />
 
                   {/* Role Switcher Section */}
                   <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
@@ -316,6 +401,9 @@ const Layout = () => {
           <Outlet />
         </div>
       </main>
+
+      {/* Axis In-App AI Copilot */}
+      <AxisAiCopilot />
     </div>
   );
 };

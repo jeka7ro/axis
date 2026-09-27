@@ -14,7 +14,7 @@ import OwnershipAndGovernanceCard from './OwnershipAndGovernanceCard';
 import { getCaenInfo, getCaenDescription } from '../utils/caenHelper';
 
 const CompanyIntelModal = ({ 
-  isOpen, 
+  isOpen = true, 
   onClose, 
   cui, 
   initialName, 
@@ -56,6 +56,19 @@ const CompanyIntelModal = ({
 
     return () => { isMounted = false; };
   }, [isOpen, cui]);
+
+  // Escape key listener to close modal
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose?.();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   const handleRefreshApi = () => {
     if (!cui || loading) return;
@@ -101,9 +114,20 @@ const CompanyIntelModal = ({
   const bpi = data?.bpi || { has_insolvency: false, count: 0, records: [] };
 
   const companyName = data?.denumire || general.denumire || initialName || `CUI ${cui}`;
+  const isCompanyTerminated = (() => {
+    const s = String(general.stare || data?.stare || '').toUpperCase();
+    return s.includes('RADIER') || s.includes('RADIAT') || s.includes('LICHID') || s.includes('DIZOLV') || s.includes('FALIMENT');
+  })();
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/70 backdrop-blur-sm animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-900/70 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose?.();
+        }
+      }}
+    >
       <div 
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}
@@ -889,7 +913,7 @@ const CompanyIntelModal = ({
                     companyName={companyName}
                     registrationDate={general.data_inregistrare || general.data_inreg || ""}
                     regComNumber={general.nr_reg_com || general.nrRegCom || ""}
-                    fiscalStatus={general.stare || ""}
+                    fiscalStatus={general.stare || data?.stare || ""}
                     onOpenMofModal={setSelectedMofPub}
                     onOpenPerson={(personName) => onOpenPerson && onOpenPerson(personName, cui)}
                     onOpenCompany={(compCui, compName) => onOpenCompany ? onOpenCompany(compCui, compName) : (onEvaluate && onEvaluate(compCui, compName))}
@@ -1042,9 +1066,11 @@ const CompanyIntelModal = ({
                               </td>
                               <td className="px-4 py-2.5 text-center whitespace-nowrap">
                                 <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold ${
-                                  p.stare === 'Activ' ? 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300' : 'bg-gray-100 text-gray-600'
+                                  isCompanyTerminated || p.mandat_activ === false || p.stare === 'Încetat' || p.stare === 'Inactiv' || (p.stare && String(p.stare).toLowerCase().includes('încetat'))
+                                    ? 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-700'
+                                    : 'bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-300'
                                 }`}>
-                                  {p.stare || 'Activ'}
+                                  {isCompanyTerminated ? 'Încetat (Radiere)' : (p.stare || 'Activ')}
                                 </span>
                               </td>
                               <td className="px-4 py-2.5 text-center font-bold whitespace-nowrap">

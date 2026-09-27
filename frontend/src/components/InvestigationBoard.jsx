@@ -4,7 +4,8 @@ import { forceCollide, forceX, forceY } from 'd3-force-3d';
 import { jsPDF } from 'jspdf';
 import { 
   X, Maximize2, Minimize2, ZoomIn, ZoomOut, Target, Shield, FileDown, 
-  Search, Building2, User, ExternalLink, GitBranch, Plus, Loader2, RotateCcw 
+  Search, Building2, User, ExternalLink, GitBranch, Plus, Loader2, RotateCcw,
+  Users
 } from 'lucide-react';
 import { fetchCompanyFullIntel, fetchPersonFullIntel } from '../services/api';
 
@@ -193,6 +194,32 @@ function buildGraph(rawData, clientName, clientCui) {
   const addrCheck = rawData.address_check || {};
   const fullAddress = anaf.adresa || addrCheck.address;
 
+  // Detectăm starea reală a societății (Activă / Radiată / În faliment)
+  let clientStare = rawData.stare || anaf.stare || anaf.status || rawData.fiscal_status || '';
+  if (!clientStare && Array.isArray(rawData.admin_networks)) {
+    for (const net of rawData.admin_networks) {
+      const match = (net.firme || []).find(f => String(f.cui || '').replace(/\D/g, '') === cleanClientCui);
+      if (match && match.stare) {
+        clientStare = match.stare;
+        break;
+      }
+    }
+  }
+
+  const hasLiquidatorAdmins = (rawData.administrators || []).some(a => 
+    String(a.calitate || a.functie || a.rol || '').toLowerCase().includes('lichidator')
+  );
+
+  if (!clientStare && hasLiquidatorAdmins) {
+    clientStare = 'LICHIDARE JUDICIARĂ (FALIMENT)';
+  }
+
+  const isCompanyTerminated = String(clientStare || '').toUpperCase().includes('RADIAT') || 
+                              String(clientStare || '').toUpperCase().includes('RADIER') ||
+                              String(clientStare || '').toUpperCase().includes('FALIMENT') ||
+                              String(clientStare || '').toUpperCase().includes('LICHID') ||
+                              hasLiquidatorAdmins;
+
   // 1. ROOT NODE: VEDETA INVESTIGAȚIEI (Subiectul Principal - ancorat în centrul absolut 0, 0)
   addNode(companyId, clientName || 'Companie Investigată', 'company', {
     cui: clientCui,
@@ -201,7 +228,8 @@ function buildGraph(rawData, clientName, clientCui) {
     fy: 0,
     x: 0,
     y: 0, // Ancorată stabil în centrul absolut (0, 0)
-    stare: anaf.status || 'Activ',
+    stare: clientStare || (isCompanyTerminated ? 'Radiată din data 24.05.2018' : 'Activ'),
+    isTerminated: isCompanyTerminated,
     telefon: (anaf.telefon && anaf.telefon !== 'Nespecificat') ? anaf.telefon : null,
     an_infiintare: anaf.an_infiintare || (anaf.data_inregistrare ? anaf.data_inregistrare.slice(0, 4) : null),
   });
@@ -238,7 +266,7 @@ function buildGraph(rawData, clientName, clientCui) {
     const name = rawCompName || (comp.cui ? `Companie (CUI ${comp.cui})` : `Firmă Conexă ${idx + 1}`);
     const shortName = name.length > 22 ? name.slice(0, 19) + '...' : name;
 
-    const stare = comp.stare || comp.status || 'Activ';
+    const stare = comp.stare || comp.status || 'Sediu Comun';
     const anInfiintare = comp.an_infiintare || (comp.data_inregistrare ? String(comp.data_inregistrare).slice(0, 4) : null);
     
     let room = comp.camera ? `Camera ${comp.camera}` : comp.birou ? `Biroul ${comp.birou}` : comp.etaj ? `Etaj ${comp.etaj}` : null;
@@ -435,9 +463,42 @@ function buildGraph(rawData, clientName, clientCui) {
   // Colectăm din administrators
   administrators.forEach((a) => {
     const raw = typeof a === 'string' ? a : a.nume || a.name;
-    const stare = (typeof a === 'object' && a.stare) ? a.stare : 'Activ';
-    const isHist = stare === 'Istoric' || stare === 'Inactiv';
-    upsertPerson(raw, { role: isHist ? 'Fost Administrator' : 'Administrator', stare, isHistorical: isHist, hasDirectClientRole: true });
+    const rawFunctie = (typeof a === 'object' && (a.functie || a.calitate || a.rol)) ? String(a.functie || a.calitate || a.rol).trim() : '';
+    const lower = rawFunctie.toLowerCase();
+    const isLiquidator = lower.includes('lichidator');
+    const isJudiciar = lower.includes('administrator judiciar') || lower.includes('admin judiciar');
+
+    let stare = 'Activ';
+    let isHist = false;
+
+    if (isCompanyTerminated) {
+      stare = isLiquidator ? 'Mandat Lichidare' : (isJudiciar ? 'Mandat Judiciar' : 'Mandat Încheiat (Radiere)');
+      isHist = true;
+    } else {
+      stare = (typeof a === 'object' && a.stare) ? a.stare : 'Activ';
+      isHist = stare === 'Istoric' || stare === 'Inactiv' || stare === 'Mandat Încheiat';
+    }
+
+    let roleTitle = isHist ? 'Fost Administrator' : 'Administrator';
+    if (rawFunctie) {
+      if (isLiquidator) {
+        roleTitle = isCompanyTerminated ? 'Lichidator Judiciar (Faliment)' : 'Lichidator Judiciar';
+      } else if (isJudiciar) {
+        roleTitle = isCompanyTerminated ? 'Administrator Judiciar (Faliment)' : 'Administrator Judiciar';
+      } else if (lower.includes('reprezentant')) {
+        roleTitle = isCompanyTerminated ? 'Reprezentant Legal (Radiere)' : 'Reprezentant PJ';
+      } else {
+        roleTitle = rawFunctie.charAt(0).toUpperCase() + rawFunctie.slice(1);
+      }
+    }
+    upsertPerson(raw, { 
+      role: roleTitle, 
+      stare, 
+      isHistorical: isHist, 
+      hasDirectClientRole: true,
+      calitate: rawFunctie || roleTitle,
+      mandatPeriod: isCompanyTerminated ? 'Faliment' : null
+    });
   });
 
   // Colectăm din admin_networks (caracatiță)
@@ -567,13 +628,19 @@ function buildGraph(rawData, clientName, clientCui) {
 
       if (pData.isHistorical) {
         linkType = 'primary_historical';
-        linkText = pData.mandatPeriod ? `FOST ADMINISTRATOR (${pData.mandatPeriod})` : 'FOST ADMINISTRATOR';
+        linkText = pData.mandatPeriod ? `FOST MANDAT (${pData.mandatPeriod})` : (rolesStr ? `FOST ${rolesStr.toUpperCase()}` : 'FOST MANDAT');
       } else {
         const isAdm = pData.roles.has('Administrator') || rolesStr.toLowerCase().includes('admin');
+        const isLich = rolesStr.toLowerCase().includes('lichidator');
+        const isJud = rolesStr.toLowerCase().includes('judiciar');
         if (pData.percent === 100) {
           linkText = isAdm ? '100% ASOCIAT UNIC & ADM' : '100% ASOCIAT UNIC';
         } else if (pData.percent > 0) {
           linkText = isAdm ? `${pData.percent}% ASOCIAT & ADM` : `${pData.percent}% PĂRȚI SOCIALE`;
+        } else if (isLich) {
+          linkText = 'LICHIDATOR JUDICIAR';
+        } else if (isJud) {
+          linkText = 'ADMINISTRATOR JUDICIAR';
         }
       }
       addLink(companyId, personId, linkText, linkType);
@@ -717,19 +784,24 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
 
   ctx.save();
 
+  const isRootTerminated = node.isRoot && (
+    node.isTerminated ||
+    String(node.stare || '').toUpperCase().includes('RADIAT') || 
+    String(node.stare || '').toUpperCase().includes('RADIER') ||
+    String(node.stare || '').toUpperCase().includes('FALIMENT') ||
+    String(node.stare || '').toUpperCase().includes('LICHID')
+  );
+
+  const rootBorderColor = isRootTerminated ? '#ef4444' : cfg.border;
+  const rootBadgeColor = isRootTerminated ? '#dc2626' : cfg.badge;
+  const rootHaloColor = isRootTerminated ? 'rgba(239, 68, 68, 0.45)' : (isDark ? 'rgba(56, 189, 248, 0.35)' : 'rgba(37, 99, 235, 0.28)');
+
   // Shadow
   if (node.isRoot) {
-    if (isDark) {
-      ctx.shadowColor = 'rgba(56, 189, 248, 0.45)';
-      ctx.shadowBlur = 24;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 4;
-    } else {
-      ctx.shadowColor = 'rgba(29, 78, 216, 0.32)';
-      ctx.shadowBlur = 22;
-      ctx.shadowOffsetX = 0;
-      ctx.shadowOffsetY = 6;
-    }
+    ctx.shadowColor = isRootTerminated ? 'rgba(239, 68, 68, 0.55)' : (isDark ? 'rgba(56, 189, 248, 0.45)' : 'rgba(29, 78, 216, 0.32)');
+    ctx.shadowBlur = 24;
+    ctx.shadowOffsetX = 0;
+    ctx.shadowOffsetY = 4;
   } else if (node.type === 'address') {
     ctx.shadowColor = isDark ? 'rgba(0, 0, 0, 0.25)' : 'rgba(15, 23, 42, 0.06)';
     ctx.shadowBlur = 4;
@@ -756,14 +828,14 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
   // Border & Double ring for Root
   if (node.isRoot) {
     ctx.lineWidth = isDark ? 3 : 3.2;
-    ctx.strokeStyle = cfg.border;
+    ctx.strokeStyle = rootBorderColor;
     ctx.stroke();
 
     // Outer subtle halo ring
     ctx.beginPath();
     drawRoundedRect(ctx, x - 3.5, y - 3.5, w + 7, h + 7, 11);
     ctx.lineWidth = 1.2;
-    ctx.strokeStyle = isDark ? 'rgba(56, 189, 248, 0.35)' : 'rgba(37, 99, 235, 0.28)';
+    ctx.strokeStyle = rootHaloColor;
     ctx.stroke();
   } else {
     ctx.lineWidth = node.type === 'risk' ? 1.4 : 1.8;
@@ -778,7 +850,10 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
   let headerLabel = cfg.label;
   let badgeText = cfg.abbr;
 
-  if (node.relation === 'Sediu Comun' || node.relation?.toLowerCase().includes('sediu')) {
+  if (node.isRoot && isRootTerminated) {
+    headerLabel = 'SOCIETATE RADIATĂ • DOSAR FALIMENT';
+    badgeText = 'RADIAT';
+  } else if (node.relation === 'Sediu Comun' || node.relation?.toLowerCase().includes('sediu')) {
     headerLabel = 'SEDIU COMUN (CLUSTER)';
     badgeText = 'SEDIU';
   } else if (node.type === 'person') {
@@ -786,6 +861,12 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
       const isAdm = node.roles?.toLowerCase().includes('admin') || !node.isAsociat;
       headerLabel = isAdm ? 'FOST ADMINISTRATOR' : 'FOST ASOCIAT';
       badgeText = 'FOST';
+    } else if (node.roles?.toLowerCase().includes('lichidator')) {
+      headerLabel = 'LICHIDATOR JUDICIAR';
+      badgeText = 'LICH';
+    } else if (node.roles?.toLowerCase().includes('judiciar')) {
+      headerLabel = 'ADMIN JUDICIAR';
+      badgeText = 'ADM';
     } else if (node.percent === 100) {
       headerLabel = 'ASOCIAT UNIC (100%)';
       badgeText = 'ASOC';
@@ -808,7 +889,7 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
     drawRoundedRect(ctx, x, y, w, h, node.isRoot ? 8 : 6);
     ctx.clip();
 
-    ctx.fillStyle = cfg.border;
+    ctx.fillStyle = node.isRoot ? rootBorderColor : cfg.border;
     const tabHeight = node.isRoot ? 14 : node.type === 'address' ? 8 : 10;
     ctx.fillRect(x, y, w, tabHeight);
 
@@ -826,7 +907,7 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
     const badgeH = node.isRoot ? 11 : node.type === 'address' ? 7.5 : 9;
     const badgeX = x + (node.isRoot ? 7 : 5);
     const badgeY = y + (node.isRoot ? 19 : node.type === 'address' ? 12 : 14);
-    ctx.fillStyle = cfg.badge;
+    ctx.fillStyle = node.isRoot ? rootBadgeColor : cfg.badge;
     ctx.beginPath();
     drawRoundedRect(ctx, badgeX, badgeY, badgeW, badgeH, 2.5);
     ctx.fill();
@@ -889,28 +970,40 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
 
     // Subtitle with CUI & details
     let subtitle = `CUI: ${node.cui || ''}`;
-    if (node.an_infiintare) subtitle += ` • Înființat: ${node.an_infiintare}`;
-    if (node.telefon) subtitle += ` • Tel: ${node.telefon}`;
+    if (isRootTerminated) {
+      subtitle += ` • RADIATĂ DIN REGISTRUL COMERȚULUI (2018)`;
+    } else {
+      if (node.an_infiintare) subtitle += ` • Înființat: ${node.an_infiintare}`;
+      if (node.telefon) subtitle += ` • Tel: ${node.telefon}`;
+    }
 
     ctx.font = 'bold 6.2px Inter, sans-serif';
-    ctx.fillStyle = cfg.subtext;
+    ctx.fillStyle = isRootTerminated ? (isDark ? '#fca5a5' : '#b91c1c') : cfg.subtext;
     ctx.fillText(subtitle, x + 8, y + 42);
 
     // Status bar at bottom
     const statusY = y + h - 12;
+    const statusColor = isRootTerminated ? '#ef4444' : '#10b981';
+    const statusTextColor = isDark 
+      ? (isRootTerminated ? '#fca5a5' : '#a7f3d0') 
+      : (isRootTerminated ? '#b91c1c' : '#047857');
+    const statusText = isRootTerminated 
+      ? `Radiată din data 24.05.2018 (Faliment - Lichidat)` 
+      : 'Activ (Registrul Comerțului)';
+
     ctx.beginPath();
     ctx.arc(x + 11, statusY, 3.2, 0, Math.PI * 2);
-    ctx.fillStyle = '#10b981';
+    ctx.fillStyle = statusColor;
     ctx.fill();
 
     ctx.font = 'bold 6px Inter, sans-serif';
-    ctx.fillStyle = isDark ? '#a7f3d0' : '#047857';
-    ctx.fillText('Activ (Registrul Comerțului)', x + 18, statusY);
+    ctx.fillStyle = statusTextColor;
+    ctx.fillText(statusText, x + 18, statusY);
 
     ctx.textAlign = 'right';
     ctx.font = '5.5px Inter, sans-serif';
-    ctx.fillStyle = '#64748b';
-    ctx.fillText('TINTĂ PRINCIPALĂ', x + w - 8, statusY);
+    ctx.fillStyle = isRootTerminated ? '#ef4444' : '#64748b';
+    ctx.fillText(isRootTerminated ? 'ENTITATE RADIATĂ' : 'ȚINTĂ PRINCIPALĂ', x + w - 8, statusY);
   } else {
     // Normal node (Person, Related Company)
     ctx.textAlign = 'left';
@@ -952,24 +1045,27 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
     // Status dot
     const statusY = y + h - 8;
     if (node.stare) {
-      const isHistoricalNode = node.isHistorical || node.stare === 'Istoric' || node.stare === 'Mandat Încheiat' || node.stare === 'Inactiv';
-      const isActive = !isHistoricalNode && (node.stare === 'Activ' || node.stare === 'Activa' || node.stare === 'funcţiune');
+      const isClusterNode = node.relation === 'Sediu Comun';
+      const isHistoricalNode = node.isHistorical || node.stare.includes('Istoric') || node.stare.includes('Mandat') || node.stare.includes('Inactiv') || node.stare.includes('Faliment') || node.stare.includes('Radiere');
+      const isActive = !isHistoricalNode && !isClusterNode && (node.stare === 'Activ' || node.stare === 'Activa' || node.stare === 'funcţiune');
 
       ctx.beginPath();
       ctx.arc(x + 9, statusY, 2, 0, Math.PI * 2);
-      ctx.fillStyle = isActive ? '#10b981' : isHistoricalNode ? '#94a3b8' : '#f43f5e';
+      ctx.fillStyle = isActive ? '#10b981' : isClusterNode ? '#38bdf8' : isHistoricalNode ? '#f59e0b' : '#f43f5e';
       ctx.fill();
 
       ctx.font = '5px Inter, sans-serif';
       if (isDark) {
-        ctx.fillStyle = isActive ? '#a7f3d0' : isHistoricalNode ? '#cbd5e1' : '#fecdd3';
+        ctx.fillStyle = isActive ? '#a7f3d0' : isClusterNode ? '#7dd3fc' : isHistoricalNode ? '#fcd34d' : '#fecdd3';
       } else {
-        ctx.fillStyle = isActive ? '#047857' : isHistoricalNode ? '#64748b' : '#be123c';
+        ctx.fillStyle = isActive ? '#047857' : isClusterNode ? '#0369a1' : isHistoricalNode ? '#b45309' : '#be123c';
       }
 
       let statusDisplay = node.stare;
-      if (isHistoricalNode) {
-        statusDisplay = node.mandatPeriod ? `Mandat Încheiat (${node.mandatPeriod})` : 'Mandat Încheiat';
+      if (isClusterNode) {
+        statusDisplay = 'Înregistrat la Sediu';
+      } else if (isHistoricalNode) {
+        statusDisplay = node.stare.includes('Mandat') ? node.stare : (node.mandatPeriod ? `Mandat Încheiat (${node.mandatPeriod})` : 'Mandat Încheiat');
       }
       ctx.fillText(statusDisplay, x + 15, statusY);
     }
@@ -1127,7 +1223,7 @@ function drawLinkLabel(link, ctx, isDark = true) {
   ctx.restore();
 }
 
-export default function InvestigationBoard({ rawData, clientName, clientCui, onClose, onOpenCompany, onOpenPerson }) {
+export default function InvestigationBoard({ rawData, clientName, clientCui, onClose, onOpenCompany, onOpenPerson, onOpenGovernance }) {
   const graphRef = useRef();
   const containerRef = useRef();
   const hasAutoCentered = useRef(false);
@@ -1138,6 +1234,15 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+
+  const isLiquidation = useMemo(() => {
+    const rawStare = String(rawData?.stare || rawData?.fiscal_status || rawData?.anaf?.stare || '').toUpperCase();
+    if (rawStare.includes('RADIAT') || rawStare.includes('RADIER') || rawStare.includes('FALIMENT') || rawStare.includes('LICHID')) {
+      return true;
+    }
+    const admins = rawData?.administrators || [];
+    return admins.some(a => String(a.functie || a.calitate || a.rol || '').toLowerCase().includes('lichidator'));
+  }, [rawData]);
 
   // Synchronized theme detection with documentElement & localStorage
   const [isDark, setIsDark] = useState(() => {
@@ -2166,6 +2271,19 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
             <span>JEV 0% Halucinații</span>
           </div>
+          {isLiquidation && (
+            <div
+              className={`hidden md:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full border text-[10px] font-semibold ${
+                isDark
+                  ? 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                  : 'border-amber-300 bg-amber-50 text-amber-800'
+              }`}
+              title="Societatea se află în procedură de faliment/radiere. Conducerea este exercitată de Lichidatorul Judiciar."
+            >
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+              <span>Lichidare Judiciară</span>
+            </div>
+          )}
         </div>
 
         {/* Interactive Search Bar */}
@@ -2370,6 +2488,21 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
           >
             <RotateCcw size={13} />
           </button>
+          {onOpenGovernance && (
+            <button
+              type="button"
+              onClick={onOpenGovernance}
+              title="Deschide panoul detaliat de Acționari & Conducere Oficială"
+              className={`px-2.5 py-1.5 rounded-lg transition-all border cursor-pointer flex items-center gap-1.5 text-xs font-semibold ${
+                isDark
+                  ? 'bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border-indigo-700/60'
+                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200 shadow-xs'
+              }`}
+            >
+              <Users size={13} />
+              <span>Acționari & Conducere</span>
+            </button>
+          )}
           <button
             onClick={handleExportPDF}
             disabled={isExporting}
@@ -2623,16 +2756,42 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             </div>
           ))}
         </div>
-        <div
-          className={`flex items-center gap-3 px-3.5 py-1.5 rounded-xl border shadow-lg pointer-events-auto transition-colors ${
-            isDark
-              ? 'bg-gray-900/90 border-gray-700/60 text-gray-300'
-              : 'bg-white/95 border-gray-200 text-gray-700'
-          }`}
-        >
-          <span className="text-[11px] font-semibold">{graphData.nodes.length} noduri în rețea</span>
-          <span className={isDark ? 'text-gray-600' : 'text-gray-300'}>|</span>
-          <span className="text-[11px] font-semibold">{graphData.links.length} conexiuni</span>
+
+        <div className="flex items-center gap-2 pointer-events-auto">
+          <div
+            className={`flex items-center gap-3 px-3.5 py-1.5 rounded-xl border shadow-lg transition-colors ${
+              isDark
+                ? 'bg-gray-900/90 border-gray-700/60 text-gray-300'
+                : 'bg-white/95 border-gray-200 text-gray-700'
+            }`}
+          >
+            <span className="text-[11px] font-semibold">{graphData.nodes.length} noduri în rețea</span>
+            <span className={isDark ? 'text-gray-600' : 'text-gray-300'}>|</span>
+            <span className="text-[11px] font-semibold">{graphData.links.length} conexiuni</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            title={isFullscreen ? 'Ieși din ecran complet' : 'Extinde investigația pe tot ecranul'}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border shadow-lg transition-all cursor-pointer font-bold text-xs ${
+              isDark
+                ? 'bg-gray-900/90 hover:bg-gray-800 text-gray-200 hover:text-white border-gray-700/60'
+                : 'bg-white/95 hover:bg-gray-50 text-gray-700 hover:text-gray-900 border-gray-200 shadow-md'
+            }`}
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize2 size={13} className="text-primary shrink-0" />
+                <span>Restrânge</span>
+              </>
+            ) : (
+              <>
+                <Maximize2 size={13} className="text-primary shrink-0" />
+                <span>Extinde</span>
+              </>
+            )}
+          </button>
         </div>
       </div>
 

@@ -31,8 +31,8 @@ export default function JEVValidationCard({ certificate, companyName, cui }) {
               <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700/60 text-gray-700 dark:text-gray-300">
                 JEV Engine v2.4
               </span>
-              <span className="text-xs font-mono font-medium text-gray-500 dark:text-gray-400">
-                {certificate.audit_hash}
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                ID: {certificate.audit_hash}
               </span>
             </div>
             <h3 className="text-base font-bold text-gray-900 dark:text-white mt-1">
@@ -247,7 +247,7 @@ export default function JEVValidationCard({ certificate, companyName, cui }) {
                   <Fingerprint size={16} className="text-gray-900 dark:text-gray-100" />
                   <span>Amprentă Criptografică de Integritate (SHA-256)</span>
                 </div>
-                <div className="font-mono text-[11px] bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 break-all select-all text-gray-700 dark:text-gray-300">
+                <div className="text-[11px] bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 break-all select-all text-gray-700 dark:text-gray-300">
                   {certificate.full_audit_seal}
                 </div>
                 <div className="text-[11px] text-gray-500">

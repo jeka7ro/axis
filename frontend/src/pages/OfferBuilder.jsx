@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
-import { fetchClients, createClient, updateClient, fetchVehicles, fetchVehicleBrands, fetchClientFleetTelemetryReport } from '../services/api';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { fetchClients, createClient, updateClient, lookupClientByCui, fetchVehicles, fetchVehicleBrands, fetchClientFleetTelemetryReport } from '../services/api';
 import { createOffer, updateOffer, fetchOffer, uploadTemplate, fetchFidejusorSuggestion, submitOfferForApproval } from '../services/apiOffers';
 import { fetchCampaigns } from '../services/apiCampaigns';
 import useAuthStore from '../store/authStore';
@@ -11,6 +11,10 @@ import SearchableSelect from '../components/SearchableSelect';
 const OfferBuilder = () => {
   const navigate = useNavigate();
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const urlClientId = searchParams.get('client_id');
+  const urlCui = searchParams.get('cui');
+  const urlName = searchParams.get('name');
   const isEditMode = Boolean(id);
   const { currency, user } = useAuthStore();
   const [clients, setClients] = useState([]);
@@ -64,11 +68,85 @@ const OfferBuilder = () => {
   const [vehicles, setVehicles] = useState([]);
   const [brands, setBrands] = useState([]);
 
+  const selectClientById = (clientId, currentClientsList = clients) => {
+    if (!clientId) return;
+    const prefCurr = localStorage.getItem(`pref_curr_${clientId}`);
+    const selectedC = currentClientsList.find(c => String(c.id) === String(clientId));
+    
+    setFormData(prev => ({
+      ...prev, 
+      client_id: String(clientId),
+      currency: prefCurr || prev.currency,
+      fidejusor_name: '',
+      fidejusor_cnp: '',
+      fidejusor_address: '',
+      fidejusor_id_card: '',
+      fidejusor_quality: ''
+    }));
+
+    loadFidejusorForClient(clientId, selectedC, currentClientsList);
+    loadTelemetryForClient(clientId);
+  };
+
+  const handleUpdateClientRepresentative = async (clientId, newRepName) => {
+    setClients(prev => prev.map(c => String(c.id) === String(clientId) ? { ...c, representative_name: newRepName } : c));
+    try {
+      const targetClient = clients.find(c => String(c.id) === String(clientId));
+      if (targetClient) {
+        await updateClient(clientId, { ...targetClient, representative_name: newRepName });
+      }
+    } catch (err) {
+      console.warn("Could not update client representative:", err);
+    }
+  };
+
   useEffect(() => {
-    fetchClients().then(setClients).catch(console.error);
     fetchVehicles().then(setVehicles).catch(console.error);
     fetchVehicleBrands().then(setBrands).catch(console.error);
     fetchCampaigns(true).then(setCampaigns).catch(console.error);
+
+    fetchClients().then(async (clientsList) => {
+      setClients(clientsList);
+
+      if (!isEditMode) {
+        let targetId = urlClientId;
+        
+        // Dacă avem CUI dar nu avem client_id în URL
+        if (!targetId && urlCui) {
+          const existing = clientsList.find(c => String(c.cui_cnp).trim() === String(urlCui).trim());
+          if (existing) {
+            targetId = existing.id;
+          } else {
+            // Auto-creare client din CUI extern
+            try {
+              const lookupData = await lookupClientByCui(urlCui);
+              if (lookupData && (lookupData.name || urlName)) {
+                const created = await createClient({
+                  name: lookupData.name || urlName,
+                  cui_cnp: urlCui,
+                  address: lookupData.address || '',
+                  reg_com: lookupData.nr_reg_com || '',
+                  type: 'PJ'
+                });
+                const refreshed = await fetchClients();
+                setClients(refreshed);
+                targetId = created.id;
+                clientsList = refreshed;
+              }
+            } catch (err) {
+              console.warn("Could not auto-create client from CUI:", err);
+            }
+          }
+        }
+
+        if (targetId) {
+          const matched = clientsList.find(c => String(c.id) === String(targetId));
+          if (matched) {
+            selectClientById(matched.id, clientsList);
+          }
+        }
+      }
+    }).catch(console.error);
     
     if (isEditMode) {
       setLoading(true);
@@ -109,7 +187,7 @@ const OfferBuilder = () => {
         })
         .finally(() => setLoading(false));
     }
-  }, [id, isEditMode, navigate, user]);
+  }, [id, isEditMode, navigate, user, urlClientId, urlCui, urlName]);
 
   const loadTelemetryForClient = async (clientId) => {
     if (!clientId) {
@@ -128,13 +206,14 @@ const OfferBuilder = () => {
     }
   };
 
-  const loadFidejusorForClient = async (clientId) => {
+  const loadFidejusorForClient = async (clientId, clientObj = null, currentList = clients) => {
     if (!clientId) return;
     setLoadingFidejusor(true);
     try {
       const data = await fetchFidejusorSuggestion(clientId);
       if (data?.suggested_fidejusor) {
-        setFidejusorCandidates(data.all_candidates || [data.suggested_fidejusor]);
+        const candidates = data.all_candidates || [data.suggested_fidejusor];
+        setFidejusorCandidates(candidates);
         setFormData(prev => {
           if (prev.fidejusor_name) return prev;
           return {
@@ -146,6 +225,16 @@ const OfferBuilder = () => {
             fidejusor_quality: data.suggested_fidejusor.quality || 'Administrator Statutar'
           };
         });
+
+        // Verificăm dacă reprezentantul legal al clientului este deja setat
+        const targetClient = clientObj || currentList.find(c => String(c.id) === String(clientId));
+        if (targetClient && targetClient.type === 'PJ' && !targetClient.representative_name) {
+          const adminCand = candidates.find(c => c.is_administrator) || candidates[0];
+          if (adminCand?.name) {
+            updateClient(clientId, { ...targetClient, representative_name: adminCand.name }).catch(console.warn);
+            setClients(prev => prev.map(c => String(c.id) === String(clientId) ? { ...c, representative_name: adminCand.name } : c));
+          }
+        }
       }
     } catch (err) {
       console.warn("Could not fetch fidejusor suggestion:", err);
@@ -302,32 +391,99 @@ const OfferBuilder = () => {
                     value={formData.client_id}
                     placeholder="Selectează Clientul Evaluat"
                     options={clients.map(c => ({ value: c.id, label: `${c.name} (${c.cui_cnp})` }))}
-                    onChange={(val) => {
-                      const clientId = val;
-                      const prefCurr = localStorage.getItem(`pref_curr_${clientId}`);
-                      setFormData(prev => ({
-                        ...prev, 
-                        client_id: clientId,
-                        currency: prefCurr || prev.currency,
-                        fidejusor_name: '',
-                        fidejusor_cnp: '',
-                        fidejusor_address: '',
-                        fidejusor_id_card: '',
-                        fidejusor_quality: ''
-                      }));
-                      loadFidejusorForClient(clientId);
-                      loadTelemetryForClient(clientId);
-                    }}
+                    onChange={(val) => selectClientById(val)}
                   />
                   
-                  {formData.client_id && clients.find(c => String(c.id) === String(formData.client_id))?.type === 'PJ' && (
-                    <div className="mt-3 p-3 bg-gray-100/70 dark:bg-gray-800 rounded-lg text-sm border border-gray-200 dark:border-gray-700">
-                      <span className="text-gray-500 dark:text-gray-400">Reprezentant Legal curent: </span>
-                      <span className="font-medium text-gray-900 dark:text-white">
-                        {clients.find(c => String(c.id) === String(formData.client_id))?.representative_name || <span className="text-red-500 italic">Nesetat (Editează clientul în lista de Clienți pentru a adăuga reprezentantul)</span>}
-                      </span>
-                    </div>
-                  )}
+                  {/* Card Detalii Companie & Reprezentant Legal (Mac OS Tahoe Style) */}
+                  {(() => {
+                    const selectedClient = clients.find(c => String(c.id) === String(formData.client_id));
+                    if (!selectedClient) return null;
+
+                    return (
+                      <div className="mt-3.5 p-4 bg-white dark:bg-gray-800/90 rounded-2xl border border-gray-200 dark:border-gray-700 shadow-2xs space-y-3 animate-in fade-in duration-200">
+                        <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-gray-100 dark:border-gray-700/60">
+                          <div className="flex items-center gap-2">
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-primary/10 text-primary border border-primary/20">
+                              {selectedClient.type === 'PJ' ? 'Persoană Juridică' : 'Persoană Fizică'}
+                            </span>
+                            <span className="text-sm font-bold text-gray-900 dark:text-white">
+                              {selectedClient.name}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+                            <span>CUI: <strong className="text-gray-900 dark:text-white font-mono">{selectedClient.cui_cnp}</strong></span>
+                            {selectedClient.reg_com && (
+                              <span>• Reg. Com: <strong className="text-gray-900 dark:text-white font-mono">{selectedClient.reg_com}</strong></span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Grid Reprezentant Legal & Sediu */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                          {/* Reprezentant Legal */}
+                          <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-900/60 border border-gray-200/70 dark:border-gray-700/70 flex flex-col justify-between">
+                            <div>
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="font-semibold text-gray-700 dark:text-gray-300">
+                                  {selectedClient.type === 'PJ' ? 'Reprezentant Legal (Semnatar)' : 'Titular Contract'}
+                                </span>
+                                {fidejusorCandidates.length > 0 && (
+                                  <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Auto-preluat ONRC</span>
+                                )}
+                              </div>
+                              <input
+                                type="text"
+                                value={selectedClient.representative_name || ''}
+                                placeholder="Nume Prenume Reprezentant Legal"
+                                onChange={(e) => handleUpdateClientRepresentative(selectedClient.id, e.target.value)}
+                                className="w-full px-3 py-1.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg text-xs font-bold text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-primary shadow-2xs"
+                              />
+                            </div>
+
+                            {/* Sugestii rapide din guvernanță ONRC */}
+                            {fidejusorCandidates.length > 0 && (
+                              <div className="flex flex-wrap items-center gap-1.5 mt-2 pt-2 border-t border-gray-200/60 dark:border-gray-700/60">
+                                <span className="text-[10px] text-gray-400">Opțiuni conducere:</span>
+                                {fidejusorCandidates.map((cand, cIdx) => (
+                                  <button
+                                    key={cIdx}
+                                    type="button"
+                                    onClick={() => handleUpdateClientRepresentative(selectedClient.id, cand.name)}
+                                    className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border transition-all cursor-pointer ${
+                                      (selectedClient.representative_name || '').trim().toLowerCase() === (cand.name || '').trim().toLowerCase()
+                                        ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                                        : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-blue-400'
+                                    }`}
+                                    title={`${cand.name} - ${cand.quality}`}
+                                  >
+                                    {cand.name} <span className="opacity-70">({cand.is_administrator ? 'Admin' : 'Asociat'})</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Sediu Social & Date Contact */}
+                          <div className="p-3 rounded-xl bg-gray-50 dark:bg-gray-900/60 border border-gray-200/70 dark:border-gray-700/70 flex flex-col justify-between">
+                            <div>
+                              <span className="font-semibold text-gray-700 dark:text-gray-300 block mb-1">
+                                Sediu Social Oficial
+                              </span>
+                              <p className="text-gray-800 dark:text-gray-200 leading-snug font-medium">
+                                {selectedClient.address || 'Adresă nespecificată'}
+                              </p>
+                            </div>
+                            {selectedClient.contact_phone && (
+                              <div className="mt-2 pt-2 border-t border-gray-200/60 dark:border-gray-700/60 text-[11px] text-gray-500 dark:text-gray-400">
+                                <span>Telefon Contact: </span>
+                                <strong className="text-gray-900 dark:text-white font-mono">{selectedClient.contact_phone}</strong>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Raport Comportament Flotă GPS (Cerința 7 Alin) */}
                   {formData.client_id && telemetryReport && (

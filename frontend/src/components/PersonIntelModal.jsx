@@ -37,6 +37,19 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany, 
     return () => { isMounted = false; };
   }, [isOpen, name, contextCui]);
 
+  // Escape key listener to close modal
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        onClose?.();
+      }
+    };
+    if (isOpen) {
+      window.addEventListener('keydown', handleKeyDown);
+    }
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const courtCases = data?.court_cases || [];
@@ -51,7 +64,14 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany, 
   const ceasedFirme = totalFirme - activeFirme;
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-gray-900/70 backdrop-blur-sm animate-in fade-in duration-200">
+    <div 
+      className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-900/70 backdrop-blur-sm animate-in fade-in duration-200"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) {
+          onClose?.();
+        }
+      }}
+    >
       <div 
         className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200"
         onClick={e => e.stopPropagation()}

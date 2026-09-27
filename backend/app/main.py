@@ -3,7 +3,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from .database import engine, Base
-from .api import auth, clients, offers, gps, vehicles, nomenclatures, campaigns
+from .api import auth, clients, offers, gps, vehicles, nomenclatures, campaigns, assistant
 import os
 
 # Create database tables (wrapped to survive Postgres enum conflicts)
@@ -153,6 +153,7 @@ app.include_router(gps.router)
 app.include_router(vehicles.router)
 app.include_router(nomenclatures.router)
 app.include_router(campaigns.router)
+app.include_router(assistant.router)
 
 @app.middleware("http")
 async def security_headers_middleware(request: Request, call_next):

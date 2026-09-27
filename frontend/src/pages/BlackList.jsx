@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Plus, Edit2, Trash2, Search, Trash, ShieldAlert, UserX, Building2, User, 
-  ChevronLeft, ChevronRight, CheckSquare, CheckCircle2, AlertCircle, Loader2, ShieldBan 
+  ChevronLeft, ChevronRight, CheckSquare, CheckCircle2, AlertCircle, Loader2, ShieldBan, X
 } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 import { 
@@ -362,88 +363,124 @@ const BlackList = () => {
       </div>
 
       {/* Modal Adăugare în Black List */}
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl max-w-md w-full p-6 border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200">
-            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-4 flex items-center gap-2">
-              <UserX className="text-red-500"/> Adaugă în Black List
-            </h3>
-            
-            <form onSubmit={handleAddSubmit} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                  Selectează Client
-                </label>
-                <select 
-                  value={modalForm.clientId}
-                  onChange={(e) => setModalForm(prev => ({ ...prev, clientId: e.target.value }))}
-                  required
-                  className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500"
-                >
-                  <option value="">-- Alege un client din portofoliu --</option>
-                  {availableClients
-                    .filter(c => !c.is_blacklisted)
-                    .map(client => (
-                      <option key={client.id} value={client.id}>
-                        {client.name} ({client.cui_cnp})
-                      </option>
-                    ))}
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                  Motiv / Notă Abatere
-                </label>
-                <textarea 
-                  rows="3" 
-                  value={modalForm.reason}
-                  onChange={(e) => setModalForm(prev => ({ ...prev, reason: e.target.value }))}
-                  required
-                  className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white text-sm focus:ring-2 focus:ring-red-500/20 focus:border-red-500 resize-none" 
-                  placeholder="Descrie motivul interdicției..."
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-1.5">
-                  Grad de Severitate
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  {['Critic', 'Înalt', 'Mediu'].map(sev => (
-                    <button
-                      key={sev}
-                      type="button"
-                      onClick={() => setModalForm(prev => ({ ...prev, severity: sev }))}
-                      className={`py-2 px-3 text-xs font-semibold rounded-xl border transition-all cursor-pointer ${
-                        modalForm.severity === sev
-                          ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                          : 'bg-gray-50 dark:bg-gray-700/50 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600'
-                      }`}
-                    >
-                      {sev}
-                    </button>
-                  ))}
+      {isModalOpen && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-950/70 backdrop-blur-md animate-in fade-in duration-200">
+          <div 
+            className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl max-w-lg w-full border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-start justify-between gap-4 shrink-0">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0 shadow-xs">
+                  <UserX size={22} strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white truncate">
+                    Adăugare în Black List
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                    Blocare acces la oferte și contracte noi
+                  </p>
                 </div>
               </div>
 
-              <div className="mt-6 flex justify-end gap-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                title="Închide"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleAddSubmit} className="flex flex-col">
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Selectează Client
+                  </label>
+                  <select 
+                    value={modalForm.clientId}
+                    onChange={(e) => setModalForm(prev => ({ ...prev, clientId: e.target.value }))}
+                    required
+                    className="block w-full px-4 py-2.5 bg-gray-50/80 dark:bg-gray-900/80 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white text-xs focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all"
+                  >
+                    <option value="">-- Alege un client din portofoliu --</option>
+                    {availableClients
+                      .filter(c => !c.is_blacklisted)
+                      .map(client => (
+                        <option key={client.id} value={client.id}>
+                          {client.name} ({client.cui_cnp})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+                
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Motiv / Notă Abatere
+                  </label>
+                  <textarea 
+                    rows="3" 
+                    value={modalForm.reason}
+                    onChange={(e) => setModalForm(prev => ({ ...prev, reason: e.target.value }))}
+                    required
+                    className="block w-full px-4 py-3 bg-gray-50/80 dark:bg-gray-900/80 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white text-xs focus:ring-2 focus:ring-rose-500/20 focus:border-rose-500 transition-all resize-none placeholder-gray-400" 
+                    placeholder="Descrie motivul interdicției..."
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-2">
+                    Grad de Severitate
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: 'Critic', label: 'Critic', color: 'bg-rose-600 hover:bg-rose-700 text-white border-rose-600' },
+                      { id: 'Înalt', label: 'Înalt', color: 'bg-amber-600 hover:bg-amber-700 text-white border-amber-600' },
+                      { id: 'Mediu', label: 'Mediu', color: 'bg-yellow-500 hover:bg-yellow-600 text-white border-yellow-500' }
+                    ].map(sev => {
+                      const isSelected = modalForm.severity === sev.id;
+                      return (
+                        <button
+                          key={sev.id}
+                          type="button"
+                          onClick={() => setModalForm(prev => ({ ...prev, severity: sev.id }))}
+                          className={`py-2 px-4 text-xs font-semibold rounded-full border transition-all cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs ${
+                            isSelected
+                              ? `${sev.color} shadow-sm font-bold scale-[1.02]`
+                              : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/60'
+                          }`}
+                        >
+                          {isSelected && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
+                          <span>{sev.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-center justify-end gap-3 shrink-0">
                 <button 
                   type="button" 
                   onClick={() => setIsModalOpen(false)} 
                   disabled={modalSubmitting}
-                  className="px-6 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                  className="px-5 py-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-full transition-colors cursor-pointer"
                 >
                   Anulare
                 </button>
                 <button 
                   type="submit" 
                   disabled={modalSubmitting}
-                  className="px-6 py-2.5 text-sm font-semibold text-white bg-red-600 rounded-full hover:bg-red-700 transition-colors shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
+                  className="px-5 py-2.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-95 rounded-full transition-all shadow-sm flex items-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {modalSubmitting ? (
                     <>
-                      <Loader2 size={16} className="animate-spin" />
+                      <Loader2 size={15} className="animate-spin" />
                       <span>Se adaugă...</span>
                     </>
                   ) : (
@@ -453,28 +490,59 @@ const BlackList = () => {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Modal Confirmare Iertare / Deblocare */}
-      {unblacklistModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-xl w-full max-w-sm overflow-hidden flex flex-col p-6 animate-in zoom-in-95 duration-200 border border-gray-100 dark:border-gray-700 text-center">
-            <div className="w-14 h-14 bg-emerald-100 dark:bg-emerald-900/40 rounded-full flex items-center justify-center text-emerald-600 dark:text-emerald-400 mx-auto mb-3">
-              <ShieldBan size={28} strokeWidth={1.8} />
+      {unblacklistModal.isOpen && createPortal(
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-gray-950/70 backdrop-blur-md animate-in fade-in duration-200">
+          <div 
+            className="bg-white dark:bg-gray-800 rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col border border-gray-200 dark:border-gray-700 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="p-5 border-b border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-start justify-between gap-4 shrink-0">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-11 h-11 rounded-2xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-900/60 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0 shadow-xs">
+                  <ShieldBan size={22} strokeWidth={2} />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-white truncate">
+                    Deblocare Client
+                  </h3>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                    {unblacklistModal.isBulk ? `${selectedIds.length} clienți selectați` : unblacklistModal.client?.name}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setUnblacklistModal({ isOpen: false, client: null, isBulk: false, loading: false })}
+                className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors cursor-pointer"
+                title="Închide"
+              >
+                <X size={16} />
+              </button>
             </div>
-            <h3 className="text-lg font-bold text-gray-900 dark:text-white">Deblocare Client</h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
-              {unblacklistModal.isBulk 
-                ? `Ești sigur că vrei să scoți din Black List cei ${selectedIds.length} clienți selectați?`
-                : `Ești sigur că vrei să scoți clientul "${unblacklistModal.client?.name}" din Black List?`}
-            </p>
-            <div className="flex items-center gap-3 mt-6">
+
+            {/* Body */}
+            <div className="p-6">
+              <p className="text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
+                {unblacklistModal.isBulk 
+                  ? `Ești sigur că dorești să scoți din Black List cei ${selectedIds.length} clienți selectați? Aceștia vor redeveni eligibili pentru oferte și contracte.`
+                  : `Ești sigur că dorești să scoți clientul "${unblacklistModal.client?.name}" din Black List? Entitatea va redeveni eligibilă pentru oferte și contracte.`}
+              </p>
+            </div>
+
+            {/* Footer */}
+            <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/60 flex items-center justify-end gap-3 shrink-0">
               <button
                 type="button"
                 onClick={() => setUnblacklistModal({ isOpen: false, client: null, isBulk: false, loading: false })}
                 disabled={unblacklistModal.loading}
-                className="flex-1 py-2.5 px-4 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700/70 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                className="px-5 py-2.5 text-xs font-semibold text-gray-700 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700/60 rounded-full transition-colors cursor-pointer"
               >
                 Anulează
               </button>
@@ -482,20 +550,21 @@ const BlackList = () => {
                 type="button"
                 onClick={confirmUnblacklist}
                 disabled={unblacklistModal.loading}
-                className="flex-1 py-2.5 px-4 text-sm font-semibold text-white bg-emerald-600 rounded-full hover:bg-emerald-700 transition-colors shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                className="px-5 py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 active:scale-95 rounded-full transition-all shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
                 {unblacklistModal.loading ? (
                   <>
-                    <Loader2 size={16} className="animate-spin" />
+                    <Loader2 size={15} className="animate-spin" />
                     <span>Se deblochează...</span>
                   </>
                 ) : (
-                  <span>Deblochează</span>
+                  <span>Confirmă Deblocarea</span>
                 )}
               </button>
             </div>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Toast Notification */}
