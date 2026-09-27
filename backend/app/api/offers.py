@@ -196,9 +196,9 @@ def get_fidejusor_suggestion(client_id: int, db: Session = Depends(get_db), curr
                 "cnp": str(client.representative_cnp or ""),
                 "address": str(client.representative_address or client.address or "Mun. București"),
                 "id_card": id_card_str,
-                "quality": "Reprezentant Legal / Administrator",
+                "quality": "Reprezentant Legal",
                 "ownership_percent": 0.0,
-                "is_administrator": True,
+                "is_administrator": False,
                 "source": "Profil Client Axis"
             })
             

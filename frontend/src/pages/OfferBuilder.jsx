@@ -456,7 +456,7 @@ const OfferBuilder = () => {
                                     }`}
                                     title={`${cand.name} - ${cand.quality}`}
                                   >
-                                    {cand.name} <span className="opacity-70">({cand.is_administrator ? 'Admin' : 'Asociat'})</span>
+                                    {cand.name} <span className="opacity-70">({cand.is_administrator ? 'Admin' : (cand.ownership_percent > 0 ? 'Asociat' : 'Reprezentant')})</span>
                                   </button>
                                 ))}
                               </div>
