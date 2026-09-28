@@ -20,15 +20,38 @@ const Layout = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 5 * 1024 * 1024) {
-      alert('Fișierul depășește limita de 5MB. Te rugăm să alegi o imagine mai mică.');
+    if (file.size > 10 * 1024 * 1024) {
+      alert('Fișierul depășește limita de 10MB. Te rugăm să alegi o imagine mai mică.');
       return;
     }
 
     const reader = new FileReader();
     reader.onload = (event) => {
-      const base64 = event.target.result;
-      setAvatar(base64);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_DIM = 256;
+        let width = img.width;
+        let height = img.height;
+        if (width > height) {
+          if (width > MAX_DIM) {
+            height = Math.round((height * MAX_DIM) / width);
+            width = MAX_DIM;
+          }
+        } else {
+          if (height > MAX_DIM) {
+            width = Math.round((width * MAX_DIM) / height);
+            height = MAX_DIM;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        const compressedBase64 = canvas.toDataURL('image/jpeg', 0.85);
+        setAvatar(compressedBase64);
+      };
+      img.src = event.target.result;
     };
     reader.readAsDataURL(file);
   };

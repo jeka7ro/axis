@@ -271,7 +271,7 @@ async def search_public_companies(q: str):
     if not q or len(q.strip()) < 2:
         return []
 
-    import httpx, urllib.parse, re
+    import httpx, urllib.parse, re, os
     clean_q = q.strip()
     # Dacă începe cu RO urmat de cifre, curățăm prefixul RO pentru acuratețe maximă
     if re.match(r'^RO\s*\d+$', clean_q, re.I):
@@ -279,30 +279,90 @@ async def search_public_companies(q: str):
     digits_only = re.sub(r'\D', '', clean_q)
 
     results = []
+    seen_cuis = set()
 
-    # 1. Căutare în registrul deschis Cuiscan (Nume sau CUI)
+    # 0. Căutare prioritară în baza locală Axis (sub 2ms, cost 0 lei)
     try:
-        async with httpx.AsyncClient(timeout=6.0, headers={"User-Agent": "Axis-Intelligence/2.4"}) as client:
-            url = f"https://cuiscan.ro/api.php?action=search&q={urllib.parse.quote(clean_q)}"
-            resp = await client.get(url)
-            if resp.status_code == 200:
-                data = resp.json()
-                if isinstance(data, list):
-                    for item in data[:8]:
-                        results.append({
-                            "cui": str(item.get("cui", "")),
-                            "name": item.get("name", ""),
-                            "county": item.get("county", ""),
-                            "locality": item.get("locality", ""),
-                            "status": "Activa" if item.get("activa") else (item.get("status") or "Înregistrată"),
-                            "source": "Registru Public Open Data"
-                        })
+        from ..services.data_gov_ingest import DataGovIngestService
+        local_matches = DataGovIngestService().search_local_companies(clean_q, limit=8)
+        for item in local_matches:
+            c_cui = str(item.get("cui", "")).strip()
+            if c_cui and c_cui not in seen_cuis:
+                seen_cuis.add(c_cui)
+                raw_adr = (item.get("adresa") or item.get("address") or "").replace("MUNICIPIUL ", "").replace("JUD. ", "").strip()
+                results.append({
+                    "cui": c_cui,
+                    "name": item.get("denumire") or item.get("name", ""),
+                    "county": "",
+                    "locality": raw_adr,
+                    "address": raw_adr,
+                    "status": item.get("stare", "Înregistrată"),
+                    "reg_com": item.get("nr_reg_com", ""),
+                    "source": "Bază Locală Axis (Instant)"
+                })
     except Exception as e:
-        print(f"[PublicSearch] Err cuiscan search: {e}")
+        print(f"[PublicSearch] Err local search: {e}")
 
-    # 2. Dacă este tipar CUI numeric și nu avem rezultate, interogăm direct ANAF v9
+    # 1. Căutare prin FirmeAPI dacă este configurat și avem nevoie de rezultate
+    if len(results) < 8:
+        key = os.getenv('FIRMEAPI_KEY', 'ebs9r1lk-3muzkfx6-hketjiwp-ofnjiu7f')
+        if key:
+            try:
+                headers = {'Authorization': f'Bearer {key}', 'Accept': 'application/json'}
+                async with httpx.AsyncClient(timeout=4.0) as client:
+                    resp = await client.get(f"https://www.firmeapi.ro/api/v1/firme?q={urllib.parse.quote(clean_q)}", headers=headers)
+                    if resp.status_code == 200:
+                        for it in resp.json().get('data', {}).get('items', []):
+                            it_cui = str(it.get('cui') or '').strip()
+                            if it_cui and it_cui not in seen_cuis:
+                                seen_cuis.add(it_cui)
+                                it_adr = (it.get("adresa") or "").replace("MUNICIPIUL ", "").replace("JUD. ", "").strip()
+                                results.append({
+                                    "cui": it_cui,
+                                    "name": it.get("denumire") or it.get("name", ""),
+                                    "county": it.get("judet", ""),
+                                    "locality": it.get("localitate", ""),
+                                    "address": it_adr or (f"{it.get('localitate', '')}, {it.get('judet', '')}" if it.get("localitate") else ""),
+                                    "status": it.get("stare") or "Înregistrată",
+                                    "reg_com": it.get("nr_reg_com", ""),
+                                    "source": "Registru FirmeAPI"
+                                })
+            except Exception as e:
+                print(f"[PublicSearch] Err FirmeAPI search: {e}")
+
+    # 2. Căutare în registrul deschis Cuiscan (Nume sau CUI) dacă avem nevoie de rezultate suplimentare
+    if len(results) < 8:
+        try:
+            async with httpx.AsyncClient(timeout=5.0, headers={"User-Agent": "Axis-Intelligence/2.4"}) as client:
+                url = f"https://cuiscan.ro/api.php?action=search&q={urllib.parse.quote(clean_q)}"
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    if isinstance(data, list):
+                        for item in data[:8]:
+                            it_cui = str(item.get("cui", "")).strip()
+                            if it_cui and it_cui not in seen_cuis:
+                                seen_cuis.add(it_cui)
+                                loc = item.get("locality", "")
+                                cty = item.get("county", "")
+                                full_adr = f"{loc}{', ' + cty if cty else ''}".strip()
+                                results.append({
+                                    "cui": it_cui,
+                                    "name": item.get("name", ""),
+                                    "county": cty,
+                                    "locality": loc,
+                                    "address": full_adr or item.get("address", "") or "Sediu înregistrat",
+                                    "status": "Activa" if item.get("activa") else (item.get("status") or "Înregistrată"),
+                                    "reg_com": item.get("reg_com", ""),
+                                    "source": "Registru Public Open Data"
+                                })
+        except Exception as e:
+            print(f"[PublicSearch] Err cuiscan search: {e}")
+
+    # 3. Dacă este tipar CUI numeric și nu avem rezultate, interogăm direct ANAF v9
     if len(digits_only) >= 4 and len(results) == 0:
         try:
+            from ..services.osint.anaf_scraper import AnafScraper
             scraper = AnafScraper()
             anaf_data = await scraper.fetch_company_data(digits_only)
             if anaf_data and anaf_data.get("nume"):
@@ -311,7 +371,9 @@ async def search_public_companies(q: str):
                     "name": anaf_data.get("nume"),
                     "county": "",
                     "locality": anaf_data.get("adresa", ""),
+                    "address": anaf_data.get("adresa", ""),
                     "status": anaf_data.get("status", "Activa"),
+                    "reg_com": anaf_data.get("nrRegCom", ""),
                     "source": "ANAF v9 Oficial"
                 })
         except Exception as e:
@@ -954,34 +1016,71 @@ async def evaluate_company_by_cui(cui: str, force_refresh: bool = False, db: Ses
             }
             
     if not client:
-        anaf_scraper = AnafScraper()
-        anaf_data = await anaf_scraper.fetch_company_data(cui_clean)
-        name = anaf_data.get("nume") or f"COMPANIE CUI {cui_clean}"
+        # Preluare date generale întâi din cache local sau ANAF
+        anaf_data = {}
+        try:
+            from ..services.osint.registry_scraper import RegistryScraper
+            cached_co = RegistryScraper()._get_cached_company(cui_clean)
+            if cached_co and cached_co.get("anaf"):
+                anaf_data = cached_co.get("anaf")
+        except Exception:
+            pass
+
+        if not anaf_data:
+            try:
+                anaf_scraper = AnafScraper()
+                anaf_data = await anaf_scraper.fetch_company_data(cui_clean)
+            except Exception as e:
+                print(f"[evaluate_company_by_cui anaf error]: {e}")
+                anaf_data = {}
+
+        name = anaf_data.get("nume") or anaf_data.get("denumire") or f"COMPANIE CUI {cui_clean}"
         addr = anaf_data.get("adresa") or ""
+        reg_com = anaf_data.get("reg_com") or anaf_data.get("nr_reg_com") or ""
+        phone = anaf_data.get("telefon") or ""
         
         client = Client(
             name=name,
             cui_cnp=cui_clean,
             type=ClientType.PJ,
-            address=addr
+            address=addr,
+            reg_com=reg_com,
+            contact_phone=phone
         )
         db.add(client)
         db.commit()
         db.refresh(client)
-        
-    # 2. Rulare pipeline evaluare cu force_refresh=True pentru a forța interogarea dacă s-a cerut expres
-    new_eval_resp = await evaluate_client(client.id, force_refresh=True, db=db, current_user=current_user)
-    import json
-    data = json.loads(new_eval_resp.body.decode('utf-8'))
-    return {
-        "client_id": client.id,
-        "name": client.name,
-        "cui": client.cui_cnp,
-        "score": data.get("score"),
-        "risk_level": data.get("risk_level"),
-        "cached": False,
-        "credits_used": 1
-    }
+        print(f"[evaluate_company_by_cui] Client creat automat cu ID {client.id} ({client.name})")
+
+    # 2. Rulare pipeline evaluare (cu fallback garantat pentru a nu bloca primul click)
+    try:
+        new_eval_resp = await evaluate_client(client.id, force_refresh=True, db=db, current_user=current_user)
+        import json
+        data = json.loads(new_eval_resp.body.decode('utf-8'))
+        return {
+            "client_id": client.id,
+            "name": client.name,
+            "cui": client.cui_cnp,
+            "score": data.get("score", 70),
+            "risk_level": data.get("risk_level", "Mediu"),
+            "cached": False,
+            "credits_used": 1
+        }
+    except Exception as e:
+        print(f"[evaluate_company_by_cui pipeline notice]: {e}")
+        # Dacă pipeline-ul complet durează mai mult, garantăm returnarea client_id pentru rutare imediată
+        latest_eval = db.query(Evaluation).filter(Evaluation.client_id == client.id).order_by(Evaluation.created_at.desc()).first()
+        score_val = latest_eval.score if latest_eval else 50
+        risk_val = (latest_eval.risk_level.value if hasattr(latest_eval.risk_level, 'value') else str(latest_eval.risk_level)) if latest_eval else "Mediu"
+        return {
+            "client_id": client.id,
+            "name": client.name,
+            "cui": client.cui_cnp,
+            "score": score_val,
+            "risk_level": risk_val,
+            "cached": False,
+            "credits_used": 0
+        }
 
 class MofPdfRequest(BaseModel):
     publicatieNr: Optional[str] = ""

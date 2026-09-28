@@ -57,3 +57,20 @@ class Evaluation(Base):
     created_by_user_id = Column(Integer, ForeignKey("axis_users.id"), nullable=True)
 
     client = relationship("Client", back_populates="evaluations")
+
+
+class CompanyCache(Base):
+    __tablename__ = "axis_company_cache"
+
+    cui = Column(String, primary_key=True, index=True)
+    name = Column(String, index=True, nullable=True)
+    reg_com = Column(String, nullable=True)
+    status = Column(String, nullable=True)  # Activ, Radiat, Inactiv
+    address = Column(String, nullable=True)
+    caen = Column(String, nullable=True)
+    caen_desc = Column(String, nullable=True)
+    general_data = Column(Text, nullable=True)   # JSON string din ANAF V9
+    balance_data = Column(Text, nullable=True)   # JSON string din Bilanțuri oficiale MF
+    personnel_data = Column(Text, nullable=True) # JSON string din FirmeAPI / ONRC
+    source = Column(String, default="ANAF_OFFICIAL")
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

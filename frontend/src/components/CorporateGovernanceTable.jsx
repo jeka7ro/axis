@@ -29,6 +29,33 @@ export default function CorporateGovernanceTable({
 
   const cleanClientCui = String(client?.cui_cnp || '').replace(/\D/g, '');
 
+  const companyStare = String(
+    client?.stare || 
+    client?.status || 
+    rawData?.anaf?.stare || 
+    rawData?.stare || 
+    rawData?.fiscal_status || 
+    ''
+  ).toUpperCase();
+
+  const isCompanyRadiated = companyStare.includes('RADIAT') || companyStare.includes('RADIER');
+  const isCompanyInsolvencyOrBankruptcy = companyStare.includes('FALIMENT') || companyStare.includes('LICHID') || companyStare.includes('INSOLVEN');
+
+  const isLiquidatorRole = (person) => {
+    const name = String(person?.nume || '').toUpperCase();
+    const rol = String(person?.rol || '').toUpperCase();
+    return (
+      name.includes('SPRL') ||
+      name.includes('IPURL') ||
+      name.includes('LICHIDATOR') ||
+      name.includes('INSOLV') ||
+      rol.includes('LICHIDATOR') ||
+      rol.includes('CURATOR') ||
+      rol.includes('ADMINISTRATOR JUDICIAR') ||
+      rol.includes('PRACTICIAN')
+    );
+  };
+
   // Colectăm lista de persoane cu fallback pe administrators și holdings
   const personnel = rawData?.personnel || [];
   const administrators = rawData?.administrators || [];
@@ -98,7 +125,21 @@ export default function CorporateGovernanceTable({
     let tip_control = "Nespecificat";
     let insights = [];
 
-    if (activeShareholders.length === 1) {
+    if (isCompanyRadiated) {
+      beneficiar_real = client?.name || "Societate Radiată";
+      tip_control = "SOCIETATE RADIATĂ";
+      insights.push("Companie Radiată: Societatea este radiată oficial din evidențele Registrului Comerțului. Toate mandatele de administrare sunt stinse de drept.");
+    } else if (isCompanyInsolvencyOrBankruptcy) {
+      const liquidator = personnelList.find(isLiquidatorRole);
+      if (liquidator) {
+        beneficiar_real = `${liquidator.nume} (Lichidator Judiciar)`;
+        tip_control = "LICHIDARE JUDICIARĂ";
+        insights.push(`Procedură de Lichidare / Faliment: Controlul și administrarea patrimoniului sunt exercitate de ${liquidator.nume} (Lichidator Judiciar Desemnat).`);
+      } else {
+        tip_control = "PROCEDURĂ DE INSOLVENȚĂ";
+        insights.push("Compania se află în procedură de insolvență sau faliment deschis în evidențele oficiale.");
+      }
+    } else if (activeShareholders.length === 1) {
       const s = activeShareholders[0];
       beneficiar_real = `${s.nume} (${s.cota_participare || 100}%)`;
       tip_control = (s.cota_participare >= 99) ? "ASOCIAT UNIC" : "CONTROL MAJORITAR";
@@ -119,14 +160,14 @@ export default function CorporateGovernanceTable({
       const firstAdmin = activeAdmins[0];
       const roleText = firstAdmin.rol || "Administrator";
       beneficiar_real = `${firstAdmin.nume} (${roleText})`;
-      tip_control = roleText.toLowerCase().includes('lichidator') ? "LICHIDARE JUDICIARĂ" : "CONDUCERE MANDATATĂ";
+      tip_control = isLiquidatorRole(firstAdmin) ? "LICHIDARE JUDICIARĂ" : "CONDUCERE MANDATATĂ";
       insights.push(`Conducere Oficială: ${firstAdmin.nume} exercită funcția de ${roleText}.`);
     }
 
     const unsharedAdmins = activeAdmins.filter(a => !a.este_asociat || !a.cota_participare);
-    if (unsharedAdmins.length > 0) {
+    if (!isCompanyRadiated && unsharedAdmins.length > 0) {
       insights.push(`Management Mandatat: Administratorul curent (${unsharedAdmins.map(a => a.nume).join(', ')}) nu deține părți sociale (mandat executiv extern / desemnare judiciară).`);
-    } else if (activeShareholders.some(s => s.este_administrator)) {
+    } else if (!isCompanyRadiated && activeShareholders.some(s => s.este_administrator)) {
       insights.push(`Antreprenor Direct: Asociatul principal exercită concomitent și funcția de administrator.`);
     }
 
@@ -197,6 +238,26 @@ export default function CorporateGovernanceTable({
 
   return (
     <div className="w-full bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-200 dark:border-gray-700 p-6 animate-in fade-in">
+      {/* Radiated Company Alert if applicable */}
+      {isCompanyRadiated && (
+        <div className="p-4 rounded-2xl border border-gray-300 dark:border-gray-700 bg-gray-50/90 dark:bg-gray-800/90 flex items-start gap-3.5 shadow-sm mb-6">
+          <div className="p-2.5 rounded-xl bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+            <FileText size={20} />
+          </div>
+          <div className="flex-1">
+            <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider">
+              Statut Juridic Companie
+            </div>
+            <div className="text-sm font-bold text-gray-800 dark:text-gray-200 mt-0.5">
+              SOCIETATE RADIATĂ DIN REGISTRUL COMERȚULUI
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Toate mandatele executive ale administratorilor și calitatea de asociat sunt consemnate ca stinse în evidențele oficiale.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* BPI Insolvency Alert if active */}
       {bpi?.has_insolvency && (
         <div className="p-4 rounded-2xl border border-red-200 dark:border-red-900 bg-red-50/70 dark:bg-red-950/20 flex items-start gap-3.5 shadow-sm mb-6">
@@ -344,6 +405,30 @@ export default function CorporateGovernanceTable({
             {paginatedPersonnel.map((person, idx) => {
               const isSelected = selectedPersonnelRows.includes(person.nume);
               const absoluteIndex = startIdx + idx + 1;
+              const isLiquidator = isLiquidatorRole(person);
+
+              let displayStare = person.stare || "Activ";
+              let stareBadgeClass = "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60";
+
+              if (isCompanyRadiated) {
+                displayStare = person.data_sfarsit ? "Mandat Expirat" : "Stins (Firmă Radiată)";
+                stareBadgeClass = "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700";
+              } else if (isCompanyInsolvencyOrBankruptcy) {
+                if (isLiquidator) {
+                  displayStare = "Desemnat Judiciar";
+                  stareBadgeClass = "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800";
+                } else if (person.este_administrator) {
+                  displayStare = "Mandat Suspendat";
+                  stareBadgeClass = "bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800";
+                } else if (displayStare === 'Activ') {
+                  stareBadgeClass = "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60";
+                } else {
+                  stareBadgeClass = "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700";
+                }
+              } else if (displayStare !== 'Activ') {
+                stareBadgeClass = "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700";
+              }
+
               return (
                 <tr key={idx} className={`hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors ${isSelected ? 'bg-primary/5 dark:bg-primary/10' : ''}`}>
                   <td className="px-3 py-2.5 text-center">
@@ -380,10 +465,17 @@ export default function CorporateGovernanceTable({
                   </td>
                   <td className="px-4 py-2.5 whitespace-nowrap">
                     <div className="flex flex-col">
-                      <div className="flex items-center gap-1.5">
-                        <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-md text-xs font-semibold capitalize whitespace-nowrap">
-                          {person.rol || "Administrator"}
-                        </span>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {isLiquidator ? (
+                          <span className="px-2 py-0.5 bg-amber-50 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 border border-amber-300 dark:border-amber-700 rounded-md text-xs font-bold whitespace-nowrap flex items-center gap-1">
+                            <ShieldAlert size={11} className="text-amber-600 dark:text-amber-400" />
+                            Lichidator Judiciar Desemnat
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-md text-xs font-semibold capitalize whitespace-nowrap">
+                            {person.rol || "Administrator"}
+                          </span>
+                        )}
                         {person.este_asociat && (
                           <span className="px-1.5 py-0.2 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 rounded text-[9px] font-bold">
                             ASOCIAT
@@ -407,12 +499,8 @@ export default function CorporateGovernanceTable({
                     )}
                   </td>
                   <td className="px-4 py-2.5 text-center whitespace-nowrap">
-                    <span className={`px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap ${
-                      person.stare === 'Activ' 
-                        ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300' 
-                        : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300'
-                    }`}>
-                      {person.stare || "Activ"}
+                    <span className={`px-2 py-0.5 rounded-md text-xs font-medium whitespace-nowrap ${stareBadgeClass}`}>
+                      {displayStare}
                     </span>
                   </td>
                   <td className={`px-4 py-2.5 text-center font-medium whitespace-nowrap ${person.alte_companii_active > 3 ? 'text-orange-500 font-bold' : ''}`}>

@@ -1,44 +1,114 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { useNavigate, useLocation, useParams } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { 
-  X, Send, Sparkles, ChevronRight, ExternalLink, RefreshCw, 
-  TrendingUp, ShieldAlert, FileText, ArrowRight, CheckCircle2, AlertTriangle,
-  MinusCircle, CornerDownLeft, Trash2, Building2, Sliders, Key, Cpu, Check, Info
+  X, Send, Sparkles, RefreshCw, 
+  TrendingUp, ShieldAlert, FileText, ArrowRight,
+  Trash2, Building2, Maximize2, Minimize2,
+  Car, Layers, Search, PanelRight, CornerDownLeft, MapPin, ChevronRight, Plus,
+  Copy, Check, FileDown
 } from 'lucide-react';
 import { AxisAiIcon } from './AxisAiLogo';
-import { sendAssistantMessage, fetchSuggestedPrompts, fetchAssistantConfig } from '../services/api';
+import { sendAssistantMessage, fetchSuggestedPrompts, evaluateCompanyByCui } from '../services/api';
 import CompanyIntelModal from './CompanyIntelModal';
 import PublicDeepResearchModal from './PublicDeepResearchModal';
+import { exportCopilotMessagePdf } from '../utils/copilotPdfExport';
+
+const INITIAL_MESSAGES = [
+  {
+    id: 'welcome',
+    sender: 'assistant',
+    text: 'Salut! Sunt **Axis Copilot**, ofițerul tău executiv de analiză faptică, risc financiar și management de flotă.\n\nÎmi poți cere orice verificare oficială (ANAF, ONRC, BPI, bilanțuri), calcule de rate de leasing, proceduri de recuperare clienți rău-platnici sau verificarea mașinilor disponibile în flotă.',
+    actions: []
+  }
+];
 
 export const AxisAiCopilot = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
-  const [aiProvider, setAiProvider] = useState(localStorage.getItem('axis_ai_provider') || 'groq');
-  const [apiKey, setApiKey] = useState(localStorage.getItem('axis_ai_api_key') || '');
-  const [saveSuccess, setSaveSuccess] = useState(false);
-  const [serverConfigured, setServerConfigured] = useState(false);
-  const [serverProvider, setServerProvider] = useState(null);
+  const [isMaximized, setIsMaximized] = useState(false);
 
-  const [messages, setMessages] = useState([
-    {
-      id: 'welcome',
-      sender: 'assistant',
-      text: 'Salut! Sunt **Axis Copilot**, ofițerul tău executiv de analiză faptică, risc financiar și management de flotă.\n\nÎmi poți cere orice verificare oficială (ANAF, ONRC, BPI, bilanțuri), calcule de rate de leasing, proceduri de recuperare clienți rău-platnici sau verificarea mașinilor disponibile în flotă.',
-      actions: []
-    }
-  ]);
+  const [messages, setMessages] = useState(INITIAL_MESSAGES);
   const [inputValue, setInputValue] = useState('');
   const [loading, setLoading] = useState(false);
+  const [loadingStep, setLoadingStep] = useState(0);
   const [suggestedPrompts, setSuggestedPrompts] = useState([]);
   
   // Modal states for direct in-app action execution
   const [companyModal, setCompanyModal] = useState(null); // { cui, name }
   const [deepResearchTarget, setDeepResearchTarget] = useState(null); // { id, name, cui }
+  const [copiedId, setCopiedId] = useState(null);
+  const [exportingPdfId, setExportingPdfId] = useState(null);
+
+  const handleCopyText = async (text, id) => {
+    try {
+      if (navigator?.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      setCopiedId(id);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy text:', err);
+    }
+  };
+
+  const handleExportPdf = async (text, id) => {
+    try {
+      setExportingPdfId(id);
+      await exportCopilotMessagePdf(text, {
+        clientName: companyModal?.name,
+        clientCui: companyModal?.cui
+      });
+    } catch (err) {
+      console.error('PDF export error:', err);
+      alert('Eroare la exportul PDF. Te rugăm să reîncerci.');
+    } finally {
+      setExportingPdfId(null);
+    }
+  };
+
+  const handleCloseCopilot = () => {
+    if (abortControllerRef.current) {
+      try {
+        abortControllerRef.current.abort();
+      } catch (e) {
+        // ignore
+      }
+    }
+    setIsOpen(false);
+    setLoading(false);
+    setInputValue('');
+    setMessages(INITIAL_MESSAGES);
+    setCompanyModal(null);
+  };
 
   const location = useLocation();
   const navigate = useNavigate();
   const messagesEndRef = useRef(null);
-  const inputRef = useRef(null);
+  const conversationContainerRef = useRef(null);
+  const latestMessageRef = useRef(null);
+  const lastUserMessageRef = useRef(null);
+  const textareaRef = useRef(null);
+  const abortControllerRef = useRef(null);
+
+  // Progressive loading steps
+  useEffect(() => {
+    let interval = null;
+    if (loading) {
+      setLoadingStep(0);
+      interval = setInterval(() => {
+        setLoadingStep(prev => (prev + 1) % 3);
+      }, 3000);
+    } else {
+      setLoadingStep(0);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
 
   // Extract client ID if user is on /clients/:id
   const clientId = useMemo(() => {
@@ -46,51 +116,94 @@ export const AxisAiCopilot = () => {
     return match ? Number(match[1]) : null;
   }, [location.pathname]);
 
-  // Load contextual prompts and server AI configuration
+  // Load contextual prompts
   useEffect(() => {
-    fetchAssistantConfig()
-      .then(data => {
-        if (data && data.configured) {
-          setServerConfigured(true);
-          setServerProvider(data.active_provider);
-        }
-      })
-      .catch(() => {});
-
     fetchSuggestedPrompts(clientId)
       .then(res => setSuggestedPrompts(res.prompts || []))
       .catch(() => setSuggestedPrompts([]));
   }, [clientId, location.pathname]);
 
+  // Scroll so the new message starts at the top (without jumping to the bottom or scrolling window)
+  useEffect(() => {
+    if (!isOpen || messages.length <= 1) return;
+
+    const frameId = requestAnimationFrame(() => {
+      const container = conversationContainerRef.current;
+      if (!container) return;
+
+      const lastMsg = messages[messages.length - 1];
+
+      // When assistant responds with analysis, scroll to the BEGINNING of the message
+      // so the user reads from the top instead of being pushed to the bottom of the page
+      if (lastMsg.sender === 'assistant' && latestMessageRef.current) {
+        const containerRect = container.getBoundingClientRect();
+        const targetRect = latestMessageRef.current.getBoundingClientRect();
+        const targetScrollTop = container.scrollTop + (targetRect.top - containerRect.top) - 24;
+        container.scrollTo({
+          top: Math.max(0, targetScrollTop),
+          behavior: 'smooth'
+        });
+      } else if (lastMsg.sender === 'user' && lastUserMessageRef.current) {
+        const containerRect = container.getBoundingClientRect();
+        const targetRect = lastUserMessageRef.current.getBoundingClientRect();
+        const targetScrollTop = container.scrollTop + (targetRect.top - containerRect.top) - 16;
+        container.scrollTo({
+          top: Math.max(0, targetScrollTop),
+          behavior: 'smooth'
+        });
+      }
+    });
+
+    return () => cancelAnimationFrame(frameId);
+  }, [messages.length, isOpen]);
+
+  // Focus textarea when opened without scrolling the page
   useEffect(() => {
     if (isOpen) {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      setTimeout(() => {
+        textareaRef.current?.focus({ preventScroll: true });
+      }, 150);
     }
-  }, [messages, isOpen]);
+  }, [isOpen]);
 
-  const handleSaveSettings = async (e) => {
-    e?.preventDefault();
-    localStorage.setItem('axis_ai_provider', aiProvider);
-    localStorage.setItem('axis_ai_api_key', apiKey.trim());
-    try {
-      await fetch('/api/assistant/config', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ api_key: apiKey.trim(), provider: aiProvider })
-      });
-    } catch (err) {
-      // LocalStorage persistat oricum
-    }
-    setSaveSuccess(true);
-    setTimeout(() => {
-      setSaveSuccess(false);
-      setShowSettings(false);
-    }, 1000);
-  };
+  // Reset conversation and close copilot when navigating away/changing page
+  useEffect(() => {
+    handleCloseCopilot();
+  }, [location.pathname]);
+
+  // Global keyboard shortcuts (Escape to close, Cmd+K / Ctrl+K to toggle)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && isOpen) {
+        handleCloseCopilot();
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        if (isOpen) {
+          handleCloseCopilot();
+        } else {
+          setIsOpen(true);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen]);
 
   const handleSendMessage = async (customText = null) => {
     const textToSend = customText || inputValue;
-    if (!textToSend || !textToSend.trim() || loading) return;
+    if (!textToSend || !textToSend.trim()) return;
+
+    // Anulăm cererea anterioară dacă există una în derulare
+    if (abortControllerRef.current) {
+      try {
+        abortControllerRef.current.abort();
+      } catch (e) {
+        // ignore
+      }
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     const userMsg = {
       id: `u-${Date.now()}`,
@@ -109,13 +222,12 @@ export const AxisAiCopilot = () => {
         context: {
           current_route: location.pathname,
           client_id: clientId,
-          api_key: apiKey.trim() || localStorage.getItem('axis_ai_api_key') || '',
-          ai_provider: aiProvider || localStorage.getItem('axis_ai_provider') || 'auto',
           history: messages.slice(-8).map(m => ({
             role: m.sender === 'user' ? 'user' : 'assistant',
             text: m.text
           }))
-        }
+        },
+        signal: controller.signal
       });
 
       const assistantMsg = {
@@ -123,22 +235,42 @@ export const AxisAiCopilot = () => {
         sender: 'assistant',
         text: response.reply || 'Am procesat solicitarea ta.',
         actions: response.actions || [],
-        dataSummary: response.data_summary || null
+        dataSummary: response.data_summary || null,
+        matchedCompanies: response.matched_companies || null
       };
 
       setMessages(prev => [...prev, assistantMsg]);
     } catch (err) {
+      if (err.name === 'AbortError') {
+        return;
+      }
       setMessages(prev => [
         ...prev,
         {
           id: `err-${Date.now()}`,
           sender: 'assistant',
-          text: `A apărut o problemă la interogare: ${err.message || 'Eroare necunoscută'}. Verifică dacă backend-ul este conectat.`,
+          text: `A apărut o problemă la interogare: ${err.message || 'Eroare necunoscută'}.`,
           actions: []
         }
       ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleEvaluateCompany = async (targetCui, targetName = '') => {
+    try {
+      const cleanCui = String(targetCui).trim().toUpperCase().replace(/^RO/, '').trim();
+      const res = await evaluateCompanyByCui(cleanCui, false);
+      if (res?.client_id) {
+        setCompanyModal(null);
+        handleCloseCopilot();
+        navigate(`/clients/${res.client_id}?tab=investigation`);
+      }
+      return res;
+    } catch (err) {
+      console.error('Eroare evaluare companie:', err);
+      throw err;
     }
   };
 
@@ -153,23 +285,23 @@ export const AxisAiCopilot = () => {
         navigate(`/clients/${targetId}?tab=${action.tab}`);
       }
     } else if (action.type === 'OPEN_COMPANY_MODAL') {
-      setIsOpen(false);
+      handleCloseCopilot();
       setCompanyModal({ cui: action.cui, name: action.name });
     } else if (action.type === 'OPEN_DEEP_RESEARCH') {
-      setIsOpen(false);
+      handleCloseCopilot();
       setDeepResearchTarget({
         id: action.clientId || clientId,
         name: action.name,
         cui: action.cui
       });
     } else if (action.type === 'CREATE_CLIENT') {
-      navigate('/clients', { state: { prefillCui: action.cui, prefillName: action.name } });
+      handleEvaluateCompany(action.cui, action.name);
     } else if (action.type === 'PROMPT') {
       handleSendMessage(action.prompt);
     }
   };
 
-  // Simple clean markdown parser for bot messages (supports tables, lists, bold, blockquotes)
+  // Structured Markdown Parser for executive reports and data tables
   const renderFormattedText = (raw) => {
     if (!raw) return null;
     const lines = raw.split('\n');
@@ -181,32 +313,158 @@ export const AxisAiCopilot = () => {
       if (tableRows.length > 0) {
         const header = tableRows[0];
         const body = tableRows.slice(1).filter(r => !r.every(c => /^:?-+:?$/.test(c.trim())));
-        elements.push(
-          <div key={`table-${keyIdx}`} className="my-2.5 overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700 shadow-2xs">
-            <table className="w-full text-left text-[11px]">
-              <thead className="bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-semibold border-b border-gray-200 dark:border-gray-700">
-                <tr>
-                  {header.map((col, cIdx) => (
-                    <th key={cIdx} className="px-2.5 py-1.5 whitespace-nowrap">
-                      {col.trim().replace(/\*\*/g, '')}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100 dark:divide-gray-700/60 bg-white dark:bg-gray-900/40">
-                {body.map((row, rIdx) => (
-                  <tr key={rIdx} className="hover:bg-gray-50/60 dark:hover:bg-gray-800/40">
-                    {row.map((col, cIdx) => (
-                      <td key={cIdx} className="px-2.5 py-1.5 whitespace-nowrap text-gray-800 dark:text-gray-200 tabular-nums">
-                        {col.trim().replace(/\*\*(.*?)\*\*/g, '$1')}
-                      </td>
+        
+        // Helper: check column indices for multi-entity tables
+        let cuiColIdx = -1;
+        let nameColIdx = -1;
+        let regColIdx = -1;
+        let addrColIdx = -1;
+        let statusColIdx = -1;
+
+        header.forEach((h, idx) => {
+          const cleanH = h.trim().toLowerCase();
+          if (/cui|cif/i.test(cleanH)) cuiColIdx = idx;
+          else if (/denumire|firma|companie|nume/i.test(cleanH)) nameColIdx = idx;
+          else if (/reg|orc/i.test(cleanH)) regColIdx = idx;
+          else if (/adres|locati|judet|oras|strada/i.test(cleanH)) addrColIdx = idx;
+          else if (/sediu|punct/i.test(cleanH) && addrColIdx === -1) addrColIdx = idx;
+          else if (/statut|stare/i.test(cleanH)) statusColIdx = idx;
+        });
+
+        // Helper: check if row has a CUI
+        const extractCui = (row) => {
+          if (cuiColIdx !== -1 && row[cuiColIdx]) {
+            const m = row[cuiColIdx].match(/\b(?:RO)?(\d{6,10})\b/i);
+            if (m) return m[1];
+          }
+          for (const cell of row) {
+            const m = cell.match(/\b(?:RO)?(\d{6,10})\b/i);
+            if (m) return m[1];
+          }
+          return null;
+        };
+
+        const isMultiCompanyTable = (cuiColIdx !== -1 && (nameColIdx !== -1 || addrColIdx !== -1)) && body.length > 0;
+
+        if (isMultiCompanyTable) {
+          elements.push(
+            <div key={`multi-comp-${keyIdx}`} className="my-3 space-y-2">
+              <div className="flex items-center justify-between px-1 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                <span className="font-semibold text-gray-700 dark:text-gray-300">
+                  Firme identificate ({body.length}) — Click pe oricare pentru dosar complet:
+                </span>
+              </div>
+
+              <div className="divide-y divide-gray-100 dark:divide-gray-800 rounded-2xl border border-gray-200/90 dark:border-gray-700/80 bg-white dark:bg-gray-900/80 overflow-hidden shadow-2xs">
+                {body.map((row, rIdx) => {
+                  const rowCui = extractCui(row);
+                  const name = nameColIdx !== -1 ? row[nameColIdx]?.replace(/\*\*/g, '').trim() : '';
+                  const address = addrColIdx !== -1 ? row[addrColIdx]?.replace(/\*\*/g, '').trim() : '';
+                  const regCom = regColIdx !== -1 ? row[regColIdx]?.replace(/\*\*/g, '').trim() : '';
+                  const status = statusColIdx !== -1 ? row[statusColIdx]?.replace(/\*\*/g, '').trim() : '';
+                  const isPrincipal = row.some(cell => /principal/i.test(cell));
+                  const displayAddress = address && address !== '—' && !/^sediu$/i.test(address.trim()) && address !== name ? address : '';
+
+                  return (
+                    <div
+                      key={rIdx}
+                      onClick={() => {
+                        if (rowCui) handleSendMessage(`Verifică CUI ${rowCui}`);
+                      }}
+                      className={`px-3.5 py-2.5 flex items-center justify-between gap-3 cursor-pointer transition-colors group ${
+                        isPrincipal
+                          ? 'bg-emerald-50/50 dark:bg-emerald-950/30'
+                          : 'hover:bg-primary/5 dark:hover:bg-primary/10'
+                      }`}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-xs font-bold text-gray-900 dark:text-white group-hover:text-primary transition-colors">
+                            {name || `Companie CUI ${rowCui}`}
+                          </span>
+                          {rowCui && (
+                            <span className="text-[11px] font-mono font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">
+                              CUI {rowCui}
+                            </span>
+                          )}
+                          {regCom && regCom !== '—' && (
+                            <span className="text-[10px] text-gray-400">
+                              {regCom}
+                            </span>
+                          )}
+                          {status && status !== '—' && (
+                            <span className={`text-[10px] font-medium px-1.5 py-0.2 rounded-full ${
+                              /activ|inregistrat/i.test(status)
+                                ? 'text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-950/50'
+                                : 'text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-950/50'
+                            }`}>
+                              {status}
+                            </span>
+                          )}
+                          {isPrincipal && (
+                            <span className="text-[9px] font-bold text-emerald-700 dark:text-emerald-300 bg-emerald-100 dark:bg-emerald-900/60 px-1.5 py-0.5 rounded-full">
+                              Sediu Principal
+                            </span>
+                          )}
+                        </div>
+                        {displayAddress && (
+                          <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                            {displayAddress}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="shrink-0 flex items-center text-gray-400 group-hover:text-primary transition-colors">
+                        <ChevronRight size={15} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        } else {
+          elements.push(
+            <div key={`table-${keyIdx}`} className="my-3 overflow-x-auto rounded-2xl border border-gray-200/90 dark:border-gray-700/80 shadow-2xs bg-white dark:bg-gray-900/60">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-gray-100/80 dark:bg-gray-800/80 text-gray-700 dark:text-gray-300 font-bold uppercase tracking-wider text-[11px] border-b border-gray-200 dark:border-gray-700">
+                  <tr>
+                    {header.map((col, cIdx) => (
+                      <th key={cIdx} className="px-3.5 py-2.5 whitespace-nowrap">
+                        {col.trim().replace(/\*\*/g, '')}
+                      </th>
                     ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        );
+                </thead>
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-800 text-gray-800 dark:text-gray-200">
+                  {body.map((row, rIdx) => {
+                    const rowCui = extractCui(row);
+                    return (
+                      <tr
+                        key={rIdx}
+                        onClick={() => {
+                          if (rowCui) handleSendMessage(`Verifică CUI ${rowCui}`);
+                        }}
+                        className={`transition-colors ${
+                          rowCui
+                            ? 'hover:bg-primary/5 dark:hover:bg-primary/10 cursor-pointer group'
+                            : 'hover:bg-gray-50/60 dark:hover:bg-gray-800/40 even:bg-gray-50/30 dark:even:bg-gray-800/20'
+                        }`}
+                        title={rowCui ? `Click pentru dosarul complet al CUI ${rowCui}` : undefined}
+                      >
+                        {row.map((col, cIdx) => (
+                          <td key={cIdx} className="px-3.5 py-2 whitespace-nowrap tabular-nums text-xs">
+                            {col.trim().replace(/\*\*(.*?)\*\*/g, '$1')}
+                          </td>
+                        ))}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
         tableRows = [];
       }
       inTable = false;
@@ -227,40 +485,40 @@ export const AxisAiCopilot = () => {
 
       if (trimmed.startsWith('### ')) {
         elements.push(
-          <h4 key={idx} className="font-bold text-xs text-gray-900 dark:text-white mt-2 mb-1">
+          <h4 key={idx} className="font-bold text-sm text-gray-900 dark:text-white mt-3.5 mb-1.5 pb-1 border-b border-gray-100 dark:border-gray-800 flex items-center gap-2">
             {trimmed.replace('### ', '').replace(/\*\*(.*?)\*\*/g, '$1')}
           </h4>
         );
       } else if (trimmed.startsWith('#### ')) {
         elements.push(
-          <h5 key={idx} className="font-semibold text-[11px] text-gray-700 dark:text-gray-300 mt-1.5 mb-0.5">
+          <h5 key={idx} className="font-semibold text-xs text-gray-800 dark:text-gray-200 mt-2 mb-1">
             {trimmed.replace('#### ', '').replace(/\*\*(.*?)\*\*/g, '$1')}
           </h5>
         );
       } else if (trimmed.startsWith('> ')) {
         elements.push(
-          <div key={idx} className="p-2 rounded-lg bg-gray-100/80 dark:bg-gray-800/80 border-l-2 border-primary text-[11px] text-gray-600 dark:text-gray-300 my-1.5">
+          <div key={idx} className="p-3 rounded-2xl bg-amber-50/80 dark:bg-amber-950/40 border-l-4 border-amber-500 text-xs text-amber-900 dark:text-amber-200 my-2 shadow-2xs">
             {trimmed.replace('> ', '').replace(/\*\*(.*?)\*\*/g, '$1')}
           </div>
         );
       } else if (trimmed.startsWith('* ') || trimmed.startsWith('- ')) {
         const itemText = trimmed.slice(2);
         elements.push(
-          <li key={idx} className="text-xs text-gray-700 dark:text-gray-300 ml-3 list-disc my-0.5">
+          <li key={idx} className="text-xs md:text-sm text-gray-700 dark:text-gray-300 ml-4 list-disc my-1 leading-relaxed">
             <span dangerouslySetInnerHTML={{
               __html: itemText
                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/`(.*?)`/g, '<code class="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-[10px]">$1</code>')
+                .replace(/`(.*?)`/g, '<code class="px-1.5 py-0.5 rounded-md bg-gray-200/80 dark:bg-gray-800 text-[11px] font-mono text-gray-900 dark:text-gray-100">$1</code>')
             }} />
           </li>
         );
       } else if (trimmed.length > 0) {
         elements.push(
-          <p key={idx} className="text-xs text-gray-700 dark:text-gray-300 leading-relaxed my-1">
+          <p key={idx} className="text-xs md:text-sm text-gray-700 dark:text-gray-300 leading-relaxed my-1.5">
             <span dangerouslySetInnerHTML={{
               __html: trimmed
                 .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-                .replace(/`(.*?)`/g, '<code class="px-1 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-[10px]">$1</code>')
+                .replace(/`(.*?)`/g, '<code class="px-1.5 py-0.5 rounded-md bg-gray-200/80 dark:bg-gray-800 text-[11px] font-mono text-gray-900 dark:text-gray-100">$1</code>')
             }} />
           </p>
         );
@@ -274,307 +532,505 @@ export const AxisAiCopilot = () => {
     return elements;
   };
 
+  // 4 Executive Quick Actions for Empty State
+  const quickActions = [
+    {
+      title: 'Caută Companie / Brand',
+      desc: 'Căutare inteligentă după denumire comercială, brand sau grup',
+      prompt: 'Caută firma ',
+      isPrefill: true,
+      icon: Search,
+      color: 'text-blue-600 dark:text-blue-400',
+      bgColor: 'bg-blue-50 dark:bg-blue-950/40'
+    },
+    {
+      title: 'Investighează CUI Oficial',
+      desc: 'Interogare live ANAF, ONRC, acționari și dosare de insolvență',
+      prompt: 'Investighează CUI ',
+      isPrefill: true,
+      icon: Building2,
+      color: 'text-indigo-600 dark:text-indigo-400',
+      bgColor: 'bg-indigo-50 dark:bg-indigo-950/40'
+    },
+    {
+      title: 'Adaugă Client în Portofoliu',
+      desc: 'Importă automat datele oficiale direct în baza de date Axis',
+      prompt: 'Adaugă client CUI ',
+      isPrefill: true,
+      icon: Plus,
+      color: 'text-emerald-600 dark:text-emerald-400',
+      bgColor: 'bg-emerald-50 dark:bg-emerald-950/40'
+    },
+    {
+      title: 'Management Flotă & Mașini',
+      desc: 'Disponibilitate mașini libere, contracte active și tarife',
+      prompt: 'Ce mașini avem libere în flotă pentru ofertare?',
+      isPrefill: false,
+      icon: Car,
+      color: 'text-amber-600 dark:text-amber-400',
+      bgColor: 'bg-amber-50 dark:bg-amber-950/40'
+    }
+  ];
+
   return (
     <>
-      {/* Floating Toggle Button (Mac OS Tahoe sleek floating pill) */}
-      {!isOpen && !deepResearchTarget && !companyModal && (
+      {/* Floating Launcher Pill (Mac OS Tahoe Style) */}
+      {!isOpen && !deepResearchTarget && (
         <div className="fixed bottom-6 right-6 z-[120]">
           <button
             type="button"
             onClick={() => setIsOpen(true)}
-            className="animate-floating group flex items-center gap-2.5 px-4 py-2.5 bg-gray-950/95 dark:bg-white/95 text-white dark:text-gray-900 backdrop-blur-md rounded-full border border-gray-800/80 dark:border-gray-200/80 hover:scale-105 active:scale-95 transition-transform duration-200 cursor-pointer select-none"
-            title="Deschide Axis AI Copilot"
+            className="animate-floating group flex items-center gap-3 px-5 py-3 bg-gray-950/95 dark:bg-white/95 text-white dark:text-gray-900 backdrop-blur-xl rounded-full border border-gray-800/80 dark:border-gray-200/80 hover:scale-105 active:scale-95 transition-all duration-200 cursor-pointer select-none shadow-2xl"
+            title="Deschide Centrul Executiv Axis AI Copilot (⌘K)"
           >
             <AxisAiIcon size="sm" showAiBadge={false} />
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
             <span className="text-xs font-bold tracking-wide">Axis Copilot</span>
-            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-white/15 dark:bg-gray-900/10 text-gray-300 dark:text-gray-700 uppercase tracking-wider">
+            <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded-full bg-white/20 dark:bg-gray-900/10 text-gray-200 dark:text-gray-800 uppercase tracking-wider">
               AI
+            </span>
+            <span className="hidden sm:inline-block text-[10px] text-gray-400 dark:text-gray-500 ml-1 font-mono">
+              ⌘K
             </span>
           </button>
         </div>
       )}
 
-      {/* Main Copilot Drawer / Window */}
-      {isOpen && !deepResearchTarget && !companyModal && (
-        <div className="fixed bottom-6 right-6 z-[120] w-[460px] max-w-[calc(100vw-32px)] h-[620px] max-h-[calc(100vh-80px)] bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl rounded-3xl shadow-2xl border border-gray-200 dark:border-gray-700/80 flex flex-col overflow-hidden animate-in zoom-in-95 slide-in-from-bottom-4 duration-200">
-          
-          {/* Header */}
-          <div className="p-4 border-b border-gray-100 dark:border-gray-800 bg-gray-50/70 dark:bg-gray-800/40 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3">
-              <AxisAiIcon size="md" showAiBadge={true} />
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-white">
-                    Axis AI Copilot
-                  </h3>
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60">
-                    Live OSINT &amp; Audit
+      {/* Main Centered Executive AI Copilot Window */}
+      {isOpen && !deepResearchTarget && (
+        <div 
+          className={`fixed inset-0 z-[120] flex items-center justify-center bg-black/55 backdrop-blur-md animate-in fade-in duration-200 ${
+            isMaximized ? 'p-0' : 'p-3 sm:p-5 md:p-8'
+          }`}
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !isMaximized) {
+              handleCloseCopilot();
+            }
+          }}
+        >
+          <div 
+            className={`bg-white/95 dark:bg-gray-900/95 backdrop-blur-2xl shadow-2xl border border-gray-200/90 dark:border-gray-700/80 flex flex-col overflow-hidden transition-all duration-200 pointer-events-auto ${
+              isMaximized
+                ? 'w-screen h-screen !rounded-none !border-none'
+                : 'w-full max-w-5xl md:max-w-6xl h-[88vh] max-h-[920px] rounded-3xl'
+            }`}
+          >
+            {/* Header: Ultra-clean Single Row without Mac dots */}
+            <div className="h-14 px-5 border-b border-gray-200/80 dark:border-gray-800 bg-gray-50/90 dark:bg-gray-800/60 flex items-center justify-between gap-3 select-none shrink-0 whitespace-nowrap">
+              
+              {/* Left: Brand Identity */}
+              <div className="flex items-center gap-2.5 min-w-0">
+                <AxisAiIcon size="sm" showAiBadge={false} />
+                <span className="text-sm font-bold text-gray-900 dark:text-white tracking-tight whitespace-nowrap">
+                  Axis Copilot
+                </span>
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60 whitespace-nowrap shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                  Live
+                </span>
+                {clientId && (
+                  <span className="hidden sm:inline-block text-[11px] font-medium text-gray-400 dark:text-gray-500 truncate max-w-[200px]">
+                    Client #{clientId}
                   </span>
-                </div>
-                <p className="text-[10px] text-gray-400">
-                  {clientId ? `Context activ: Client ID #${clientId}` : '0% halucinații • Răspunsuri directe din date oficiale'}
-                </p>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={() => setShowSettings(!showSettings)}
-                className={`p-1.5 rounded-full transition-colors cursor-pointer ${
-                  showSettings || apiKey || serverConfigured
-                    ? 'text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60'
-                    : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800'
-                }`}
-                title="Configurare Motor AI & Cheie API"
-              >
-                <Sliders size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setMessages([messages[0]])}
-                className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Resetează conversația"
-              >
-                <Trash2 size={14} />
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsOpen(false)}
-                className="p-1.5 rounded-full text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors cursor-pointer"
-                title="Închide fereastra"
-              >
-                <X size={16} />
-              </button>
-            </div>
-          </div>
-
-          {/* Settings Panel if active */}
-          {showSettings && (
-            <div className="p-4 bg-gray-50/95 dark:bg-gray-800/95 border-b border-gray-200 dark:border-gray-700 space-y-3 animate-in fade-in duration-150 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                  <Cpu size={14} className="text-emerald-500" />
-                  Configurare Inteligență AI (LLM)
-                </span>
-                <span className="text-[10px] text-gray-400 font-medium">
-                  {apiKey ? 'Cheie activă' : 'Mod local activ'}
-                </span>
+                )}
               </div>
 
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1">
-                  Furnizor Inteligență Artificială:
-                </label>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {[
-                    { id: 'gemini', label: 'Google Gemini', note: 'Flash 2.0 / 1.5' },
-                    { id: 'groq', label: 'Groq (Llama 3.3)', note: 'Gratuit & Rapid' },
-                    { id: 'openai', label: 'OpenAI (GPT-4o)', note: 'API Key' },
-                  ].map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => setAiProvider(p.id)}
-                      className={`p-2 rounded-xl border text-left transition-all ${
-                        aiProvider === p.id
-                          ? 'border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-200 font-bold'
-                          : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300'
-                      }`}
-                    >
-                      <div className="text-[11px]">{p.label}</div>
-                      <div className="text-[9px] opacity-75">{p.note}</div>
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-gray-700 dark:text-gray-300 mb-1 flex items-center justify-between">
-                  <span>Cheie API ({aiProvider === 'groq' ? 'gsk_...' : aiProvider === 'openai' ? 'sk-...' : 'AIza...'}):</span>
-                  {aiProvider === 'gemini' && (
-                    <a
-                      href="https://aistudio.google.com/app/apikey"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] text-blue-600 dark:text-blue-400 underline hover:no-underline font-medium"
-                    >
-                      Obține cheie gratuită Gemini &rarr;
-                    </a>
-                  )}
-                  {aiProvider === 'groq' && (
-                    <a
-                      href="https://console.groq.com/keys"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] text-emerald-600 dark:text-emerald-400 underline hover:no-underline font-medium"
-                    >
-                      Obține cheie gratuită Groq &rarr;
-                    </a>
-                  )}
-                </label>
-                <input
-                  type="password"
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  placeholder={aiProvider === 'groq' ? 'Lipește cheia gsk_...' : (aiProvider === 'gemini' ? 'Lipește cheia AIzaSy... de la Google AI Studio' : 'Lipește cheia API...')}
-                  className="w-full px-3 py-1.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
-
-              <div className="flex items-center justify-between pt-1">
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 leading-tight pr-2">
-                  Cu Google Gemini conectat, asistentul răspunde fluid la orice întrebare, reține contextul conversației și raționează inteligent.
-                </p>
+              {/* Right: Quick Action Round Icons */}
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
-                  onClick={handleSaveSettings}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl font-bold text-xs shrink-0 flex items-center gap-1 shadow-xs cursor-pointer transition-colors"
+                  onClick={() => {
+                    const lastAssistant = [...messages].reverse().find(m => m.sender === 'assistant' && m.id !== 'welcome') || messages[messages.length - 1];
+                    if (lastAssistant) {
+                      handleExportPdf(lastAssistant.text, 'header-export');
+                    }
+                  }}
+                  disabled={exportingPdfId === 'header-export' || messages.length <= 1}
+                  className="p-2 rounded-full text-gray-400 hover:text-rose-500 hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer disabled:opacity-25 disabled:cursor-not-allowed"
+                  title="Exportă raportul curent în format PDF"
                 >
-                  {saveSuccess ? (
-                    <>
-                      <Check size={12} />
-                      Salvat!
-                    </>
-                  ) : (
-                    'Salvează'
-                  )}
+                  {exportingPdfId === 'header-export' ? <RefreshCw size={16} className="animate-spin text-primary" /> : <FileDown size={16} />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (abortControllerRef.current) {
+                      try { abortControllerRef.current.abort(); } catch (e) {}
+                    }
+                    setLoading(false);
+                    setInputValue('');
+                    setMessages(INITIAL_MESSAGES);
+                  }}
+                  className="p-2 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  title="Conversație nouă (curăță ecranul)"
+                >
+                  <Trash2 size={16} />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIsMaximized(prev => !prev)}
+                  className="p-2 rounded-full text-gray-500 hover:text-primary dark:text-gray-400 dark:hover:text-primary hover:bg-primary/10 dark:hover:bg-primary/20 transition-colors cursor-pointer active:scale-95"
+                  title={isMaximized ? 'Restabilește fereastra' : 'Mărește la ecran complet'}
+                >
+                  {isMaximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleCloseCopilot}
+                  className="p-2 rounded-full text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-200/60 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                  title="Închide fereastra și resetează conversația (Esc)"
+                >
+                  <X size={17} />
                 </button>
               </div>
             </div>
-          )}
 
-          {/* Quick Gemini Banner when offline */}
-          {!apiKey && !serverConfigured && !showSettings && (
-            <div className="px-3.5 py-2 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-950/40 dark:to-indigo-950/40 border-b border-blue-200/70 dark:border-blue-800/40 flex items-center justify-between text-xs animate-in fade-in">
-              <div className="flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></span>
-                <span className="text-[11px] text-blue-950 dark:text-blue-200 font-medium">
-                  Activează <strong>Google Gemini</strong> pentru dialog fluid și inteligență deplină
-                </span>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setAiProvider('gemini'); setShowSettings(true); }}
-                className="text-[10px] bg-blue-600 hover:bg-blue-700 text-white px-2.5 py-1 rounded-lg font-bold transition-all shadow-xs cursor-pointer shrink-0 ml-2"
-              >
-                Conectează &rarr;
-              </button>
-            </div>
-          )}
-
-          {/* Messages Container */}
-          <div className="flex-1 p-4 overflow-y-auto space-y-4">
-            {messages.map((msg) => (
-              <div
-                key={msg.id}
-                className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'}`}
-              >
-                <div
-                  className={`p-3.5 rounded-2xl max-w-[90%] text-xs shadow-2xs leading-relaxed ${
-                    msg.sender === 'user'
-                      ? 'bg-primary text-primary-foreground font-medium rounded-tr-xs'
-                      : 'bg-gray-50 dark:bg-gray-800/90 text-gray-800 dark:text-gray-200 border border-gray-200/80 dark:border-gray-700/80 rounded-tl-xs'
-                  }`}
-                >
-                  {msg.sender === 'user' ? (
-                    <p className="whitespace-pre-wrap">{msg.text}</p>
-                  ) : (
-                    <div>{renderFormattedText(msg.text)}</div>
-                  )}
-                </div>
-
-                {/* In-App Direct Action Buttons (dacă ceva se cere să ducă direct acolo) */}
-                {msg.sender === 'assistant' && msg.actions && msg.actions.length > 0 && (
-                  <div className="flex flex-wrap items-center gap-1.5 mt-2 ml-1">
-                    {msg.actions.map((act, aIdx) => (
-                      <button
-                        key={aIdx}
-                        type="button"
-                        onClick={() => handleActionClick(act)}
-                        className="px-3 py-1.5 bg-white dark:bg-gray-800 hover:bg-primary hover:text-white dark:hover:bg-primary dark:hover:text-white text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 rounded-full text-[11px] font-semibold transition-all duration-150 flex items-center gap-1.5 shadow-2xs cursor-pointer group"
-                      >
-                        {act.type === 'NAVIGATE' && <ArrowRight size={12} className="text-primary group-hover:text-white" />}
-                        {act.type === 'OPEN_TAB' && <TrendingUp size={12} className="text-emerald-600 group-hover:text-white" />}
-                        {act.type === 'OPEN_COMPANY_MODAL' && <Building2 size={12} className="text-blue-600 group-hover:text-white" />}
-                        {act.type === 'OPEN_DEEP_RESEARCH' && <ShieldAlert size={12} className="text-amber-600 group-hover:text-white" />}
-                        {act.type === 'PROMPT' && <Sparkles size={12} className="text-purple-600 group-hover:text-white" />}
-                        <span>{act.label}</span>
-                      </button>
-                    ))}
+            {/* Conversation Stream */}
+            <div ref={conversationContainerRef} className="flex-1 p-4 sm:p-6 md:p-8 overflow-y-auto space-y-5">
+              
+              {/* Executive Command Hub (Rendered when starting / empty state) */}
+              {messages.length <= 1 && (
+                <div className="max-w-2xl mx-auto space-y-5 py-4 animate-in fade-in duration-300">
+                  <div className="text-center space-y-1.5">
+                    <div className="inline-flex p-2.5 rounded-2xl bg-primary/10 dark:bg-primary/20 text-primary mb-1">
+                      <AxisAiIcon size="md" showAiBadge={false} />
+                    </div>
+                    <h2 className="text-base sm:text-lg font-bold text-gray-900 dark:text-white tracking-tight">
+                      Centru Executiv Axis Copilot
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 max-w-md mx-auto">
+                      Asistent executiv pentru investigații companii, analiză de risc și flotă.
+                    </p>
                   </div>
-                )}
-              </div>
-            ))}
 
-            {/* Contextual Suggestions Grid (Aranjat comod, fără bară de scroll orizontală) */}
-            {messages.length <= 1 && suggestedPrompts.length > 0 && (
-              <div className="pt-1 animate-in fade-in duration-200">
-                <div className="flex items-center gap-1.5 mb-2 px-1 text-[11px] font-semibold text-gray-400 dark:text-gray-500">
-                  <Sparkles size={12} className="text-primary" />
-                  <span>Sugestii de pornire & comenzi rapide:</span>
+                  {/* 4 Clean Executive Action Cards */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                    {quickActions.map((action, idx) => {
+                      const Icon = action.icon;
+                      return (
+                        <div
+                          key={idx}
+                          onClick={() => {
+                            if (action.isPrefill) {
+                              setInputValue(action.prompt);
+                              setTimeout(() => {
+                                textareaRef.current?.focus();
+                                textareaRef.current?.setSelectionRange(action.prompt.length, action.prompt.length);
+                              }, 50);
+                            } else {
+                              handleSendMessage(action.prompt);
+                            }
+                          }}
+                          className="p-3 rounded-2xl bg-white dark:bg-gray-800/80 border border-gray-200/90 dark:border-gray-700/80 hover:border-primary/50 hover:bg-primary/5 dark:hover:bg-primary/10 transition-all cursor-pointer group flex items-center justify-between gap-3 shadow-2xs"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <div className={`p-2 rounded-xl shrink-0 ${action.bgColor} ${action.color}`}>
+                              <Icon size={15} />
+                            </div>
+                            <div className="min-w-0">
+                              <h4 className="text-xs font-bold text-gray-900 dark:text-white group-hover:text-primary transition-colors truncate">
+                                {action.title}
+                              </h4>
+                              <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                                {action.desc}
+                              </p>
+                            </div>
+                          </div>
+                          <ChevronRight size={14} className="text-gray-400 group-hover:text-primary group-hover:translate-x-0.5 transition-all shrink-0" />
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {suggestedPrompts.slice(0, 4).map((p, idx) => (
-                    <button
-                      key={idx}
-                      type="button"
-                      onClick={() => handleSendMessage(p)}
-                      disabled={loading}
-                      className="p-3 bg-white dark:bg-gray-800/80 hover:bg-gray-50 dark:hover:bg-gray-700/80 border border-gray-200 dark:border-gray-700/80 rounded-2xl text-left transition-all hover:border-primary/40 shadow-2xs group cursor-pointer flex flex-col justify-between"
-                    >
-                      <span className="text-xs font-semibold text-gray-800 dark:text-gray-200 leading-snug line-clamp-2">
-                        {p}
-                      </span>
-                      <div className="flex items-center justify-between mt-2.5 pt-1.5 border-t border-gray-100 dark:border-gray-700/50 text-[10px] text-gray-400 group-hover:text-primary transition-colors">
-                        <span className="font-semibold">Execută</span>
-                        <ArrowRight size={11} className="group-hover:translate-x-0.5 transition-transform" />
+              )}
+
+              {/* Messages Thread (Active Conversation) */}
+              {messages.length > 1 && messages.map((msg, mIdx) => {
+                const isLatest = mIdx === messages.length - 1;
+                const isLastUser = msg.sender === 'user' && (mIdx === messages.length - 1 || (mIdx === messages.length - 2 && messages[messages.length - 1]?.sender === 'assistant'));
+                return (
+                <div
+                  key={msg.id}
+                  ref={isLatest ? latestMessageRef : (isLastUser ? lastUserMessageRef : null)}
+                  className={`flex flex-col ${msg.sender === 'user' ? 'items-end' : 'items-start'} max-w-4xl mx-auto`}
+                >
+                  {/* Sender Label & Timestamp */}
+                  <div className={`flex items-center gap-2 mb-1 px-2 text-[11px] text-gray-400 font-semibold ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}>
+                    {msg.sender === 'assistant' ? (
+                      <>
+                        <AxisAiIcon size="sm" showAiBadge={false} />
+                        <span className="text-gray-700 dark:text-gray-300 font-bold">Axis Copilot</span>
+                        <span>•</span>
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">Verificat Faptic</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="text-gray-700 dark:text-gray-300 font-bold">Tu (Operator)</span>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Message Bubble */}
+                  <div
+                    className={`rounded-3xl shadow-xs leading-relaxed ${
+                      msg.sender === 'user'
+                        ? 'p-3.5 sm:p-4 bg-primary text-primary-foreground font-medium rounded-tr-sm max-w-[85%] text-xs md:text-sm shadow-md'
+                        : 'p-4 sm:p-5.5 bg-gray-50/90 dark:bg-gray-800/70 text-gray-800 dark:text-gray-200 border border-gray-200/90 dark:border-gray-700/80 rounded-tl-sm w-full'
+                    }`}
+                  >
+                    {msg.sender === 'user' ? (
+                      <p className="whitespace-pre-wrap">{msg.text}</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {renderFormattedText(msg.text)}
+
+                        {/* Fallback direct list if message has matchedCompanies and wasn't rendered as a markdown table */}
+                        {msg.matchedCompanies && msg.matchedCompanies.length > 1 && !msg.text?.includes('| CUI |') && (
+                          <div className="mt-3.5 pt-3 border-t border-gray-200/80 dark:border-gray-700/80 space-y-2">
+                            <div className="flex items-center justify-between px-1 text-xs text-gray-500 dark:text-gray-400 font-medium">
+                              <span className="font-semibold text-gray-700 dark:text-gray-300">
+                                Entități identificate ({msg.matchedCompanies.length}) — Click pe oricare pentru dosar complet:
+                              </span>
+                            </div>
+                            <div className="divide-y divide-gray-100 dark:divide-gray-800 rounded-2xl border border-gray-200/90 dark:border-gray-700/80 bg-white dark:bg-gray-900/80 overflow-hidden shadow-2xs">
+                              {msg.matchedCompanies.map((comp, cIdx) => (
+                                <div
+                                  key={cIdx}
+                                  onClick={() => {
+                                    if (comp.cui) handleSendMessage(`Verifică CUI ${comp.cui}`);
+                                  }}
+                                  className="px-3.5 py-2.5 flex items-center justify-between gap-3 cursor-pointer hover:bg-primary/5 dark:hover:bg-primary/10 transition-colors group"
+                                >
+                                  <div className="min-w-0 flex-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="text-xs font-bold text-gray-900 dark:text-white group-hover:text-primary transition-colors">
+                                        {comp.denumire || comp.name || `Companie CUI ${comp.cui}`}
+                                      </span>
+                                      {comp.cui && (
+                                        <span className="text-[11px] font-mono font-semibold text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-700">
+                                          CUI {comp.cui}
+                                        </span>
+                                      )}
+                                      {comp.nr_reg_com && comp.nr_reg_com !== '—' && (
+                                        <span className="text-[10px] text-gray-400">
+                                          {comp.nr_reg_com}
+                                        </span>
+                                      )}
+                                    </div>
+                                    {(comp.adresa || comp.address) && (
+                                      <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate mt-0.5">
+                                        {comp.adresa || comp.address}
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div className="shrink-0 flex items-center text-gray-400 group-hover:text-primary transition-colors">
+                                    <ChevronRight size={15} />
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Assistant Action Bar: Copy Text & Export PDF (Mac OS Tahoe Style) */}
+                        <div className="flex items-center gap-1.5 mt-3 pt-2.5 border-t border-gray-200/60 dark:border-gray-700/60 select-none">
+                          <button
+                            type="button"
+                            onClick={() => handleCopyText(msg.text, msg.id)}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-700/70 transition-all border border-gray-200/80 dark:border-gray-700/70 shadow-2xs cursor-pointer active:scale-95"
+                            title="Copiază textul răspunsului în clipboard"
+                          >
+                            {copiedId === msg.id ? (
+                              <>
+                                <Check size={12} className="text-emerald-500 stroke-[2.5]" />
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">Copiat!</span>
+                              </>
+                            ) : (
+                              <>
+                                <Copy size={12} className="text-gray-400 dark:text-gray-400" />
+                                <span>Copiază text</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleExportPdf(msg.text, msg.id)}
+                            disabled={exportingPdfId === msg.id}
+                            className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[11px] font-semibold text-gray-600 dark:text-gray-300 hover:text-primary dark:hover:text-primary hover:bg-gray-100 dark:hover:bg-gray-700/70 transition-all border border-gray-200/80 dark:border-gray-700/70 shadow-2xs cursor-pointer active:scale-95 disabled:opacity-50"
+                            title="Descarcă raportul oficial în format PDF"
+                          >
+                            {exportingPdfId === msg.id ? (
+                              <>
+                                <RefreshCw size={12} className="animate-spin text-primary" />
+                                <span>Generare PDF...</span>
+                              </>
+                            ) : (
+                              <>
+                                <FileDown size={12} className="text-rose-500" />
+                                <span>Exportă PDF</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
-                    </button>
-                  ))}
+                    )}
+                  </div>
                 </div>
-              </div>
-            )}
+              );
+              })}
 
-            {loading && (
-              <div className="flex items-center gap-2 p-3 bg-gray-50 dark:bg-gray-800/60 rounded-2xl border border-gray-100 dark:border-gray-700/60 w-fit">
-                <RefreshCw size={14} className="animate-spin text-primary" />
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  Interoghez registrele oficiale și baza de date...
+              {/* Progressive Loading Status Card */}
+              {loading && (
+                <div className="max-w-4xl mx-auto">
+                  <div className="flex items-center gap-3 p-4 bg-gray-50/95 dark:bg-gray-800/90 rounded-3xl border border-gray-200/90 dark:border-gray-700/80 shadow-md">
+                    <RefreshCw size={16} className="animate-spin text-primary shrink-0" />
+                    <div className="flex flex-col flex-1">
+                      <span className="text-xs md:text-sm font-bold text-gray-800 dark:text-gray-200">
+                        {loadingStep === 0 && 'Interoghez registrele oficiale (ANAF, ONRC, BPI)...'}
+                        {loadingStep === 1 && 'Analizez bilanțul contabil, insolvența și litigiile...'}
+                        {loadingStep === 2 && 'Sintetizez dosarul faptic de risc și structura de grup...'}
+                      </span>
+                      <span className="text-[11px] text-gray-400 dark:text-gray-500">
+                        Date furnizate în timp real din surse oficiale guvernamentale
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (abortControllerRef.current) abortControllerRef.current.abort();
+                        setLoading(false);
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-full transition-colors cursor-pointer border border-rose-200 dark:border-rose-900/60 shadow-2xs"
+                    >
+                      Anulează
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Clean Business Input Bar */}
+            <div className="p-3 sm:p-4 border-t border-gray-200/80 dark:border-gray-800 bg-white dark:bg-gray-900 space-y-2.5">
+              {/* Sleek Quick Commands Bar (Single Row, Rounded Mac OS Tahoe Style) */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 select-none">
+                <span className="text-[11px] font-bold text-gray-400 dark:text-gray-500 whitespace-nowrap flex items-center gap-1 shrink-0 mr-1">
+                  <Sparkles size={11} className="text-primary" />
+                  Comenzi rapide:
                 </span>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputValue('Caută firma ');
+                    setTimeout(() => {
+                      textareaRef.current?.focus();
+                      textareaRef.current?.setSelectionRange(12, 12);
+                    }, 50);
+                  }}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-full border border-gray-200/90 dark:border-gray-700/80 bg-gray-50/90 dark:bg-gray-800/80 hover:bg-primary/10 hover:border-primary/50 hover:text-primary dark:hover:text-primary text-gray-700 dark:text-gray-300 transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1 shadow-2xs active:scale-95"
+                  title="Caută după denumire companie"
+                >
+                  <Search size={11} className="text-blue-500" />
+                  <span>Caută</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputValue('Investighează CUI ');
+                    setTimeout(() => {
+                      textareaRef.current?.focus();
+                      textareaRef.current?.setSelectionRange(18, 18);
+                    }, 50);
+                  }}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-full border border-gray-200/90 dark:border-gray-700/80 bg-gray-50/90 dark:bg-gray-800/80 hover:bg-primary/10 hover:border-primary/50 hover:text-primary dark:hover:text-primary text-gray-700 dark:text-gray-300 transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1 shadow-2xs active:scale-95"
+                  title="Investighează CUI în registre oficiale"
+                >
+                  <Building2 size={11} className="text-indigo-500" />
+                  <span>Investighează</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputValue('Adaugă client CUI ');
+                    setTimeout(() => {
+                      textareaRef.current?.focus();
+                      textareaRef.current?.setSelectionRange(17, 17);
+                    }, 50);
+                  }}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-full border border-emerald-200/90 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/40 hover:bg-emerald-100 dark:hover:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1 shadow-2xs active:scale-95"
+                  title="Importă automat clientul în baza de date după CUI"
+                >
+                  <Plus size={12} className="text-emerald-600 dark:text-emerald-400" />
+                  <span>Adaugă</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInputValue('Analizează bilanț CUI ');
+                    setTimeout(() => {
+                      textareaRef.current?.focus();
+                      textareaRef.current?.setSelectionRange(21, 21);
+                    }, 50);
+                  }}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-full border border-gray-200/90 dark:border-gray-700/80 bg-gray-50/90 dark:bg-gray-800/80 hover:bg-primary/10 hover:border-primary/50 hover:text-primary dark:hover:text-primary text-gray-700 dark:text-gray-300 transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1 shadow-2xs active:scale-95"
+                  title="Analiză financiară bilanț 5 ani"
+                >
+                  <TrendingUp size={11} className="text-purple-500" />
+                  <span>Bilanț & Risc</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendMessage('Ce mașini avem libere în flotă pentru ofertare?')}
+                  className="px-2.5 py-1 text-xs font-semibold rounded-full border border-gray-200/90 dark:border-gray-700/80 bg-gray-50/90 dark:bg-gray-800/80 hover:bg-amber-500/10 hover:border-amber-400 hover:text-amber-600 dark:hover:text-amber-400 text-gray-700 dark:text-gray-300 transition-all cursor-pointer whitespace-nowrap shrink-0 flex items-center gap-1 shadow-2xs active:scale-95"
+                  title="Verifică mașini libere în flotă"
+                >
+                  <Car size={11} className="text-amber-500" />
+                  <span>Flotă liberă</span>
+                </button>
               </div>
-            )}
 
-            <div ref={messagesEndRef} />
-          </div>
-
-          {/* Input Box */}
-          <div className="p-3 border-t border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900">
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleSendMessage();
-              }}
-              className="flex items-center gap-2"
-            >
-              <input
-                ref={inputRef}
-                type="text"
-                value={inputValue}
-                onChange={(e) => setInputValue(e.target.value)}
-                placeholder="Întreabă despre profit, insolvență sau scrie 'Verifică CUI'..."
-                className="flex-1 px-4 py-2.5 bg-gray-100/80 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-full text-xs text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/40 transition-all"
-              />
-              <button
-                type="submit"
-                disabled={!inputValue.trim() || loading}
-                className="p-2.5 bg-primary text-primary-foreground rounded-full hover:bg-primary/90 disabled:opacity-40 disabled:cursor-not-allowed transition-colors cursor-pointer shadow-xs"
-                title="Trimite mesaj"
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSendMessage();
+                }}
+                className="relative bg-gray-50/90 dark:bg-gray-800/80 rounded-2xl border border-gray-200/90 dark:border-gray-700/80 focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20 transition-all p-1.5 sm:p-2 flex items-center gap-2 shadow-xs"
               >
-                <Send size={14} />
-              </button>
-            </form>
+                <textarea
+                  ref={textareaRef}
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                  rows={1}
+                  placeholder="Scrie un mesaj sau o cerință..."
+                  className="w-full px-3 py-1.5 bg-transparent text-xs sm:text-sm text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none resize-none leading-relaxed"
+                />
+
+                <button
+                  type="submit"
+                  disabled={!inputValue.trim() || loading}
+                  className="p-2.5 rounded-xl bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-25 disabled:cursor-not-allowed transition-all cursor-pointer shadow-xs active:scale-95 shrink-0 flex items-center justify-center"
+                  title="Trimite"
+                >
+                  <Send size={15} />
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       )}
@@ -586,10 +1042,7 @@ export const AxisAiCopilot = () => {
           cui={companyModal.cui}
           initialName={companyModal.name}
           onClose={() => setCompanyModal(null)}
-          onEvaluate={(c, n) => {
-            navigate('/clients', { state: { prefillCui: c, prefillName: n } });
-            setCompanyModal(null);
-          }}
+          onEvaluate={handleEvaluateCompany}
         />
       )}
 

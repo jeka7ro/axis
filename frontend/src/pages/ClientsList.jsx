@@ -1,11 +1,12 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { 
   Plus, Search, Building2, User, Eye, Edit2, Trash2, ChevronLeft, ChevronRight, 
   CheckSquare, Trash, AlertCircle, FileText, Check, CreditCard, ScanLine, Upload, 
   Link2 as LinkIcon, Briefcase, Sparkles, ShieldAlert, UserX, Loader2, CheckCircle2, ShieldBan,
-  RefreshCw, ExternalLink, X, Scale, TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Activity, Globe
+  RefreshCw, ExternalLink, X, Scale, TrendingUp, TrendingDown, ShieldCheck, AlertTriangle, Activity, Globe,
+  MapPin, ArrowRight
 } from 'lucide-react';
 import { 
   fetchClients, fetchClient, createClient, updateClient, deleteClient, lookupClientByCui,
@@ -16,6 +17,7 @@ import { getCaenInfo, getCaenDescription } from '../utils/caenHelper';
 
 const ClientsList = () => {
   const location = useLocation();
+  const navigate = useNavigate();
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState("");
@@ -39,6 +41,11 @@ const ClientsList = () => {
   const [publicSearchResults, setPublicSearchResults] = useState([]);
   const [publicSearchError, setPublicSearchError] = useState(null);
   const [importingCui, setImportingCui] = useState(null);
+
+  // Modal Autocomplete State
+  const [modalSuggestions, setModalSuggestions] = useState([]);
+  const [modalSearchLoading, setModalSearchLoading] = useState(false);
+  const [activeModalField, setActiveModalField] = useState(null);
 
   // Table state
   const [selectedIds, setSelectedIds] = useState([]);
@@ -392,6 +399,81 @@ const ClientsList = () => {
       }
     } catch (error) {
       console.warn("Could not fetch company data automatically from ANAF.", error);
+    }
+  };
+
+  const handleModalSearchChange = async (field, val) => {
+    setNewClient(prev => ({ ...prev, [field]: val }));
+    setActiveModalField(field);
+
+    if (newClient.type !== 'PJ' || !val || val.trim().length < 2) {
+      setModalSuggestions([]);
+      return;
+    }
+
+    const cleanDigits = val.replace(/\D/g, '');
+    const isCuiSearch = field === 'cui_cnp' || (cleanDigits.length >= 4 && /^\d+$/.test(val.trim().replace(/^RO/i, '')));
+
+    setModalSearchLoading(true);
+    try {
+      if (isCuiSearch && cleanDigits.length >= 4) {
+        const lookup = await lookupClientByCui(cleanDigits);
+        if (lookup && lookup.name) {
+          setModalSuggestions([{
+            cui: cleanDigits,
+            name: lookup.name,
+            reg_com: lookup.reg_com || '',
+            address: lookup.address || '',
+            phone: lookup.phone || '',
+            caen: lookup.caen || '',
+            caen_descriere: lookup.caen_descriere || '',
+            source: 'ANAF'
+          }]);
+        } else {
+          setModalSuggestions([]);
+        }
+      } else {
+        const results = await searchPublicCompanies(val.trim());
+        setModalSuggestions(results || []);
+      }
+    } catch (err) {
+      console.warn("Modal search error:", err);
+      setModalSuggestions([]);
+    } finally {
+      setModalSearchLoading(false);
+    }
+  };
+
+  const handleSelectModalSuggestion = (s) => {
+    const cuiClean = String(s.cui || '').replace(/^RO/i, '').trim();
+    setNewClient(prev => ({
+      ...prev,
+      name: s.name || prev.name,
+      cui_cnp: cuiClean || prev.cui_cnp,
+      reg_com: s.reg_com || prev.reg_com,
+      address: s.address || (s.locality ? `${s.locality}, ${s.county}` : prev.address),
+      contact_phone: s.phone || prev.contact_phone,
+      caen: s.caen || prev.caen,
+      caen_descriere: s.caen_descriere || prev.caen_descriere
+    }));
+    setModalSuggestions([]);
+    setActiveModalField(null);
+
+    // Daca datele sunt sumare, interogam ANAF in background pentru a completa restul
+    if (cuiClean && (!s.address || !s.reg_com)) {
+      lookupClientByCui(cuiClean).then(details => {
+        if (details) {
+          setNewClient(prev => ({
+            ...prev,
+            name: details.name || prev.name,
+            address: details.address || prev.address,
+            reg_com: details.reg_com || prev.reg_com,
+            contact_phone: details.phone || prev.contact_phone,
+            caen: details.caen || prev.caen,
+            caen_descriere: details.caen_descriere || prev.caen_descriere
+          }));
+        }
+      }).catch(console.warn);
     }
   };
 
@@ -941,27 +1023,59 @@ const ClientsList = () => {
                       <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">0 credite</span>
                     </div>
 
-                    <div className="max-h-64 overflow-y-auto space-y-2 pr-1 divide-y divide-gray-100 dark:divide-gray-800">
+                    <div className="max-h-80 overflow-y-auto space-y-2 pr-1">
                       {publicSearchResults.map((comp) => {
-                        const isAlreadyLocal = clients.some(c => String(c.cui_cnp) === String(comp.cui));
+                        const localClient = clients.find(c => String(c.cui_cnp) === String(comp.cui));
+                        const isAlreadyLocal = !!localClient;
                         const isImporting = importingCui === comp.cui;
+                        const fullAddress = comp.address || comp.adresa || (comp.locality ? `${comp.locality}${comp.county ? `, ${comp.county}` : ''}` : '');
 
                         return (
-                          <div key={comp.cui} className="pt-2 first:pt-0 flex items-center justify-between gap-3 group">
-                            <div className="min-w-0 flex-1">
+                          <div 
+                            key={comp.cui} 
+                            onClick={() => {
+                              if (isAlreadyLocal) {
+                                setSearchQuery(comp.cui);
+                                setIsSearchFocused(false);
+                                if (localClient) {
+                                  navigate(`/clients/${localClient.id}?tab=investigation`);
+                                }
+                              } else {
+                                handleImportPublicCompany(comp);
+                              }
+                            }}
+                            className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 group ${
+                              isAlreadyLocal
+                                ? 'bg-emerald-50/40 dark:bg-emerald-950/20 border-emerald-200/80 dark:border-emerald-800/60 hover:bg-emerald-50 dark:hover:bg-emerald-950/40'
+                                : 'bg-white dark:bg-gray-800/80 border-gray-200/80 dark:border-gray-700/80 hover:border-primary/50 hover:bg-primary/5 dark:hover:bg-primary/10 shadow-2xs'
+                            }`}
+                          >
+                            <div className="min-w-0 flex-1 space-y-1">
                               <div className="flex items-center gap-2">
-                                <h5 className="text-xs font-bold text-gray-900 dark:text-white truncate">
+                                <h5 className="text-xs font-bold text-gray-900 dark:text-white truncate group-hover:text-primary transition-colors">
                                   {comp.name}
                                 </h5>
                                 {isAlreadyLocal && (
-                                  <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300 border border-emerald-200">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 dark:bg-emerald-900/60 dark:text-emerald-200 border border-emerald-300 dark:border-emerald-700 shrink-0">
                                     În portofoliu
                                   </span>
                                 )}
                               </div>
-                              <div className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-2 mt-0.5">
-                                <span>CUI: <strong className="text-gray-700 dark:text-gray-300 font-semibold">{comp.cui}</strong></span>
-                                {comp.locality && <span className="truncate">• {comp.locality}{comp.county ? `, ${comp.county}` : ''}</span>}
+                              <div className="text-[11px] text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+                                <span className="font-mono font-bold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-700/80 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600">
+                                  CUI: {comp.cui}
+                                </span>
+                                {comp.reg_com && comp.reg_com !== '—' && (
+                                  <span className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">
+                                    {comp.reg_com}
+                                  </span>
+                                )}
+                                {fullAddress && (
+                                  <span className="flex items-center gap-1 text-gray-600 dark:text-gray-300 truncate max-w-sm">
+                                    <MapPin size={11} className="text-gray-400 shrink-0" />
+                                    <span className="truncate">{fullAddress}</span>
+                                  </span>
+                                )}
                               </div>
                             </div>
 
@@ -969,20 +1083,28 @@ const ClientsList = () => {
                               {isAlreadyLocal ? (
                                 <button
                                   type="button"
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation();
                                     setSearchQuery(comp.cui);
                                     setIsSearchFocused(false);
+                                    if (localClient) {
+                                      navigate(`/clients/${localClient.id}?tab=investigation`);
+                                    }
                                   }}
-                                  className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+                                  className="px-3 py-1.5 text-xs font-semibold rounded-full bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 transition-colors cursor-pointer flex items-center gap-1"
                                 >
-                                  Filtrează
+                                  <span>Deschide Dosar</span>
+                                  <ArrowRight size={11} />
                                 </button>
                               ) : (
                                 <button
                                   type="button"
-                                  onClick={() => handleImportPublicCompany(comp)}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleImportPublicCompany(comp);
+                                  }}
                                   disabled={isImporting}
-                                  className="px-3 py-1.5 text-xs font-semibold rounded-xl bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white transition-all flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
+                                  className="px-3.5 py-1.5 text-xs font-semibold rounded-full bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white transition-all flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
                                 >
                                   {isImporting ? (
                                     <Loader2 size={12} className="animate-spin" />
@@ -1638,16 +1760,53 @@ const ClientsList = () => {
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4 mt-4">
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">CUI</label>
+                    <div className="relative">
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">
+                        CUI {modalSearchLoading && activeModalField === 'cui_cnp' && <span className="text-[10px] text-blue-500 animate-pulse font-normal">(căutare...)</span>}
+                      </label>
                       <input 
                         type="text" 
                         required
+                        placeholder="Ex: 14746400"
                         value={newClient.cui_cnp}
-                        onChange={e => setNewClient({...newClient, cui_cnp: e.target.value})}
+                        onChange={e => handleModalSearchChange('cui_cnp', e.target.value)}
                         onBlur={handleCuiBlur}
                         className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
                       />
+
+                      {/* Dropdown sugestii CUI */}
+                      {activeModalField === 'cui_cnp' && modalSuggestions.length > 0 && (
+                        <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-2 max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
+                          {modalSuggestions.map(s => {
+                            const fullAdr = s.address || s.adresa || (s.locality ? `${s.locality}${s.county ? `, ${s.county}` : ''}` : '');
+                            return (
+                              <button
+                                key={s.cui}
+                                type="button"
+                                onClick={() => handleSelectModalSuggestion(s)}
+                                className="w-full text-left p-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer text-xs flex items-center justify-between gap-3 group"
+                              >
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-bold text-gray-900 dark:text-white truncate group-hover:text-primary">{s.name}</div>
+                                  <div className="text-[11px] text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                                    <span className="font-mono font-semibold text-primary">CUI: {s.cui}</span>
+                                    {s.reg_com && <span>• {s.reg_com}</span>}
+                                    {fullAdr && (
+                                      <span className="flex items-center gap-1 text-gray-600 dark:text-gray-300 truncate max-w-xs">
+                                        <MapPin size={10} className="text-gray-400 shrink-0" />
+                                        <span className="truncate">{fullAdr}</span>
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 shrink-0">
+                                  Selectează
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Nr. Reg. Com.</label>
@@ -1660,16 +1819,53 @@ const ClientsList = () => {
                       />
                     </div>
                   </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Denumire Companie <span className="text-red-500">*</span></label>
+                  <div className="relative">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">
+                      Denumire Companie <span className="text-red-500">*</span>
+                      {modalSearchLoading && activeModalField === 'name' && <span className="text-[10px] text-blue-500 animate-pulse font-normal ml-2">(căutare online...)</span>}
+                    </label>
                     <input 
                       type="text" 
                       required
-                      placeholder="Se completează automat din ANAF"
+                      placeholder="Tastează denumirea sau CUI pentru căutare automată..."
                       value={newClient.name}
-                      onChange={e => setNewClient({...newClient, name: e.target.value})}
+                      onChange={e => handleModalSearchChange('name', e.target.value)}
                       className="block w-full px-4 py-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-2xl dark:text-white focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all placeholder-gray-400"
                     />
+
+                    {/* Dropdown sugestii Denumire */}
+                    {activeModalField === 'name' && modalSuggestions.length > 0 && (
+                      <div className="absolute left-0 right-0 top-full mt-1.5 z-50 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-200 dark:border-gray-700 p-2 max-h-56 overflow-y-auto divide-y divide-gray-100 dark:divide-gray-700">
+                        {modalSuggestions.map(s => {
+                          const fullAdr = s.address || s.adresa || (s.locality ? `${s.locality}${s.county ? `, ${s.county}` : ''}` : '');
+                          return (
+                            <button
+                              key={s.cui}
+                              type="button"
+                              onClick={() => handleSelectModalSuggestion(s)}
+                              className="w-full text-left p-2.5 hover:bg-gray-50 dark:hover:bg-gray-700/60 rounded-xl transition-colors cursor-pointer text-xs flex items-center justify-between gap-3 group"
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="font-bold text-gray-900 dark:text-white truncate group-hover:text-primary">{s.name}</div>
+                                <div className="text-[11px] text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
+                                  <span className="font-mono font-semibold text-primary">CUI: {s.cui}</span>
+                                  {s.reg_com && <span>• {s.reg_com}</span>}
+                                  {fullAdr && (
+                                    <span className="flex items-center gap-1 text-gray-600 dark:text-gray-300 truncate max-w-xs">
+                                      <MapPin size={10} className="text-gray-400 shrink-0" />
+                                      <span className="truncate">{fullAdr}</span>
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300 shrink-0">
+                                Selectează
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 ml-1 mb-1">Adresă / Sediu Social</label>

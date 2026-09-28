@@ -209,6 +209,8 @@ const OfferBuilder = () => {
   const loadFidejusorForClient = async (clientId, clientObj = null, currentList = clients) => {
     if (!clientId) return;
     setLoadingFidejusor(true);
+    const targetClient = clientObj || currentList.find(c => String(c.id) === String(clientId));
+
     try {
       const data = await fetchFidejusorSuggestion(clientId);
       if (data?.suggested_fidejusor) {
@@ -227,7 +229,6 @@ const OfferBuilder = () => {
         });
 
         // Verificăm dacă reprezentantul legal al clientului este deja setat
-        const targetClient = clientObj || currentList.find(c => String(c.id) === String(clientId));
         if (targetClient && targetClient.type === 'PJ' && !targetClient.representative_name) {
           const adminCand = candidates.find(c => c.is_administrator) || candidates[0];
           if (adminCand?.name) {
@@ -235,9 +236,47 @@ const OfferBuilder = () => {
             setClients(prev => prev.map(c => String(c.id) === String(clientId) ? { ...c, representative_name: adminCand.name } : c));
           }
         }
+      } else if (targetClient) {
+        // Fallback dacă sugestia nu a returnat candidați
+        const defaultCand = {
+          name: targetClient.representative_name || targetClient.name || '',
+          cnp: targetClient.representative_cnp || (targetClient.type === 'PF' ? targetClient.cui_cnp : ''),
+          address: targetClient.representative_address || targetClient.address || 'Mun. București',
+          id_card: `${targetClient.id_card_series || ''} ${targetClient.id_card_number || ''}`.trim(),
+          quality: targetClient.type === 'PJ' ? 'Administrator Statutar' : 'Titular Contract',
+          is_administrator: true
+        };
+        setFidejusorCandidates([defaultCand]);
+        setFormData(prev => ({
+          ...prev,
+          fidejusor_name: prev.fidejusor_name || defaultCand.name,
+          fidejusor_cnp: prev.fidejusor_cnp || defaultCand.cnp,
+          fidejusor_address: prev.fidejusor_address || defaultCand.address,
+          fidejusor_id_card: prev.fidejusor_id_card || defaultCand.id_card,
+          fidejusor_quality: prev.fidejusor_quality || defaultCand.quality
+        }));
       }
     } catch (err) {
       console.warn("Could not fetch fidejusor suggestion:", err);
+      if (targetClient) {
+        const defaultCand = {
+          name: targetClient.representative_name || targetClient.name || '',
+          cnp: targetClient.representative_cnp || (targetClient.type === 'PF' ? targetClient.cui_cnp : ''),
+          address: targetClient.representative_address || targetClient.address || 'Mun. București',
+          id_card: `${targetClient.id_card_series || ''} ${targetClient.id_card_number || ''}`.trim(),
+          quality: targetClient.type === 'PJ' ? 'Administrator Statutar' : 'Titular Contract',
+          is_administrator: true
+        };
+        setFidejusorCandidates([defaultCand]);
+        setFormData(prev => ({
+          ...prev,
+          fidejusor_name: prev.fidejusor_name || defaultCand.name,
+          fidejusor_cnp: prev.fidejusor_cnp || defaultCand.cnp,
+          fidejusor_address: prev.fidejusor_address || defaultCand.address,
+          fidejusor_id_card: prev.fidejusor_id_card || defaultCand.id_card,
+          fidejusor_quality: prev.fidejusor_quality || defaultCand.quality
+        }));
+      }
     } finally {
       setLoadingFidejusor(false);
     }

@@ -6,7 +6,7 @@ import {
   Sparkles, Award, Briefcase, Layers, Network, ArrowLeft, ChevronRight,
   Globe, Compass, Camera, Search
 } from 'lucide-react';
-import { fetchCompanyFullIntel } from '../services/api';
+import { fetchCompanyFullIntel, evaluateCompanyByCui } from '../services/api';
 import { Link, useNavigate } from 'react-router-dom';
 import MofDocumentModal from './MofDocumentModal';
 import FinancialPerformanceCard from './FinancialPerformanceCard';
@@ -86,12 +86,18 @@ const CompanyIntelModal = ({
   };
 
   const handleRunEvaluation = async () => {
-    if (!onEvaluate || evaluating) return;
+    if (evaluating) return;
     setEvaluating(true);
     try {
-      const res = await onEvaluate(cui, companyName);
+      let res;
+      if (onEvaluate) {
+        res = await onEvaluate(cui, companyName);
+      } else {
+        const cleanCui = String(cui).trim().toUpperCase().replace(/^RO/, '').trim();
+        res = await evaluateCompanyByCui(cleanCui, false);
+      }
       if (res?.client_id) {
-        onClose();
+        onClose?.();
         navigate(`/clients/${res.client_id}?tab=investigation`);
       } else {
         handleRefreshApi();
@@ -253,7 +259,7 @@ const CompanyIntelModal = ({
                 <Eye size={14} />
                 <span>Profil Client Axis</span>
               </Link>
-            ) : onEvaluate && (
+            ) : (
               <button
                 type="button"
                 onClick={handleRunEvaluation}

@@ -3,6 +3,7 @@ import json
 import os
 import urllib.parse
 import httpx
+import asyncio
 from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 from ..models.client import Client, Evaluation, RiskLevel
@@ -70,7 +71,7 @@ class AxisAgentService:
 
         # 8. Identificare intenție căutare companie explicită
         search_match = re.match(
-            r'^(?:caut[aă]|verific[aă]|g[aă]se[sș]te|analizeaz[aă]|dosar|despre|info|vezi)\s+(?:despre\s+)?(?:firma\s+|compania\s+)?(.+)$',
+            r'^(?:caut[aă]|investigheaz[aă]|verific[aă]|adaug[aă]|înregistreaz[aă]|creeaz[aă]|g[aă]se[sș]te|analizeaz[aă]|dosar|despre|info|vezi)\s+(?:despre\s+)?(?:firma\s+|compania\s+|client(?:ul)?\s+)?(.+)$',
             query_clean,
             re.IGNORECASE
         )
@@ -128,15 +129,33 @@ class AxisAgentService:
 
         # 9. Construire Dosar Faptic Complet
         dossier = None
+        is_add_intent = bool(re.search(r'\b(?:adaug[aă]|înregistreaz[aă]|creeaz[aă]|import[aă])\b', q_lower))
+
         if target_client:
             dossier = await cls._build_dossier_from_client(target_client, db)
+            if is_add_intent:
+                dossier["already_in_portfolio"] = True
         elif external_cui:
-            dossier = await cls._build_dossier_from_external_cui(
-                external_cui,
-                db,
-                matched_entities=search_matched_entities,
-                total_entities_found=search_total_found
-            )
+            # Dacă intenția utilizatorului este explicit de a adăuga / înregistra clientul
+            if is_add_intent:
+                try:
+                    from ..api.clients import evaluate_company_by_cui
+                    eval_res = await evaluate_company_by_cui(external_cui, False, db, None)
+                    if eval_res and eval_res.get("client_id"):
+                        target_client = db.query(Client).filter(Client.id == eval_res["client_id"]).first()
+                except Exception as e:
+                    print(f"[axis_agent auto-add client error]: {e}")
+
+            if target_client:
+                dossier = await cls._build_dossier_from_client(target_client, db)
+                dossier["just_added"] = True
+            else:
+                dossier = await cls._build_dossier_from_external_cui(
+                    external_cui,
+                    db,
+                    matched_entities=search_matched_entities,
+                    total_entities_found=search_total_found
+                )
         elif len(query_clean) >= 3 and not any(kw in q_lower for kw in ["salut", "buna", "ajutor", "ce poti", "help", "cine esti", "calculeaz", "simulare", "masini"]):
             # Căutare după nume companie externă în ONRC / index
             lookup_res = await cls._handle_company_name_lookup(query_clean, db)
@@ -145,6 +164,8 @@ class AxisAgentService:
 
         # 10. Dacă avem un dosar complet despre o companie, generăm un răspuns analitic profund
         if dossier:
+            matched_companies = dossier.get("matched_entities", []) if len(dossier.get("matched_entities", [])) > 1 else []
+
             # 10.1 Încercăm generare prin LLM dacă există cheie API configurată în .env sau trimisă din client
             llm_reply = await cls._try_llm_generation(dossier, query_clean, context)
             if llm_reply:
@@ -152,7 +173,8 @@ class AxisAgentService:
                     "reply": llm_reply,
                     "intent": "LLM_ANALYSIS",
                     "actions": cls._generate_context_actions(dossier),
-                    "data_summary": dossier.get("summary")
+                    "data_summary": dossier.get("summary"),
+                    "matched_companies": matched_companies
                 }
 
             # 10.2 Motor Expert Faptic de Raționament (fără halucinații, răspunsuri specifice)
@@ -161,7 +183,8 @@ class AxisAgentService:
                 "reply": expert_reply,
                 "intent": "EXPERT_ANALYSIS",
                 "actions": cls._generate_context_actions(dossier),
-                "data_summary": dossier.get("summary")
+                "data_summary": dossier.get("summary"),
+                "matched_companies": matched_companies
             }
 
         # 11. Dacă avem un LLM conectat (Groq, OpenAI, Gemini), îi permitem să răspundă inteligent la orice întrebare
@@ -170,11 +193,7 @@ class AxisAgentService:
             return {
                 "reply": general_llm_reply,
                 "intent": "LLM_GENERAL",
-                "actions": [
-                    {"label": "Deschide Lista Clienți", "type": "NAVIGATE", "url": "/clients"},
-                    {"label": "Disponibilitate Flotă", "type": "NAVIGATE", "url": "/vehicles"},
-                    {"label": "Configurator Oferte", "type": "NAVIGATE", "url": "/offers/new"}
-                ]
+                "actions": []
             }
 
         # 12. Răspuns de sinteză executivă inteligentă (fără șabloane oarbe)
@@ -215,9 +234,9 @@ class AxisAgentService:
                     groq_messages.append({"role": role, "content": text_content})
             groq_messages.append({"role": "user", "content": query})
 
-            for g_model in ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "llama-3.3-70b-versatile"]:
+            for g_model in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]:
                 try:
-                    async with httpx.AsyncClient(timeout=12.0) as client:
+                    async with httpx.AsyncClient(timeout=8.0) as client:
                         resp = await client.post(
                             "https://api.groq.com/openai/v1/chat/completions",
                             headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
@@ -237,7 +256,7 @@ class AxisAgentService:
         # 2. OpenAI (GPT-4o / GPT-4o-mini)
         if openai_key:
             try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.post(
                         "https://api.openai.com/v1/chat/completions",
                         headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
@@ -256,12 +275,12 @@ class AxisAgentService:
             except Exception as e:
                 print(f"[LLM OpenAI Error]: {e}")
 
-        # 3. Google Gemini (3.8 Flash / 3.5 Flash / Flash Latest)
-        if gemini_key:
+        # 3. Google Gemini (doar dacă cheia e validă, începe cu AIza)
+        if gemini_key and gemini_key.startswith("AIza"):
             history = context.get("history", []) if context else []
-            for model_name in ["gemini-2.5-flash", "gemini-flash-latest", "gemini-3.8-flash", "gemini-3.5-flash"]:
+            for model_name in ["gemini-2.5-flash", "gemini-flash-latest"]:
                 try:
-                    async with httpx.AsyncClient(timeout=15.0) as client:
+                    async with httpx.AsyncClient(timeout=8.0) as client:
                         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
                         contents = []
                         for msg in history[-6:]:
@@ -376,11 +395,73 @@ class AxisAgentService:
         comp_name = gen_data.get("denumire") or f"Companie CUI {cui}"
         stare = gen_data.get("stare") or ""
 
-        administrators = []
-        try:
-            administrators = await reg_scraper.fetch_company_administrators(cui)
-        except Exception:
-            pass
+        # Paralelizare completă pentru răspuns rapid (sub 2 secunde)
+        async def _fetch_admin():
+            try:
+                return await reg_scraper.fetch_company_administrators(cui)
+            except Exception:
+                return []
+
+        async def _fetch_pers():
+            try:
+                return await reg_scraper.fetch_company_personnel(cui)
+            except Exception:
+                return []
+
+        async def _fetch_bal():
+            try:
+                return await reg_scraper.fetch_company_balance(cui)
+            except Exception:
+                return {}
+
+        async def _fetch_fin():
+            try:
+                async with httpx.AsyncClient(timeout=4.0) as hc:
+                    r = await hc.get(f"https://cuiscan.ro/api.php?action=financials&cui={cui}")
+                    if r.status_code == 200:
+                        return r.json() if isinstance(r.json(), list) else []
+            except Exception:
+                pass
+            return []
+
+        async def _fetch_ins():
+            try:
+                async with httpx.AsyncClient(timeout=4.0) as hc:
+                    r = await hc.get(f"https://cuiscan.ro/api.php?action=insolventa&cui={cui}&name={urllib.parse.quote(comp_name)}")
+                    if r.status_code == 200:
+                        return r.json()
+            except Exception:
+                pass
+            return {}
+
+        async def _fetch_court():
+            try:
+                court_scraper = CourtScraper()
+                return await court_scraper.search_court_cases(comp_name, limit=6)
+            except Exception:
+                pass
+            return []
+
+        results = await asyncio.gather(
+            _fetch_admin(),
+            _fetch_pers(),
+            _fetch_bal(),
+            _fetch_fin(),
+            _fetch_ins(),
+            _fetch_court(),
+            return_exceptions=True
+        )
+
+        administrators = results[0] if isinstance(results[0], list) else []
+        personnel = results[1] if isinstance(results[1], list) else []
+        official_balance = results[2] if isinstance(results[2], dict) else {}
+        financials = results[3] if isinstance(results[3], list) else []
+        ins = results[4] if isinstance(results[4], dict) else {}
+        court_cases = results[5] if isinstance(results[5], list) else []
+
+        # Dacă cuiscan nu a returnat date financiare, folosim bilanțul oficial ANAF / Finanțe
+        if not financials and official_balance.get("istoric"):
+            financials = official_balance.get("istoric", [])
 
         has_liquidator = any("LICHIDATOR" in str(a.get("calitate") or a.get("functie") or a.get("rol") or "").upper() for a in administrators)
         if not stare and has_liquidator:
@@ -389,39 +470,8 @@ class AxisAgentService:
             stare = "FUNCȚIUNE"
         is_terminated = any(term in stare.upper() for term in ["RADIERE", "RADIAT", "LICHIDARE", "DIZOLVARE", "FALIMENT"]) or has_liquidator
 
-        personnel = []
-        try:
-            personnel = await reg_scraper.fetch_company_personnel(cui)
-        except Exception:
-            pass
-
-        financials = []
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as hc:
-                r = await hc.get(f"https://cuiscan.ro/api.php?action=financials&cui={cui}")
-                if r.status_code == 200:
-                    financials = r.json() if isinstance(r.json(), list) else []
-        except Exception:
-            pass
-
-        in_insolvency = False
-        dosar_insolventa = ""
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as hc:
-                r = await hc.get(f"https://cuiscan.ro/api.php?action=insolventa&cui={cui}&name={comp_name}")
-                if r.status_code == 200:
-                    ins = r.json()
-                    in_insolvency = ins.get("inInsolventa") or ins.get("inFaliment") or False
-                    dosar_insolventa = ins.get("dosarInsolventaNumar") or ""
-        except Exception:
-            pass
-
-        court_cases = []
-        try:
-            court_scraper = CourtScraper()
-            court_cases = await court_scraper.search_court_cases(comp_name, limit=10)
-        except Exception:
-            pass
+        in_insolvency = ins.get("inInsolventa") or ins.get("inFaliment") or False
+        dosar_insolventa = ins.get("dosarInsolventaNumar") or ""
 
         return {
             "client_id": None,
@@ -437,7 +487,7 @@ class AxisAgentService:
             "score": 20 if is_terminated or in_insolvency else 75,
             "risk_level": "critic" if is_terminated or in_insolvency else "scazut",
             "financials": financials,
-            "administrators": personnel,
+            "administrators": personnel or administrators,
             "holdings": [],
             "court_cases": court_cases,
             "bpi": {"has_insolvency": in_insolvency, "dosar": dosar_insolventa},
@@ -660,11 +710,19 @@ class AxisAgentService:
         wants_overview = any(w in q for w in [
             "raport", "sumar", "sinteza", "rezumat", "despre", "ce stii", "detalii", "prezinta",
             "arata", "dosar", "ce e cu", "cine sunt", "situatie", "fisa", "evaluare", "prezentare",
+            "caut", "investig", "adaug", "verific", "gaseste", "găsește", "afiseaz", "afișeaz", "arata-mi",
             clean_comp_name, cui
         ]) or q in ["balkam", "balkam grup", "cui", cui, "client", "firma", "compania", "analiza"] or len(q.split()) <= 2
 
+        header_status_note = ""
+        if d.get("just_added"):
+            header_status_note = f"> 💼 **Compania a fost adăugată cu succes în portofoliul Axis!** Toate datele oficiale și evaluarea inițială au fost salvate în sistem.\n\n"
+        elif d.get("already_in_portfolio") and any(w in q for w in ["adaug", "creeaz", "inregistreaz"]):
+            header_status_note = f"> ℹ️ **Compania figurează deja în portofoliul tău Axis.** Iată fișa actualizată din sistem:\n\n"
+
         if not wants_overview:
             return (
+                f"{header_status_note}"
                 f"Întrebarea ta (*„{query}”*) nu pare să solicite sinteza completă pentru **{name}**.\n\n"
                 f"Dacă dorești să investigăm această entitate, îți pot prezenta:\n"
                 f"* **Statut Juridic:** Starea oficială este **{stare}**;\n"
@@ -680,32 +738,33 @@ class AxisAgentService:
 
         if matched_entities and len(matched_entities) > 1:
             multi_rows = []
-            for ent in matched_entities[:5]:
+            for ent in matched_entities[:8]:
                 e_cui = str(ent.get("cui", ""))
                 e_den = ent.get("denumire", "")
                 e_reg = ent.get("nr_reg_com") or "—"
-                e_adr = ent.get("adresa") or ""
-                short_adr = e_adr.replace("MUNICIPIUL ", "").replace("JUD. ", "")[:40] + ("..." if len(e_adr) > 40 else "")
+                e_adr = (ent.get("adresa") or "").replace("MUNICIPIUL ", "").replace("JUD. ", "").strip()
+                if not e_adr:
+                    e_adr = "Sediu înregistrat"
                 e_stare = "Activ (Sediu Social)" if e_reg and e_reg.startswith("J") else (ent.get("stare") or "Înregistrat")
                 
                 if e_cui == cui:
-                    multi_rows.append(f"| **`{e_cui}`** | **{e_den}** | **{e_reg}** | **{short_adr}** | **{e_stare}** |")
+                    multi_rows.append(f"| **`{e_cui}`** | **{e_den}** | **{e_reg}** | **{e_adr}** | **{e_stare}** |")
                 else:
-                    multi_rows.append(f"| `{e_cui}` | {e_den} | {e_reg} | {short_adr} | {e_stare} |")
+                    multi_rows.append(f"| `{e_cui}` | {e_den} | {e_reg} | {e_adr} | {e_stare} |")
 
             multi_table = "\n".join(multi_rows)
             multi_entity_block = (
                 f"> **Entități Multiple Identificate:** Au fost identificate **{total_found} entități / puncte de lucru** înregistrate sub această denumire.\n"
-                f"> A fost selectat automat **Sediul Social Principal: {name} (CUI: `{cui}`)**.\n\n"
+                f"> A fost selectat automat **Sediul Social Principal: {name} (CUI: `{cui}`)**.\n"
+                f"> *Dă click direct pe oricare rând din tabel sau pe butonul **Selectează** pentru a comuta instant pe altă companie.*\n\n"
                 f"| CUI | Denumire Înregistrată | Nr. Reg. Com. | Sediu / Punct Lucru | Statut Oficial |\n"
                 f"|:---|:---|:---|:---|:---|\n"
                 f"{multi_table}\n\n"
-                f"*Poți da click pe oricare dintre butoanele de mai jos pentru a comuta direct pe un alt CUI.*\n\n"
                 f"---\n\n"
             )
 
         res = [
-            multi_entity_block + f"### Raport Faptic Executiv: **{name}** (CUI: `{cui}`)",
+            header_status_note + multi_entity_block + f"### Raport Faptic Executiv: **{name}** (CUI: `{cui}`)",
             f"* **CUI:** `{cui}` | **Nr. Reg. Com.:** `{d.get('reg_com') or '—'}` | **Stare Juridică:** **{stare}**",
             f"* **Sediu:** {d['address']}",
             f"* **Domeniu:** {d['caen']} - {d['caen_desc']}",
@@ -733,44 +792,8 @@ class AxisAgentService:
 
     @classmethod
     def _generate_context_actions(cls, d: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """Generează acțiunile interactive optime pentru compania curentă"""
-        actions = []
-        name = d.get("name", "Companie")
-        cui = d.get("cui", "")
-        client_id = d.get("client_id")
-        is_term = d.get("is_terminated", False)
-
-        if client_id:
-            if is_term:
-                actions.append({"label": "Vezi Dosare & Litigii Just.ro", "type": "OPEN_TAB", "tab": "investigation", "clientId": client_id})
-                actions.append({"label": "Audit Procedură Faliment (BPI)", "type": "OPEN_DEEP_RESEARCH", "clientId": client_id, "name": name, "cui": cui})
-                actions.append({"label": "Acționari & Conducere", "type": "OPEN_TAB", "tab": "governance", "clientId": client_id})
-            else:
-                actions.append({"label": "Mergi la Bilanțuri & Finanțe", "type": "OPEN_TAB", "tab": "financial", "clientId": client_id})
-                actions.append({"label": "Audit Deep Research (BPI)", "type": "OPEN_DEEP_RESEARCH", "clientId": client_id, "name": name, "cui": cui})
-                actions.append({"label": "Configurează Ofertă", "type": "NAVIGATE", "url": f"/offers/new?client_id={client_id}"})
-        else:
-            actions.append({"label": f"Deschide Raport Complet ({name})", "type": "OPEN_COMPANY_MODAL", "cui": cui, "name": name})
-            if not is_term:
-                actions.append({"label": "Crează Dosar Client Nou", "type": "CREATE_CLIENT", "cui": cui, "name": name})
-                actions.append({"label": "Configurează Ofertă", "type": "NAVIGATE", "url": f"/offers/new?cui={cui}"})
-
-        # Butoane rapide de comutare directă pe celelalte CUI-uri identificate la căutare
-        matched_entities = d.get("matched_entities", [])
-        for ent in matched_entities[:4]:
-            e_cui = str(ent.get("cui", ""))
-            if e_cui and e_cui != cui:
-                e_adr = ent.get("adresa") or ""
-                city = "București" if "BUCURE" in e_adr.upper() else (
-                    e_adr.split(",")[0].replace("JUD.", "").replace("MUN.", "").strip() if e_adr else "România"
-                )
-                actions.append({
-                    "label": f"Verifică CUI {e_cui} ({city})",
-                    "type": "PROMPT",
-                    "prompt": f"Verifică CUI {e_cui}"
-                })
-
-        return actions
+        """Nu mai generăm butoane de acțiuni inutile pentru a păstra răspunsul curat și profesional"""
+        return []
 
     @classmethod
     def _handle_direct_navigation(cls, q_lower: str) -> Optional[Dict[str, Any]]:
@@ -1164,26 +1187,43 @@ class AxisAgentService:
     @classmethod
     def _handle_fleet_inquiry(cls, q_lower: str, db: Session) -> Optional[Dict[str, Any]]:
         """Interoghează baza de date locală de vehicule pentru modele specifice, stoc și tarife"""
-        fleet_triggers = [
-            "ce masini avem", "masini libere", "disponibilitate flota", "parc auto", "ce masina",
-            "masini in parc", "cat costa chiria", "tarife masini", "ce masini sunt", "ce avem in parc"
+        q_norm = q_lower
+        for src, dst in [('ă', 'a'), ('â', 'a'), ('î', 'i'), ('ș', 's'), ('ş', 's'), ('ț', 't'), ('ţ', 't')]:
+            q_norm = q_norm.replace(src, dst)
+
+        fleet_words = ["masin", "auto", "vehicul", "flot", "parc", "duster", "suv"]
+        intent_words = [
+            "avem", "disponibil", "liber", "stoc", "inchiriat", "service", "pret", "tarif",
+            "cost", "modele", "ce", "arata", "lista", "care", "gaseste", "inchiriere"
         ]
-        car_brands = ["dacia", "renault", "bmw", "audi", "mercedes", "volkswagen", "skoda", "toyota", "ford", "hyundai", "kia", "peugeot", "volvo", "suv"]
-        
-        is_fleet_query = any(t in q_lower for t in fleet_triggers) or any(b in q_lower for b in car_brands)
+        car_brands = [
+            "dacia", "renault", "bmw", "audi", "mercedes", "volkswagen", "skoda",
+            "toyota", "ford", "hyundai", "kia", "peugeot", "volvo", "suv", "porsche", "land rover", "range rover"
+        ]
+
+        has_fleet_word = any(w in q_norm for w in fleet_words)
+        has_intent = any(w in q_norm for w in intent_words)
+        has_brand = any(b in q_norm for b in car_brands)
+
+        is_fleet_query = (has_fleet_word and has_intent) or has_brand or "ce avem" in q_norm or "ce e liber" in q_norm
         if not is_fleet_query:
             return None
-            
+
         try:
             vehicles = db.query(Vehicle).all()
             total = len(vehicles)
-            available = [v for v in vehicles if str(getattr(v.status, 'value', v.status)).upper() in ["DISPONIBIL", "AVAILABLE"]]
-            rented = [v for v in vehicles if str(getattr(v.status, 'value', v.status)).upper() in ["ÎNCHIRIAT", "INCHIRIAT", "RENTED"]]
-            service = [v for v in vehicles if str(getattr(v.status, 'value', v.status)).upper() in ["ÎN SERVICE", "IN SERVICE", "MAINTENANCE"]]
+
+            def get_st(v):
+                return str(getattr(v.status, 'value', v.status) or '').upper()
+
+            available = [v for v in vehicles if get_st(v) in ["DISPONIBIL", "AVAILABLE"]]
+            rented = [v for v in vehicles if get_st(v) in ["ÎNCHIRIAT", "INCHIRIAT", "RENTED"]]
+            reserved = [v for v in vehicles if get_st(v) in ["REZERVAT", "RESERVED"]]
+            maintenance = [v for v in vehicles if get_st(v) in ["ÎN SERVICE", "IN SERVICE", "MAINTENANCE", "DAMAGE"]]
 
             matched_brand = None
             for b in car_brands:
-                if b in q_lower:
+                if b in q_norm:
                     matched_brand = b
                     break
 
@@ -1195,36 +1235,52 @@ class AxisAgentService:
                     filtered = [v for v in available if matched_brand in str(getattr(v, "make", "") or "").lower()]
 
             lines = [
-                f"### Status Flotă Axis Mobility ({total} Vehicule Înregistrate)\n",
-                f"* **Disponibile Imediat**: **{len(available)} unități**",
-                f"* **Contracte Active (Închiriate)**: **{len(rented)} unități**",
-                f"* **Mentenanță / Service**: **{len(service)} unități**\n"
+                f"### Status Flotă Proprie Axis Mobility ({total} Vehicule Înregistrate)\n",
+                f"* **Disponibile Imediat (Libere):** **{len(available)} unități**",
+                f"* **Contracte Active (Închiriate):** **{len(rented)} unități**",
+                f"* **Rezervate:** **{len(reserved)} unități**",
+                f"* **Service & Mentenanță:** **{len(maintenance)} unități**\n"
             ]
 
-            if matched_brand:
-                lines.append(f"**Rezultate pentru `{matched_brand.upper()}` (disponibile {len(filtered)} unități):**")
-            else:
-                lines.append("**Exemple de mașini libere pentru ofertare:**")
+            target_list = filtered if filtered else available
 
-            target_list = filtered if filtered else available[:6]
-            if target_list:
-                for v in target_list[:8]:
-                    price_str = f"{int(v.rental_price_long_term)} EUR/lună" if v.rental_price_long_term else "Tarif personalizat"
-                    lines.append(f"* **{v.make} {v.model}** ({v.year}) — **{price_str}** (Nr: `{v.license_plate}`)")
+            if matched_brand:
+                lines.append(f"#### Vehicule Disponibile din Gama **{matched_brand.upper()}** ({len(filtered)} unități):\n")
             else:
-                lines.append(f"* Nu figurează momentan vehicule `{matched_brand.upper()}` libere în stoc, dar putem aloca alternative din parc.")
+                lines.append("#### Vehicule Disponibile Imediat pentru Ofertare:\n")
+
+            if target_list:
+                lines.append("| Model & Versiune | An Fabricație | Număr Înmatriculare | Tarif Chirie Lunară | Statut Operațional |")
+                lines.append("|:---|:---:|:---:|:---:|:---:|")
+                for v in target_list:
+                    price_val = v.rental_price_long_term or 0
+                    price_str = f"**{int(round(price_val))} EUR / lună**" if price_val > 0 else "*Tarif personalizat*"
+                    lines.append(f"| **{v.make} {v.model}** | {v.year} | `{v.license_plate}` | {price_str} | Disponibil Imediat |")
+
+                lines.append("\n*Toate vehiculele libere au ITP, CASCO și reviziile tehnice efectuate la zi și pot fi alocate imediat pe oferte sau contracte noi.*")
+            else:
+                lines.append(f"*Nu există momentan vehicule `{matched_brand.upper() if matched_brand else 'libere'}` disponibile în stoc, dar putem aloca alternative din flotă.*")
 
             reply = "\n".join(lines)
+
+            actions = [
+                {"label": "Deschide Parcul Auto", "type": "NAVIGATE", "url": "/vehicles"},
+                {"label": "Configurează Ofertă Nouă", "type": "NAVIGATE", "url": "/offers/new"},
+            ]
+            for v in (available[:3] if available else []):
+                actions.append({
+                    "label": f"Ofertă {v.make} {v.model}",
+                    "type": "NAVIGATE",
+                    "url": f"/offers/new?vehicle_id={v.id}"
+                })
+
             return {
                 "reply": reply,
                 "intent": "FLEET_INFO",
-                "actions": [
-                    {"label": "Deschide Modulul Flotă Proprie", "type": "NAVIGATE", "url": "/vehicles"},
-                    {"label": "Configurează Ofertă de Leasing", "type": "NAVIGATE", "url": "/offers/new"},
-                    {"label": "Lista Clienți", "type": "NAVIGATE", "url": "/clients"}
-                ]
+                "actions": actions
             }
         except Exception as e:
+            print(f"[Fleet Inquiry Error]: {e}")
             return None
 
     @classmethod
@@ -1257,16 +1313,17 @@ class AxisAgentService:
                     groq_messages.append({"role": role, "content": text_content})
             groq_messages.append({"role": "user", "content": query})
 
-            for g_model in ["openai/gpt-oss-120b", "qwen/qwen3.8-27b", "llama-3.3-70b-versatile"]:
+            for g_model in ["qwen/qwen3.8-27b", "openai/gpt-oss-120b"]:
                 try:
-                    async with httpx.AsyncClient(timeout=12.0) as client:
+                    async with httpx.AsyncClient(timeout=8.0) as client:
                         resp = await client.post(
                             "https://api.groq.com/openai/v1/chat/completions",
                             headers={"Authorization": f"Bearer {groq_key}", "Content-Type": "application/json"},
                             json={
                                 "model": g_model,
                                 "messages": groq_messages,
-                                "temperature": 0.3
+                                "temperature": 0.3,
+                                "max_tokens": 2500
                             }
                         )
                         if resp.status_code == 200:
@@ -1277,7 +1334,7 @@ class AxisAgentService:
 
         if openai_key:
             try:
-                async with httpx.AsyncClient(timeout=15.0) as client:
+                async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.post(
                         "https://api.openai.com/v1/chat/completions",
                         headers={"Authorization": f"Bearer {openai_key}", "Content-Type": "application/json"},
@@ -1287,7 +1344,8 @@ class AxisAgentService:
                                 {"role": "system", "content": system_prompt},
                                 {"role": "user", "content": query}
                             ],
-                            "temperature": 0.3
+                            "temperature": 0.3,
+                            "max_tokens": 2500
                         }
                     )
                     if resp.status_code == 200:
@@ -1296,11 +1354,11 @@ class AxisAgentService:
             except Exception as e:
                 print(f"[LLM OpenAI General Error]: {e}")
 
-        if gemini_key:
+        if gemini_key and gemini_key.startswith("AIza"):
             history = context.get("history", []) if context else []
-            for model_name in ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-3-flash-preview", "gemini-2.5-flash", "gemini-flash-latest"]:
+            for model_name in ["gemini-2.5-flash", "gemini-flash-latest"]:
                 try:
-                    async with httpx.AsyncClient(timeout=15.0) as client:
+                    async with httpx.AsyncClient(timeout=8.0) as client:
                         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={gemini_key}"
                         contents = []
                         for msg in history[-6:]:
@@ -1313,7 +1371,7 @@ class AxisAgentService:
                         payload = {
                             "systemInstruction": {"parts": [{"text": system_prompt}]},
                             "contents": contents,
-                            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 1000}
+                            "generationConfig": {"temperature": 0.3, "maxOutputTokens": 2500}
                         }
                         resp = await client.post(url, json=payload)
                         if resp.status_code == 200:
@@ -1347,17 +1405,41 @@ class AxisAgentService:
             queries.extend(['MAX BET', 'MAX BET SRL', 'MAXBET SRL'])
 
         candidates = []
-        async with httpx.AsyncClient(timeout=8.0) as client:
-            for q in set(queries):
-                if not q or len(q) < 3:
-                    continue
-                try:
-                    resp = await client.get(f"https://www.firmeapi.ro/api/v1/firme?q={urllib.parse.quote(q)}", headers=headers)
-                    if resp.status_code == 200:
-                        for it in resp.json().get('data', {}).get('items', []):
-                            candidates.append(it)
-                except Exception:
-                    pass
+        
+        # 1. Căutare prioritară în baza locală (axis_company_cache și axis_clients) - Cost 0 lei, răspuns instant
+        try:
+            from .data_gov_ingest import DataGovIngestService
+            local_matches = DataGovIngestService().search_local_companies(clean_raw, limit=10)
+            if not local_matches and clean_no_srl != clean_raw:
+                local_matches = DataGovIngestService().search_local_companies(clean_no_srl, limit=10)
+            if local_matches:
+                for lm in local_matches:
+                    candidates.append(lm)
+                print(f"[LOCAL SEARCH HIT] {len(local_matches)} rezultate găsite în baza locală pentru '{clean_raw}'.")
+        except Exception as e:
+            print(f"[LOCAL SEARCH ERROR] {e}")
+
+        # 2. Dacă nu avem suficiente rezultate locale, apelăm extern FirmeAPI
+        if len(candidates) < 3:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                for q in set(queries):
+                    if not q or len(q) < 3:
+                        continue
+                    try:
+                        resp = await client.get(f"https://www.firmeapi.ro/api/v1/firme?q={urllib.parse.quote(q)}", headers=headers)
+                        if resp.status_code == 200:
+                            for it in resp.json().get('data', {}).get('items', []):
+                                candidates.append(it)
+                                # Salvare automată în cache local
+                                try:
+                                    it_cui = str(it.get('cui') or '')
+                                    if it_cui:
+                                        from .osint.registry_scraper import RegistryScraper
+                                        RegistryScraper()._save_to_company_cache(it_cui, general_data=it, source="FIRMEAPI_SEARCH")
+                                except Exception:
+                                    pass
+                    except Exception:
+                        pass
 
         unique = {str(c['cui']): c for c in candidates if c.get('cui')}
         if not unique:
@@ -1436,16 +1518,28 @@ class AxisAgentService:
         valid_candidates = []
         seen_cuis = set()
         for sc, c in ranked:
-            cui_c = str(c.get('cui', ''))
+            cui_c = str(c.get('cui', '')).strip()
             if cui_c and cui_c not in seen_cuis:
                 seen_cuis.add(cui_c)
-                valid_candidates.append(c)
+                clean_adr = (c.get("adresa") or c.get("address") or c.get("locality") or "").replace("MUNICIPIUL ", "").replace("JUD. ", "").strip()
+                if not clean_adr:
+                    clean_adr = "Sediu înregistrat"
+                valid_candidates.append({
+                    "cui": cui_c,
+                    "name": c.get("denumire") or c.get("name") or f"Companie CUI {cui_c}",
+                    "denumire": c.get("denumire") or c.get("name") or f"Companie CUI {cui_c}",
+                    "nr_reg_com": c.get("nr_reg_com") or c.get("reg_com") or "—",
+                    "adresa": clean_adr,
+                    "address": clean_adr,
+                    "stare": c.get("stare") or "Înregistrat",
+                    "status": c.get("stare") or "Înregistrat",
+                })
 
         return {
             "cui": str(best.get('cui')),
             "denumire": best.get('denumire'),
             "stare": best.get('stare'),
-            "candidates": valid_candidates[:6],
+            "candidates": valid_candidates[:8],
             "total_found": len(unique)
         }
 
@@ -1468,11 +1562,14 @@ class AxisAgentService:
             llm_reply = await cls._try_llm_generation(dossier, name_query)
             reply_text = llm_reply if llm_reply else cls._generate_expert_reasoning(dossier, name_query)
 
+            matched_companies = dossier.get("matched_entities", []) if len(dossier.get("matched_entities", [])) > 1 else []
+
             return {
                 "reply": reply_text,
                 "intent": "NAME_LOOKUP",
                 "actions": cls._generate_context_actions(dossier),
-                "data_summary": dossier.get("summary")
+                "data_summary": dossier.get("summary"),
+                "matched_companies": matched_companies
             }
 
         return None
@@ -1489,17 +1586,12 @@ class AxisAgentService:
             f"2. **Simulare Financiară & Structurare:** Dacă soliciți un calcul de rată sau o ofertă de leasing, poți specifica valoarea mașinii (ex: *„calculează rata la 35.000 euro pe 48 de luni”*) "
             f"și îți voi genera defalcarea completă (avans, CASCO, anuitate, valoare reziduală).\n\n"
             f"3. **Disponibilitate Flotă:** Poți întreba oricând despre modelele libere (ex: *„ce mașini avem”*, *„arată-mi Dacia Duster”*) pentru alocare directă pe contracte active.\n\n"
-            f"Spune-mi exact cum vrei să continuăm sau alege una dintre acțiunile rapide de mai jos."
+            f"Spune-mi exact ce anume dorești să investigăm sau cum te pot asista."
         )
         return {
             "reply": reply,
             "intent": "EXECUTIVE_SYNTHESIS",
-            "actions": [
-                {"label": "Verifică CUI 28396216", "type": "PROMPT", "prompt": "Verifică CUI 28396216"},
-                {"label": "Simulare Rată 25.000 EUR", "type": "PROMPT", "prompt": "Calculează rata la 25000 euro pe 36 de luni"},
-                {"label": "Disponibilitate Flotă", "type": "NAVIGATE", "url": "/vehicles"},
-                {"label": "Lista Clienți", "type": "NAVIGATE", "url": "/clients"}
-            ]
+            "actions": []
         }
 
     @staticmethod

@@ -268,21 +268,36 @@ export const fetchClientPublicDeepResearch = async (clientId) => {
   return response.json();
 };
 
-export const sendAssistantMessage = async ({ query, clientId, context = {} }) => {
-  const response = await fetch(`${API_URL}/assistant/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      query,
-      client_id: clientId || null,
-      context
-    })
-  });
-  if (!response.ok) {
-    const err = await response.json().catch(() => ({}));
-    throw new Error(err.detail || 'Eroare la comunicarea cu Asistentul AI Axis');
+export const sendAssistantMessage = async ({ query, clientId, context = {}, signal = null }) => {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 28000); // 28s timeout
+
+  const effectiveSignal = signal || controller.signal;
+
+  try {
+    const response = await fetch(`${API_URL}/assistant/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        client_id: clientId || null,
+        context
+      }),
+      signal: effectiveSignal
+    });
+    clearTimeout(timeoutId);
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}));
+      throw new Error(err.detail || 'Eroare la comunicarea cu Asistentul AI Axis');
+    }
+    return response.json();
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('Timpul de procesare a expirat (timeout). Registrele externe sau motorul AI răspund cu întârziere.');
+    }
+    throw error;
   }
-  return response.json();
 };
 
 export const fetchSuggestedPrompts = async (clientId = null) => {

@@ -13,16 +13,39 @@ class RegistryScraper:
         self.termene_api_key = os.getenv("TERMENE_API_KEY", "YOUR_TERMENE_API_KEY_HERE")
         self.last_search_credits_exhausted = False
 
-    def _get_cached_evaluation_data(self, cui: str) -> Optional[Dict]:
-        """Verifică dacă există deja evaluare salvată în DB pentru acest CUI pentru a evita interogările externe duplicate"""
+    def _get_cached_company(self, cui: str) -> Optional[Dict]:
+        """Verifică cache-ul local din axis_company_cache și axis_evaluations pentru CUI"""
         clean_cui = "".join(filter(str.isdigit, str(cui)))
         if not clean_cui:
             return None
         try:
             import json
             from ...database import SessionLocal
-            from ...models.client import Client, Evaluation
+            from ...models.client import Client, Evaluation, CompanyCache
             with SessionLocal() as db:
+                # 1. Verificare prioritară în axis_company_cache (persistat global pentru orice căutare)
+                cache_row = db.query(CompanyCache).filter(CompanyCache.cui == clean_cui).first()
+                if cache_row:
+                    res = {}
+                    if cache_row.general_data:
+                        try:
+                            res["anaf"] = json.loads(cache_row.general_data)
+                        except Exception:
+                            pass
+                    if cache_row.balance_data:
+                        try:
+                            res["balance"] = json.loads(cache_row.balance_data)
+                        except Exception:
+                            pass
+                    if cache_row.personnel_data:
+                        try:
+                            res["personnel"] = json.loads(cache_row.personnel_data)
+                        except Exception:
+                            pass
+                    if res:
+                        return res
+
+                # 2. Verificare în evaluările de clienți existenți
                 eval_row = (
                     db.query(Evaluation)
                     .join(Client, Evaluation.client_id == Client.id)
@@ -33,21 +56,193 @@ class RegistryScraper:
                 if eval_row and eval_row.raw_financial_data:
                     d = json.loads(eval_row.raw_financial_data) if isinstance(eval_row.raw_financial_data, str) else eval_row.raw_financial_data
                     return d
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[CACHE READ ERROR] {e}")
+        return None
+
+    def _save_to_company_cache(self, cui: str, general_data: Optional[Dict] = None, balance_data: Optional[Dict] = None, personnel_data: Optional[List] = None, source: str = "ANAF_OFICIAL"):
+        """Salvează sau actualizează datele firmei în cache-ul local SQLite pentru a evita costurile API viitoare"""
+        clean_cui = "".join(filter(str.isdigit, str(cui)))
+        if not clean_cui:
+            return
+        try:
+            import json
+            from datetime import datetime
+            from ...database import SessionLocal
+            from ...models.client import CompanyCache
+            with SessionLocal() as db:
+                row = db.query(CompanyCache).filter(CompanyCache.cui == clean_cui).first()
+                if not row:
+                    row = CompanyCache(cui=clean_cui)
+                    db.add(row)
+                
+                if general_data:
+                    row.general_data = json.dumps(general_data, ensure_ascii=False)
+                    row.name = general_data.get("denumire") or general_data.get("nume") or row.name
+                    row.reg_com = general_data.get("nr_reg_com") or general_data.get("reg_com") or row.reg_com
+                    row.status = general_data.get("stare") or general_data.get("status") or row.status
+                    row.address = general_data.get("adresa") or row.address
+                    row.caen = str(general_data.get("cod_caen") or "") or row.caen
+                    row.caen_desc = general_data.get("caen_descriere") or row.caen_desc
+                if balance_data:
+                    row.balance_data = json.dumps(balance_data, ensure_ascii=False)
+                if personnel_data:
+                    row.personnel_data = json.dumps(personnel_data, ensure_ascii=False)
+                row.source = source
+                row.updated_at = datetime.utcnow()
+                db.commit()
+                print(f"[CACHE SAVE OK] Date salvate în cache local pentru CUI {clean_cui} (sursa: {source})")
+        except Exception as e:
+            print(f"[CACHE SAVE ERROR] {e}")
+
+    def _get_cached_evaluation_data(self, cui: str) -> Optional[Dict]:
+        return self._get_cached_company(cui)
+
+    async def fetch_anaf_official_balance(self, clean_cui: str) -> Optional[Dict]:
+        """
+        Extrage istoricul oficial de bilanțuri direct de la Ministerul Finanțelor / ANAF (100% GRATUIT, 0 LEI)
+        pentru ultimii 4 ani (2024, 2023, 2022, 2021).
+        Endpoint oficial: https://webservicesp.anaf.ro/bilant?an={an}&cui={cui}
+        """
+        current_year = 2024
+        years_to_check = [current_year, current_year - 1, current_year - 2, current_year - 3]
+        istoric = []
+        company_name = ""
+
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                for y in years_to_check:
+                    try:
+                        resp = await client.get(f"https://webservicesp.anaf.ro/bilant?an={y}&cui={clean_cui}")
+                        if resp.status_code == 200:
+                            data = resp.json()
+                            if data.get("an") and data.get("i"):
+                                company_name = data.get("deni") or company_name
+                                caen_code = data.get("caen")
+                                caen_desc = data.get("den_caen") or get_caen_description(caen_code)
+                                
+                                ind_map = {item.get("indicator"): item.get("val_indicator", 0) for item in data.get("i", []) if item.get("indicator")}
+                                
+                                ca = ind_map.get("I13", 0)
+                                venituri = ind_map.get("I14", 0)
+                                cheltuieli = ind_map.get("I15", 0)
+                                profit_net = ind_map.get("I18", 0)
+                                pierdere_neta = ind_map.get("I19", 0)
+                                salariati = ind_map.get("I20", 0)
+                                active_imob = ind_map.get("I1", 0)
+                                active_circ = ind_map.get("I2", 0)
+                                creante = ind_map.get("I4", 0)
+                                casa_banci = ind_map.get("I5", 0)
+                                datorii = ind_map.get("I7", 0)
+                                capitaluri = ind_map.get("I10", 0)
+
+                                istoric.append({
+                                    "an": int(y),
+                                    "cifra_afaceri": ca,
+                                    "venituri_totale": venituri,
+                                    "cheltuieli": cheltuieli,
+                                    "profit_net": profit_net,
+                                    "pierdere_neta": pierdere_neta,
+                                    "salariati": salariati,
+                                    "active_imobilizate": active_imob,
+                                    "active_circulante": active_circ,
+                                    "creante": creante,
+                                    "casa_banci": casa_banci,
+                                    "datorii": datorii,
+                                    "capitaluri_proprii": capitaluri,
+                                    "caen": caen_code,
+                                    "caen_descriere": caen_desc
+                                })
+                    except Exception:
+                        continue
+
+            if istoric:
+                istoric.sort(key=lambda x: x["an"], reverse=True)
+                latest = istoric[0]
+
+                evolutie_venituri = None
+                if len(istoric) >= 2 and istoric[1]["cifra_afaceri"] > 0:
+                    diff = istoric[0]["cifra_afaceri"] - istoric[1]["cifra_afaceri"]
+                    evolutie_venituri = round((diff / istoric[1]["cifra_afaceri"]) * 100, 1)
+
+                marja_profit = round((latest["profit_net"] / latest["cifra_afaceri"]) * 100, 1) if latest["cifra_afaceri"] > 0 else 0.0
+
+                result = {
+                    "an": latest["an"],
+                    "cifra_afaceri": latest["cifra_afaceri"],
+                    "venituri_totale": latest["venituri_totale"],
+                    "cheltuieli": latest["cheltuieli"],
+                    "profit_net": latest["profit_net"],
+                    "pierdere_neta": latest["pierdere_neta"],
+                    "numar_angajati": latest["salariati"],
+                    "active_imobilizate": latest["active_imobilizate"],
+                    "creante": latest["creante"],
+                    "casa_banci": latest["casa_banci"],
+                    "datorii": latest["datorii"],
+                    "capitaluri_proprii": latest["capitaluri_proprii"],
+                    "marja_profit": marja_profit,
+                    "evolutie_venituri": evolutie_venituri,
+                    "istoric": istoric,
+                    "sursa": "MINISTERUL_FINANTELOR_GRATUIT"
+                }
+                return result
+        except Exception as e:
+            print(f"[ANAF BILANT ERROR] {e}")
+
         return None
 
     async def fetch_company_general(self, cui: str) -> Dict:
-        """Extrage date generale firmă (stare, adresă, CAEN, e-factura, TVA, etc.) via FirmeAPI, cu cache DB"""
+        """
+        Extrage date generale firmă (stare, adresă, CAEN, TVA, etc.)
+        Prioritate 1: Cache local DB (0 cost, 2ms)
+        Prioritate 2: ANAF WebServices V9 Gratuit oficial (0 cost)
+        Prioritate 3: FirmeAPI Fallback
+        """
         clean_cui = "".join(filter(str.isdigit, str(cui)))
         if not clean_cui:
             return {}
 
-        cached = self._get_cached_evaluation_data(clean_cui)
+        # 1. Verificare cache local
+        cached = self._get_cached_company(clean_cui)
         if cached and cached.get("anaf"):
             print(f"[DB CACHE HIT] Date generale pentru CUI {clean_cui} încărcate din baza de date.")
             return cached.get("anaf")
 
+        # 2. Încercare gratuită ANAF V9 oficial
+        try:
+            from .anaf_scraper import AnafScraper
+            anaf_data = await AnafScraper().fetch_company_data(clean_cui)
+            if anaf_data and anaf_data.get("nume"):
+                c_code = anaf_data.get("cod_caen")
+                det = get_caen_details(c_code)
+                general_info = {
+                    "cui": clean_cui,
+                    "denumire": anaf_data.get("nume"),
+                    "adresa": anaf_data.get("adresa"),
+                    "nr_reg_com": anaf_data.get("reg_com"),
+                    "stare": anaf_data.get("status"),
+                    "cod_caen": c_code,
+                    "caen_detalii": det,
+                    "caen_descriere": det.get("denumire") or anaf_data.get("caen_descriere", ""),
+                    "caen_sectiune": det.get("sectiune", ""),
+                    "forma_juridica": anaf_data.get("forma_juridica"),
+                    "tva": anaf_data.get("tva_activ", False),
+                    "tva_la_incasare": anaf_data.get("tva_la_incasare", False),
+                    "split_tva": anaf_data.get("split_tva", False),
+                    "inactiv_fiscal": anaf_data.get("inactiv_fiscal", False),
+                    "ro_efactura": anaf_data.get("status_ro_efactura", False),
+                    "telefon": anaf_data.get("telefon"),
+                    "vechime_ani": anaf_data.get("vechime_ani"),
+                    "data_inregistrare": anaf_data.get("data_inregistrare"),
+                    "sursa": "ANAF_OFICIAL_GRATUIT"
+                }
+                self._save_to_company_cache(clean_cui, general_data=general_info, source="ANAF_OFICIAL_GRATUIT")
+                print(f"[ANAF GRATUIT HIT] Date generale pentru CUI {clean_cui} preluate gratuit de la ANAF.")
+                return general_info
+        except Exception as e:
+            print(f"[ANAF GRATUIT FAIL] {e}. Trecem pe fallback FirmeAPI.")
+
+        # 3. Fallback FirmeAPI plătit
         try:
             firmeapi_key = os.getenv("FIRMEAPI_KEY", "ebs9r1lk-3muzkfx6-hketjiwp-ofnjiu7f")
             headers = {"Authorization": f"Bearer {firmeapi_key}", "Accept": "application/json"}
@@ -61,6 +256,7 @@ class RegistryScraper:
                         data["caen_detalii"] = det
                         data["caen_descriere"] = det.get("denumire", "")
                         data["caen_sectiune"] = det.get("sectiune", "")
+                        self._save_to_company_cache(clean_cui, general_data=data, source="FIRMEAPI_FALLBACK")
                     return data
                 return {}
         except Exception as e:
@@ -202,6 +398,8 @@ class RegistryScraper:
                 personnel_list = list(people_map.values())
                 # Ordonare: persoanele active primele (după cota procentuală descrescător), apoi istoricul
                 personnel_list.sort(key=lambda x: (x["stare"] == "Activ", x["cota_participare"]), reverse=True)
+                if personnel_list:
+                    self._save_to_company_cache(clean_cui, personnel_data=personnel_list, source="FIRMEAPI")
                 return personnel_list
         except Exception as e:
             print(f"Eroare API FirmeAPI personnel & actionari: {e}")
@@ -539,11 +737,23 @@ class RegistryScraper:
         if not clean_cui:
             return {}
 
-        cached = self._get_cached_evaluation_data(clean_cui)
+        # 1. Verificare cache local
+        cached = self._get_cached_company(clean_cui)
         if cached and cached.get("balance"):
             print(f"[DB CACHE HIT] Bilanț pentru CUI {clean_cui} încărcat din baza de date.")
             return cached.get("balance")
 
+        # 2. Încercare gratuită Ministerul Finanțelor / ANAF (0 LEI!)
+        try:
+            free_balance = await self.fetch_anaf_official_balance(clean_cui)
+            if free_balance and free_balance.get("istoric"):
+                self._save_to_company_cache(clean_cui, balance_data=free_balance, source="MINISTERUL_FINANTELOR_GRATUIT")
+                print(f"[MINISTERUL FINANTELOR HIT] Bilanț pentru CUI {clean_cui} preluat gratuit de la stat (0 lei).")
+                return free_balance
+        except Exception as e:
+            print(f"[FREE BILANT ERROR] {e}. Fallback pe FirmeAPI.")
+
+        # 3. Fallback FirmeAPI plătit
         try:
             firmeapi_key = os.getenv("FIRMEAPI_KEY", "ebs9r1lk-3muzkfx6-hketjiwp-ofnjiu7f")
             headers = {"Authorization": f"Bearer {firmeapi_key}", "Accept": "application/json"}
@@ -606,7 +816,7 @@ class RegistryScraper:
                             diff = istoric[0]["cifra_afaceri"] - istoric[1]["cifra_afaceri"]
                             evolutie_venituri = round((diff / istoric[1]["cifra_afaceri"]) * 100, 1)
 
-                        return {
+                        firmeapi_balance = {
                             "an": latest["an"],
                             "cifra_afaceri": latest["cifra_afaceri"],
                             "venituri_totale": latest["venituri_totale"],
@@ -625,6 +835,8 @@ class RegistryScraper:
                             "ani_raportati": len(istoric),
                             "istoric": istoric
                         }
+                        self._save_to_company_cache(clean_cui, balance_data=firmeapi_balance, source="FIRMEAPI_FALLBACK")
+                        return firmeapi_balance
         except Exception as e:
             print(f"Eroare extragere bilant FirmeAPI: {e}")
 
