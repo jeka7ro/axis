@@ -12,6 +12,20 @@ class ChatRequest(BaseModel):
     client_id: Optional[int] = None
     context: Optional[Dict[str, Any]] = None
 
+import re
+
+EMOJI_REGEX = re.compile(r'[\U00010000-\U0010ffff\u2600-\u27bf\u2300-\u23ff\u2b50\ufe0f\u200d]')
+
+def strip_emojis_recursive(val: Any) -> Any:
+    if isinstance(val, str):
+        cleaned = EMOJI_REGEX.sub('', val)
+        return re.sub(r'[ \t]{2,}', ' ', cleaned)
+    elif isinstance(val, dict):
+        return {k: strip_emojis_recursive(v) for k, v in val.items()}
+    elif isinstance(val, list):
+        return [strip_emojis_recursive(i) for i in val]
+    return val
+
 @router.post("/chat")
 async def chat_with_copilot(req: ChatRequest, db: Session = Depends(get_db)):
     """
@@ -34,7 +48,7 @@ async def chat_with_copilot(req: ChatRequest, db: Session = Depends(get_db)):
             context=ctx,
             db=db
         )
-        return response
+        return strip_emojis_recursive(response)
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -43,6 +57,7 @@ async def chat_with_copilot(req: ChatRequest, db: Session = Depends(get_db)):
             "intent": "ERROR",
             "actions": []
         }
+
 
 @router.get("/suggested-prompts")
 def get_suggested_prompts(client_id: Optional[int] = None):

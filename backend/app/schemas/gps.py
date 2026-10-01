@@ -14,9 +14,16 @@ class GPSDataResponse(BaseModel):
     timestamp: datetime
     fleet_type: Optional[str] = "LT"
     vehicle_make_model: Optional[str] = None
+    is_high_risk: Optional[bool] = False
+    mileage: Optional[int] = 0
+    rental_start_km: Optional[int] = None
+    contracted_km_allowance: Optional[int] = 3000
+    current_rental_km_used: Optional[int] = 0
+    over_km_status: Optional[str] = "Normal"
 
     class Config:
         from_attributes = True
+
 
 class TelemetryIngestRequest(BaseModel):
     vehicle_plate: str

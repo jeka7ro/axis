@@ -401,6 +401,71 @@ async def get_portal_just_cases(query: str, limit: int = 25):
     scraper = CourtScraper()
     return await scraper.search_court_cases(query.strip(), limit=limit)
 
+def _enrich_networks_with_financials(db: Session, admin_networks: list, address_check: dict):
+    """
+    Enriches connected companies in admin_networks and address cluster with their cached
+    financial balance (angajati, cifra_afaceri, profit_net, pierdere_neta, an) from Axis DB.
+    """
+    try:
+        cuis = set()
+        for net in (admin_networks or []):
+            for f in net.get("firme", []):
+                clean_f_cui = "".join(filter(str.isdigit, str(f.get("cui", ""))))
+                if clean_f_cui:
+                    cuis.add(clean_f_cui)
+
+        for comp in (address_check or {}).get("companies", []):
+            clean_c_cui = "".join(filter(str.isdigit, str(comp.get("cui", ""))))
+            if clean_c_cui:
+                cuis.add(clean_c_cui)
+
+        if not cuis:
+            return
+
+        cui_to_fin = {}
+        matches = db.query(Evaluation, Client).join(Client, Evaluation.client_id == Client.id).filter(Client.cui_cnp.in_(list(cuis))).order_by(Evaluation.created_at.desc()).all()
+        for ev, cl in matches:
+            if cl.cui_cnp not in cui_to_fin and ev.raw_financial_data:
+                try:
+                    d = json.loads(ev.raw_financial_data) if isinstance(ev.raw_financial_data, str) else ev.raw_financial_data
+                    if d and isinstance(d.get("balance"), dict):
+                        bal = d["balance"]
+                        ang = bal.get("angajati") if bal.get("angajati") is not None else (bal.get("numar_angajati") or bal.get("salariati"))
+                        cui_to_fin[cl.cui_cnp] = {
+                            "an": bal.get("an"),
+                            "cifra_afaceri": bal.get("cifra_afaceri"),
+                            "profit_net": bal.get("profit_net"),
+                            "pierdere_neta": bal.get("pierdere_neta"),
+                            "angajati": ang
+                        }
+                except Exception:
+                    pass
+
+        # Atribuim datelor din admin_networks
+        for net in (admin_networks or []):
+            for f in net.get("firme", []):
+                clean_f_cui = "".join(filter(str.isdigit, str(f.get("cui", ""))))
+                if clean_f_cui in cui_to_fin:
+                    f["balance"] = cui_to_fin[clean_f_cui]
+                    f["angajati"] = cui_to_fin[clean_f_cui]["angajati"]
+                    f["cifra_afaceri"] = cui_to_fin[clean_f_cui]["cifra_afaceri"]
+                    f["profit_net"] = cui_to_fin[clean_f_cui]["profit_net"]
+                    f["pierdere_neta"] = cui_to_fin[clean_f_cui]["pierdere_neta"]
+                    f["an_bilant"] = cui_to_fin[clean_f_cui]["an"]
+
+        # Atribuim companiilor din clusterul de la adresă
+        for comp in (address_check or {}).get("companies", []):
+            clean_c_cui = "".join(filter(str.isdigit, str(comp.get("cui", ""))))
+            if clean_c_cui in cui_to_fin:
+                comp["balance"] = cui_to_fin[clean_c_cui]
+                comp["angajati"] = cui_to_fin[clean_c_cui]["angajati"]
+                comp["cifra_afaceri"] = cui_to_fin[clean_c_cui]["cifra_afaceri"]
+                comp["profit_net"] = cui_to_fin[clean_c_cui]["profit_net"]
+                comp["pierdere_neta"] = cui_to_fin[clean_c_cui]["pierdere_neta"]
+                comp["an_bilant"] = cui_to_fin[clean_c_cui]["an"]
+    except Exception as enrich_err:
+        print(f"[FINANCIAL ENRICH ERROR] {enrich_err}")
+
 @router.get("/company-full-intel")
 async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool = False, db: Session = Depends(get_db)):
     """
@@ -477,12 +542,23 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
                             p["stare"] = "Mandat Încheiat (Radiere)"
                             p["mandat_activ"] = False
 
+                    address_check = prev_d.get("address_check")
+                    addr_to_check = prev_d.get("anaf", {}).get("adresa") or existing_client.address
+                    if not address_check and addr_to_check:
+                        try:
+                            from ..services.osint.address_checker import AddressChecker
+                            address_check = await AddressChecker().verify_address(addr_to_check, current_cui=clean_cui)
+                        except Exception as addr_err:
+                            print(f"[ADDRESS CHECK ERROR CACHED] {addr_err}")
+                    _enrich_networks_with_financials(db, prev_d.get("admin_networks", []), address_check)
+
                     return {
                         "cui": clean_cui,
                         "denumire": existing_client.name,
                         "existing_client_id": existing_client.id,
                         "general": cached_general,
                         "visual": visual_intel,
+                        "address_check": address_check or {},
                         "personnel": cached_pers,
                         "holdings": prev_d.get("holdings", []),
                         "administrators": cached_admins,
@@ -621,6 +697,18 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
             "mof": mof,
             "court_cases": court_cases
         }
+
+        addr_to_check = gen_data.get("adresa") or (existing_client.address if existing_client else "")
+        address_check = {}
+        if addr_to_check:
+            try:
+                from ..services.osint.address_checker import AddressChecker
+                address_check = await AddressChecker().verify_address(addr_to_check, current_cui=clean_cui)
+            except Exception as addr_err:
+                print(f"[ADDRESS CHECK ERROR API] {addr_err}")
+                address_check = {"address": addr_to_check, "companies": [], "cluster_count": 0}
+
+        saved_intel_payload["address_check"] = address_check
         
         # Salvare snapshot evaluare asociat în DB
         new_eval = Evaluation(
@@ -643,6 +731,14 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
             email=gen_data.get("email"),
             website=gen_data.get("site")
         )
+        addr_to_check = gen_data.get("adresa") or (existing_client.address if existing_client else "")
+        address_check = {}
+        if addr_to_check:
+            try:
+                from ..services.osint.address_checker import AddressChecker
+                address_check = await AddressChecker().verify_address(addr_to_check, current_cui=clean_cui)
+            except Exception as addr_err:
+                address_check = {"address": addr_to_check, "companies": [], "cluster_count": 0}
 
     jev = JEVEngine(verification_passes=3)
     jev_cert = jev.verify_and_certify({
@@ -658,12 +754,15 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
         "admin_networks": admin_networks
     }, company_name=official_name, company_cui=clean_cui)
 
+    _enrich_networks_with_financials(db, admin_networks, address_check)
+
     return {
         "cui": clean_cui,
         "denumire": official_name,
         "existing_client_id": existing_client_id,
         "general": gen_data,
         "visual": visual_intel,
+        "address_check": address_check or {},
         "personnel": personnel,
         "holdings": holdings,
         "administrators": administrators,
@@ -763,6 +862,8 @@ async def get_person_full_intel(name: str, context_cui: Optional[str] = None, db
             existing_cuis.add(clean_cui)
 
     # 3. Calcul metrici de risc administrator
+    _enrich_networks_with_financials(db, network, None)
+
     all_firme = []
     for p in network:
         p["total_firme"] = len(p.get("firme", []))

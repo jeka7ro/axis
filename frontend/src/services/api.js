@@ -204,6 +204,13 @@ export const fetchVehicle = async (id) => {
   return response.json();
 };
 
+export const fetchVehicleByPlate = async (plate) => {
+  const cleanPlate = encodeURIComponent(plate.trim());
+  const response = await fetch(`${API_URL}/vehicles/by-plate/${cleanPlate}`);
+  if (!response.ok) throw new Error(`Vehicle with plate ${plate} not found`);
+  return response.json();
+};
+
 export const createVehicle = async (data) => {
   const response = await fetch(`${API_URL}/vehicles/`, {
     method: 'POST',
@@ -231,6 +238,94 @@ export const deleteVehicle = async (id) => {
   if (!response.ok) throw new Error('Failed to delete vehicle');
   return response.json();
 };
+
+export const toggleVehicleWatchlist = async (id) => {
+  const response = await fetch(`${API_URL}/vehicles/${id}/toggle-watchlist`, {
+    method: 'POST'
+  });
+  if (!response.ok) throw new Error('Failed to toggle watchlist status');
+  return response.json();
+};
+
+export const addVehicleServiceRecord = async (id, recordData) => {
+  const response = await fetch(`${API_URL}/vehicles/${id}/add-service-record`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(recordData)
+  });
+  if (!response.ok) throw new Error('Failed to add service record');
+  return response.json();
+};
+
+export const reserveVehicle = async (id, reservationData) => {
+  return updateVehicle(id, {
+    status: 'Rezervat',
+    reservation_details: typeof reservationData === 'string' ? reservationData : JSON.stringify(reservationData)
+  });
+};
+
+export const unreserveVehicle = async (id) => {
+  return updateVehicle(id, {
+    status: 'Disponibil',
+    reservation_details: null
+  });
+};
+
+const getStoredToken = () => localStorage.getItem('axis_token') || localStorage.getItem('token') || 'mock-jwt-token';
+
+export const validateInvitation = async (code, email = '') => {
+  const url = `${API_URL}/auth/invitations/validate?code=${encodeURIComponent(code)}&email=${encodeURIComponent(email)}`;
+  const response = await fetch(url);
+  return response.json();
+};
+
+export const createInvitation = async (invitationData) => {
+  const token = getStoredToken();
+  const response = await fetch(`${API_URL}/auth/invitations`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    },
+    body: JSON.stringify(invitationData)
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Eroare la crearea invitației.');
+  }
+  return response.json();
+};
+
+export const fetchInvitations = async () => {
+  const token = getStoredToken();
+  const response = await fetch(`${API_URL}/auth/invitations`, {
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Eroare la încărcarea listei de invitații.');
+  }
+  return response.json();
+};
+
+export const revokeInvitation = async (id) => {
+  const token = getStoredToken();
+  const response = await fetch(`${API_URL}/auth/invitations/${id}`, {
+    method: 'DELETE',
+    headers: {
+      'Authorization': `Bearer ${token}`
+    }
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Eroare la revocarea invitației.');
+  }
+  return response.json();
+};
+
+
 
 export const fetchClientFleetTelemetryReport = async (clientId) => {
   const response = await fetch(`${API_URL}/clients/${clientId}/fleet-telemetry-report`);
@@ -315,6 +410,87 @@ export const fetchAssistantConfig = async () => {
   } catch {
     return { configured: false };
   }
+};
+
+// ==========================================
+// Authentication & Brevo Email Service APIs
+// ==========================================
+
+export const loginUser = async ({ email, password }) => {
+  const response = await fetch(`${API_URL}/auth/login-json`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Email sau parolă incorectă.');
+  }
+  return response.json();
+};
+
+export const registerUser = async (userData) => {
+  const response = await fetch(`${API_URL}/auth/register`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(userData)
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Eroare la crearea contului.');
+  }
+  return response.json();
+};
+
+export const forgotPassword = async (email) => {
+  const response = await fetch(`${API_URL}/auth/forgot-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Eroare la solicitarea resetării de parolă.');
+  }
+  return response.json();
+};
+
+export const resetPassword = async ({ token, new_password }) => {
+  const response = await fetch(`${API_URL}/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, new_password })
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Eroare la actualizarea parolei.');
+  }
+  return response.json();
+};
+
+export const sendTestEmailNotification = async (email, fullName = 'Utilizator Axis') => {
+  const response = await fetch(`${API_URL}/auth/send-test-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, full_name: fullName })
+  });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Eroare la trimiterea emailului de test prin Brevo.');
+  }
+  return response.json();
+};
+
+export const dispatchAlertEmail = async (alertId, recipientEmail = null) => {
+  const url = recipientEmail 
+    ? `${API_URL}/gps/alerts/${alertId}/dispatch-email?recipient_email=${encodeURIComponent(recipientEmail)}`
+    : `${API_URL}/gps/alerts/${alertId}/dispatch-email`;
+  const response = await fetch(url, { method: 'POST' });
+  if (!response.ok) {
+    const err = await response.json().catch(() => ({}));
+    throw new Error(err.detail || 'Eroare la expedierea emailului de alertă.');
+  }
+  return response.json();
 };
 
 

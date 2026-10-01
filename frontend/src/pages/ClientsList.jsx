@@ -1062,7 +1062,7 @@ const ClientsList = () => {
                                 )}
                               </div>
                               <div className="text-[11px] text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
-                                <span className="font-mono font-bold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-700/80 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600">
+                                <span className=" font-bold text-gray-800 dark:text-gray-200 bg-gray-100 dark:bg-gray-700/80 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600">
                                   CUI: {comp.cui}
                                 </span>
                                 {comp.reg_com && comp.reg_com !== '—' && (
@@ -1789,7 +1789,7 @@ const ClientsList = () => {
                                 <div className="min-w-0 flex-1">
                                   <div className="font-bold text-gray-900 dark:text-white truncate group-hover:text-primary">{s.name}</div>
                                   <div className="text-[11px] text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-                                    <span className="font-mono font-semibold text-primary">CUI: {s.cui}</span>
+                                    <span className=" font-semibold text-primary">CUI: {s.cui}</span>
                                     {s.reg_com && <span>• {s.reg_com}</span>}
                                     {fullAdr && (
                                       <span className="flex items-center gap-1 text-gray-600 dark:text-gray-300 truncate max-w-xs">
@@ -1848,7 +1848,7 @@ const ClientsList = () => {
                               <div className="min-w-0 flex-1">
                                 <div className="font-bold text-gray-900 dark:text-white truncate group-hover:text-primary">{s.name}</div>
                                 <div className="text-[11px] text-gray-500 dark:text-gray-400 flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-0.5">
-                                  <span className="font-mono font-semibold text-primary">CUI: {s.cui}</span>
+                                  <span className=" font-semibold text-primary">CUI: {s.cui}</span>
                                   {s.reg_com && <span>• {s.reg_com}</span>}
                                   {fullAdr && (
                                     <span className="flex items-center gap-1 text-gray-600 dark:text-gray-300 truncate max-w-xs">

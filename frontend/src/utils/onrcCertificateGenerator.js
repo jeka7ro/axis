@@ -65,10 +65,46 @@ export async function generateOnrcCertificate(client, latestEval) {
   const clientAddress = client.address || anaf.adresa || 'București, România';
   const regDate = anaf.data_inregistrare || anaf.data_inreg || '2020-02-26';
 
-  // Determine associates and administrators
-  const associatesList = personnel.filter(p => (p.calitate || '').toLowerCase().includes('asociat') || (p.procent_parti_sociale || p.cota_procentuala > 0));
-  const effectiveAssociates = associatesList.length > 0 ? associatesList : (personnel.length > 0 ? personnel.slice(0, 2) : [{ nume: client.representative_name || clientName, calitate: 'Asociat Unic', procent: 100 }]);
-  const effectiveAdmins = administrators.length > 0 ? administrators : personnel.filter(p => (p.calitate || '').toLowerCase().includes('admin'));
+  // Determine associates and administrators strictly (never confuse an administrator with a shareholder)
+  const smartOwnership = rawData.smart_ownership || {};
+  
+  // Real holdings / shareholders
+  const rawHoldings = holdings.filter(h => {
+    if (h.is_shareholder === false && !h.is_administrator) return false;
+    const typeStr = (h.type || h.rol || '').toUpperCase();
+    const hasPercent = Number(h.percent || h.cota_participare || 0) > 0;
+    return (typeStr.includes('ASOCIAT') || typeStr.includes('ACTIONAR') || hasPercent) && !typeStr.includes('DOAR ADMINISTRATOR');
+  });
+
+  // Personnel marked as associates
+  const rawPersonnelAssociates = personnel.filter(p => {
+    if (p.este_asociat === false) return false;
+    const rol = (p.rol || p.calitate || '').toLowerCase();
+    const hasPercent = Number(p.cota_participare || p.procent_parti_sociale || p.cota_procentuala || p.percent || 0) > 0;
+    return p.este_asociat === true || rol.includes('asociat') || rol.includes('actionar') || hasPercent;
+  });
+
+  let effectiveAssociates = [];
+  if (rawHoldings.length > 0) {
+    effectiveAssociates = rawHoldings.map(h => ({
+      nume: h.name || h.nume,
+      calitate: h.type || 'Asociat',
+      numar_parti_sociale: Math.round(((Number(h.percent || h.cota_participare || 100)) / 100) * 20) || 20,
+      procent: Number(h.percent || h.cota_participare || 100)
+    }));
+  } else if (rawPersonnelAssociates.length > 0) {
+    effectiveAssociates = rawPersonnelAssociates.map(p => ({
+      nume: p.nume || p.name,
+      calitate: p.calitate || p.rol || 'Asociat',
+      numar_parti_sociale: Math.round(((Number(p.cota_participare || p.procent_parti_sociale || p.cota_procentuala || 100)) / 100) * 20) || 20,
+      procent: Number(p.cota_participare || p.procent_parti_sociale || p.cota_procentuala || 100)
+    }));
+  }
+
+  // Administrators
+  const effectiveAdmins = administrators.length > 0 
+    ? administrators 
+    : personnel.filter(p => p.este_administrator || (p.calitate || p.rol || '').toLowerCase().includes('admin'));
 
   // Canvas setup for crisp A4 rendering (1240 x 1754)
   const W = 1240;
@@ -228,7 +264,7 @@ export async function generateOnrcCertificate(client, latestEval) {
   } else {
     ctx.fillStyle = '#64748b';
     ctx.font = 'italic 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
-    ctx.fillText('Asociat unic identificat conform evidențelor oficiale ONRC.', 75, curY + 12);
+    ctx.fillText('Structură asociați nedeclarată direct în extras / confidențială (Conducere executivă mandată prin Administrator).', 75, curY + 12);
     curY += 26;
   }
   curY += 15;
@@ -236,14 +272,18 @@ export async function generateOnrcCertificate(client, latestEval) {
   // --- SECTION IV: BENEFICIAR REAL (UBO) & ADMINISTRARE ---
   curY = drawSectionTitle('IV. BENEFICIAR REAL (UBO) ȘI REPREZENTARE LEGALĂ', curY);
 
-  // Beneficiarul real (UBO - Legea 129/2019) este asociatul/acționarul cu deținere semnificativă (>25%), extras din datele oficiale ONRC
-  const topAssociate = effectiveAssociates.find(a => (Number(a.procent || a.cota_procentuala || 0) >= 25)) || effectiveAssociates[0];
-  const uboName = (topAssociate && (topAssociate.nume || topAssociate.name)) || client.representative_name || 'Conform Registrului UBO';
-  const uboPercent = (topAssociate && (topAssociate.procent || topAssociate.cota_procentuala)) || 100;
-  drawField('Beneficiar Real Înregistrat (UBO - Legea 129/2019):', `${String(uboName).toUpperCase()} • Deținere directă / Control efectiv ${uboPercent}%`, col1X, curY, true);
+  const adminName = (effectiveAdmins[0] && (effectiveAdmins[0].nume || effectiveAdmins[0].name)) || client.representative_name || 'Administrator Numit';
+
+  if (effectiveAssociates.length > 0) {
+    const topAssociate = effectiveAssociates.find(a => (Number(a.procent || 0) >= 25)) || effectiveAssociates[0];
+    const uboName = topAssociate.nume || client.representative_name || 'Conform Registrului UBO';
+    const uboPercent = topAssociate.procent || 100;
+    drawField('Beneficiar Real Înregistrat (UBO - Legea 129/2019):', `${String(uboName).toUpperCase()} • Deținere directă / Control efectiv ${uboPercent}%`, col1X, curY, true);
+  } else {
+    drawField('Beneficiar Real Înregistrat (UBO - Legea 129/2019):', `${String(adminName).toUpperCase()} • Conducere executivă (art. 4 alin. 2 lit. a Legea 129/2019 - fără părți sociale)`, col1X, curY, true);
+  }
   curY += 38;
 
-  const adminName = (effectiveAdmins[0] && (effectiveAdmins[0].nume || effectiveAdmins[0].name)) || (topAssociate && (topAssociate.nume || topAssociate.name)) || client.representative_name || 'Administrator Numit';
   drawField('Administrator Statutar:', String(adminName).toUpperCase(), col1X, curY, true);
   drawField('Durata Mandatului:', 'Nedeterminată', col3X, curY);
   curY += 38;

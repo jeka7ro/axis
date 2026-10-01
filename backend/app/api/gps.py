@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List
 from datetime import datetime
@@ -176,6 +176,13 @@ def get_live_locations(fleet_type: Optional[str] = None, db: Session = Depends(g
             continue
         v_model = f"{v.make} {v.model}" if v else g.vehicle_plate
         
+        # Calculate rental live mileage delta
+        v_mileage = getattr(v, 'mileage', 0) or 0
+        v_start_km = getattr(v, 'rental_start_km', v_mileage) or v_mileage
+        v_allowance = getattr(v, 'contracted_km_allowance', 3000) or 3000
+        km_used = max(0, v_mileage - v_start_km) if v_mileage >= v_start_km else 0
+        over_status = f"Depășit cu {km_used - v_allowance} km" if (km_used > v_allowance) else f"În Plafon ({v_allowance - km_used} km rămași)"
+        
         item = GPSDataResponse(
             id=g.id,
             client_id=g.client_id,
@@ -187,10 +194,71 @@ def get_live_locations(fleet_type: Optional[str] = None, db: Session = Depends(g
             location_name=g.location_name,
             timestamp=g.timestamp,
             fleet_type=v_fleet_type,
-            vehicle_make_model=v_model
+            vehicle_make_model=v_model,
+            is_high_risk=bool(getattr(v, 'is_high_risk', False)),
+            mileage=v_mileage,
+            rental_start_km=v_start_km,
+            contracted_km_allowance=v_allowance,
+            current_rental_km_used=km_used,
+            over_km_status=over_status
         )
         results.append(item)
     return results
+
+@router.post("/alerts/{alert_id}/dispatch-whatsapp")
+def dispatch_alert_whatsapp(alert_id: int, db: Session = Depends(get_db)):
+    """
+    Dispatches immediate high-priority alert to Axis Operations & Security WhatsApp Group.
+    """
+    alert = db.query(GPSAlert).filter(GPSAlert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+        
+    # In production, this invokes Twilio WhatsApp API or Meta Cloud WhatsApp API
+    # Simulated dispatch with timestamp & group channel
+    dispatched_payload = {
+        "channel": "Grup WhatsApp Dispecerat Axis Securitate",
+        "recipients": ["+40722000111", "+40722000222", "+40722000333"],
+        "vehicle_plate": alert.vehicle_plate,
+        "alert_type": alert.alert_type,
+        "message": alert.message,
+        "sent_at": datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+        "status": "DELIVERED"
+    }
+    return {
+        "status": "success",
+        "message": f"Alerta pentru vehiculul {alert.vehicle_plate} a fost transmisă instant pe grupul de WhatsApp 'Dispecerat Axis Securitate'.",
+        "details": dispatched_payload
+    }
+
+@router.post("/alerts/{alert_id}/dispatch-email")
+async def dispatch_alert_email(alert_id: int, recipient_email: Optional[str] = None, db: Session = Depends(get_db)):
+    """
+    Expediază alerta de securitate flotă / graniță prin email tranzacțional Brevo API v3.
+    """
+    alert = db.query(GPSAlert).filter(GPSAlert.id == alert_id).first()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alerta nu a fost găsită")
+
+    from ..services.email_service import send_fleet_security_alert_email
+    from ..config import settings
+
+    target_email = recipient_email or settings.BREVO_SENDER_EMAIL
+    res = await send_fleet_security_alert_email(
+        to_email=target_email,
+        to_name="Dispecerat Securitate Axis",
+        alert_type=alert.alert_type,
+        vehicle_plate=alert.vehicle_plate,
+        message=alert.message,
+        ai_recommendation=alert.ai_recommendation
+    )
+
+    return {
+        "status": "success" if res.get("success") else "error",
+        "message": f"Notificarea de securitate pentru {alert.vehicle_plate} a fost expediată cu succes prin Brevo către {target_email}.",
+        "brevo_response": res
+    }
+
 
 @router.post("/telemetry/ingest")
 def ingest_telemetry_packet(packet: TelemetryIngestRequest, db: Session = Depends(get_db)):

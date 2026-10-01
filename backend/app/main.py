@@ -58,6 +58,12 @@ try:
             ("axis_contracts", "fidejusor_id_card", "VARCHAR"),
             ("axis_contracts", "fidejusor_quality", "VARCHAR"),
             ("axis_vehicles", "fleet_type", "VARCHAR"),
+            ("axis_users", "reset_token", "VARCHAR"),
+            ("axis_users", "reset_token_expiry", "TIMESTAMP"),
+            ("axis_users", "phone", "VARCHAR"),
+            ("axis_users", "notifications_enabled", "BOOLEAN DEFAULT true"),
+            ("axis_users", "email_alerts_enabled", "BOOLEAN DEFAULT true"),
+            ("axis_users", "created_at", "TIMESTAMP"),
         ]:
             try:
                 conn.execute(text(f"ALTER TABLE {tbl} ADD COLUMN {col} {ctype};"))

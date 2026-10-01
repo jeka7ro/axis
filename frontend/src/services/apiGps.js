@@ -32,3 +32,12 @@ export const deleteAlerts = async (ids) => {
   if (!response.ok) throw new Error('Failed to delete alerts');
   return response.json();
 };
+
+export const dispatchWhatsAppAlert = async (alertId) => {
+  const response = await fetch(`${API_URL}/gps/alerts/${alertId}/dispatch-whatsapp`, {
+    method: 'POST'
+  });
+  if (!response.ok) throw new Error('Failed to dispatch WhatsApp alert');
+  return response.json();
+};
+

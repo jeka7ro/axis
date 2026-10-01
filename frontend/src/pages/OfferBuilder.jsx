@@ -450,9 +450,9 @@ const OfferBuilder = () => {
                             </span>
                           </div>
                           <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                            <span>CUI: <strong className="text-gray-900 dark:text-white font-mono">{selectedClient.cui_cnp}</strong></span>
+                            <span>CUI: <strong className="text-gray-900 dark:text-white ">{selectedClient.cui_cnp}</strong></span>
                             {selectedClient.reg_com && (
-                              <span>• Reg. Com: <strong className="text-gray-900 dark:text-white font-mono">{selectedClient.reg_com}</strong></span>
+                              <span>• Reg. Com: <strong className="text-gray-900 dark:text-white ">{selectedClient.reg_com}</strong></span>
                             )}
                           </div>
                         </div>
@@ -515,7 +515,7 @@ const OfferBuilder = () => {
                             {selectedClient.contact_phone && (
                               <div className="mt-2 pt-2 border-t border-gray-200/60 dark:border-gray-700/60 text-[11px] text-gray-500 dark:text-gray-400">
                                 <span>Telefon Contact: </span>
-                                <strong className="text-gray-900 dark:text-white font-mono">{selectedClient.contact_phone}</strong>
+                                <strong className="text-gray-900 dark:text-white ">{selectedClient.contact_phone}</strong>
                               </div>
                             )}
                           </div>

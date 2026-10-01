@@ -3,18 +3,35 @@ import { Outlet, Navigate, Link, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, Users, FileText, Car, Settings, LogOut, Sun, Moon, 
   Shield, Megaphone, ShieldAlert, Cpu, MapPin, Bell, ChevronDown, UserCheck, Briefcase,
-  Camera, Upload, RotateCcw
+  Camera, Upload, RotateCcw, ExternalLink, UserPlus, PanelLeftClose, PanelLeft
 } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 import AxisAiCopilot from './AxisAiCopilot';
+import CookieBanner from './CookieBanner';
+import InviteMemberModal from './InviteMemberModal';
+
 
 const Layout = () => {
   const { isAuthenticated, logout, user, setRole, setAvatar } = useAuthStore();
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isProfileOpen, setIsProfileOpen] = useState(false);
+  const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => {
+    return localStorage.getItem('axis_sidebar_collapsed') === 'true';
+  });
+
+  const toggleSidebar = () => {
+    setIsSidebarCollapsed(prev => {
+      const next = !prev;
+      localStorage.setItem('axis_sidebar_collapsed', String(next));
+      return next;
+    });
+  };
+
   const profileDropdownRef = useRef(null);
   const avatarInputRef = useRef(null);
   const location = useLocation();
+
 
   const handleAvatarUpload = (e) => {
     const file = e.target.files?.[0];
@@ -107,136 +124,162 @@ const Layout = () => {
     return <Navigate to="/login" replace />;
   }
 
+  const navItems = [
+    { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, show: true },
+    { path: '/clients', label: 'Clienți & AI', icon: Users, show: user?.role !== 'Dealer Sales' },
+    { path: '/vehicles', label: 'Flotă Proprie', icon: Car, show: user?.role !== 'Dealer Sales' },
+    { path: '/blacklist', label: 'Black List', icon: ShieldAlert, iconClass: 'text-red-500', show: user?.role !== 'Dealer Sales' },
+    { path: '/offers', label: 'Oferte & Contracte', icon: FileText, show: true },
+    { path: '/campaigns', label: 'Campanii Axis', icon: Megaphone, show: user?.role !== 'Dealer Sales' },
+    { path: '/gps', label: 'Monitorizare Flotă (MS)', icon: MapPin, show: user?.role !== 'Dealer Sales' },
+    { path: '/alerts', label: 'Istoric Alerte', icon: Bell, iconClass: 'text-primary', show: user?.role !== 'Dealer Sales' },
+    { path: '/scenarios', label: 'Configurator Scenarii', icon: Cpu, iconClass: 'text-primary', show: user?.role !== 'Dealer Sales' },
+    { path: '/nomenclatures', label: 'Nomenclatoare', icon: Settings, iconClass: 'text-gray-500', show: user?.role === 'Super Admin' },
+  ];
+
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 font-sans">
       {/* Sidebar */}
-      <aside className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
-        <div className="h-16 flex items-center justify-center px-6 border-b border-gray-200 dark:border-gray-700">
-          <img src="https://axisrent.ro/wp-content/uploads/2025/06/Black-AXIS-logo-1.png" alt="Axis Rent" className="h-10 object-contain dark:invert" />
+      <aside className={`${isSidebarCollapsed ? 'w-20' : 'w-64'} bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-all duration-200 ease-in-out shrink-0 select-none`}>
+        {/* Sidebar Header */}
+        <div className={`h-16 flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'justify-between px-4'} border-b border-gray-200 dark:border-gray-700 shrink-0`}>
+          {isSidebarCollapsed ? (
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="p-2 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 transition-all cursor-pointer flex items-center justify-center group"
+              title="Extinde bara laterală (Axis)"
+            >
+              <img
+                src="/axis-a-dark.png"
+                alt="Axis"
+                className="h-8 w-auto object-contain dark:hidden group-hover:scale-105 transition-transform"
+              />
+              <img
+                src="/axis-a-white.png"
+                alt="Axis"
+                className="h-8 w-auto object-contain hidden dark:block group-hover:scale-105 transition-transform"
+              />
+            </button>
+          ) : (
+            <>
+              <Link to="/dashboard" className="flex items-center pl-1">
+                <img src="https://axisrent.ro/wp-content/uploads/2025/06/Black-AXIS-logo-1.png" alt="Axis Rent" className="h-9 object-contain dark:invert" />
+              </Link>
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors shadow-2xs cursor-pointer"
+                title="Restrânge bara laterală"
+              >
+                <PanelLeftClose size={18} />
+              </button>
+            </>
+          )}
         </div>
         
+        {/* Sidebar Nav */}
         <nav className="flex-1 overflow-y-auto py-4">
-          <ul className="space-y-1 px-3">
-            <li>
-              <Link to="/dashboard" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                <LayoutDashboard size={20} />
-                <span>Dashboard</span>
-              </Link>
-            </li>
-            {user?.role !== 'Dealer Sales' && (
-              <li>
-                <Link to="/clients" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                  <Users size={20} />
-                  <span>Clienți & AI</span>
-                </Link>
-              </li>
-            )}
-            {user?.role !== 'Dealer Sales' && (
-              <li>
-                <Link to="/vehicles" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                  <Car size={20} />
-                  <span>Flotă Proprie</span>
-                </Link>
-              </li>
-            )}
-            {user?.role !== 'Dealer Sales' && (
-              <li>
-                <Link to="/blacklist" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                  <ShieldAlert size={20} className="text-red-500" />
-                  <span>Black List</span>
-                </Link>
-              </li>
-            )}
-            <li>
-              <Link to="/offers" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                <FileText size={20} />
-                <span>Oferte & Contracte</span>
-              </Link>
-            </li>
-            {user?.role !== 'Dealer Sales' && (
-              <li>
-                <Link to="/campaigns" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                  <Megaphone size={20} />
-                  <span>Campanii Axis</span>
-                </Link>
-              </li>
-            )}
-            {user?.role !== 'Dealer Sales' && (
-              <li>
-                <Link to="/gps" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                  <MapPin size={20} />
-                  <span>Monitorizare Flotă (MS)</span>
-                </Link>
-              </li>
-            )}
-            {user?.role !== 'Dealer Sales' && (
-              <li>
-                <Link to="/alerts" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                  <Bell size={20} className="text-primary" />
-                  <span>Istoric Alerte</span>
-                </Link>
-              </li>
-            )}
-            {user?.role !== 'Dealer Sales' && (
-              <li>
-                <Link to="/scenarios" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                  <Cpu size={20} className="text-primary" />
-                  <span>Configurator Scenarii</span>
-                </Link>
-              </li>
-            )}
-            {user?.role === 'Super Admin' && (
-              <li>
-                <Link to="/nomenclatures" className="flex items-center gap-3 px-3 py-2 text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-                  <Settings size={20} className="text-gray-500" />
-                  <span>Nomenclatoare</span>
-                </Link>
-              </li>
-            )}
+          <ul className="space-y-1.5 px-3">
+            {navItems.filter(item => item.show).map(item => {
+              const Icon = item.icon;
+              const isActive = location.pathname === item.path;
+              return (
+                <li key={item.path}>
+                  <Link
+                    to={item.path}
+                    title={item.label}
+                    className={`flex items-center ${isSidebarCollapsed ? 'justify-center px-0' : 'gap-3 px-3'} py-2.5 rounded-xl transition-all ${
+                      isActive
+                        ? 'bg-gray-900 text-white dark:bg-white dark:text-gray-900 font-semibold shadow-xs'
+                        : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/70'
+                    }`}
+                  >
+                    <Icon size={20} className={`shrink-0 ${isActive ? '' : (item.iconClass || '')}`} />
+                    {!isSidebarCollapsed && <span className="text-sm truncate">{item.label}</span>}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </nav>
 
         {/* Clean Minimal Sidebar Footer */}
         <div className="p-3.5 border-t border-gray-200 dark:border-gray-700/80 bg-gray-50/60 dark:bg-gray-800/40">
-          <div className="flex items-center justify-between px-1 text-xs">
-            <div className="flex items-center gap-2">
+          {isSidebarCollapsed ? (
+            <div className="flex justify-center" title="Axis Cloud v2.4 Pro">
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
-              <span className="font-medium text-gray-600 dark:text-gray-300">Axis Cloud</span>
             </div>
-            <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-700/70 px-2 py-0.5 rounded-full border border-gray-200/60 dark:border-gray-600/60">
-              v2.4 Pro
-            </span>
-          </div>
+          ) : (
+            <div className="flex items-center justify-between px-1 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+                <span className="font-medium text-gray-600 dark:text-gray-300">Axis Cloud</span>
+              </div>
+              <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-700/70 px-2 py-0.5 rounded-full border border-gray-200/60 dark:border-gray-600/60">
+                v2.4 Pro
+              </span>
+            </div>
+          )}
         </div>
       </aside>
 
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto">
         <header className="h-16 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 flex items-center px-8 justify-between sticky top-0 z-20 backdrop-blur-md bg-white/90 dark:bg-gray-800/90">
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white tracking-tight">
-              {getPageTitle(location.pathname)}
-            </h2>
-            <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
-              Platformă integrată de leasing operațional și evaluare inteligentă
-            </p>
+          <div className="flex items-center gap-3">
+            {isSidebarCollapsed && (
+              <button
+                type="button"
+                onClick={toggleSidebar}
+                className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors shadow-2xs cursor-pointer"
+                title="Extinde bara laterală"
+              >
+                <PanelLeft size={18} />
+              </button>
+            )}
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white tracking-tight">
+                {getPageTitle(location.pathname)}
+              </h2>
+              <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
+                Platformă integrată de leasing operațional și evaluare inteligentă
+              </p>
+            </div>
           </div>
 
           <div className="flex items-center gap-3">
             {/* Theme Toggle Button - Tahoe Mac OS rounded */}
             <button
               onClick={toggleTheme}
-              className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors shadow-sm"
+              className="p-2 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-200 transition-colors shadow-sm cursor-pointer"
               title={isDarkMode ? 'Comută la Mod Luminos' : 'Comută la Mod Întunecat'}
             >
               {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
             </button>
 
+            {/* Invite Team Member Button for Super Admin & Axis Manager */}
+            {(user?.role === 'Super Admin' || user?.role === 'Axis Manager') && (
+              <button
+                type="button"
+                onClick={() => setIsInviteModalOpen(true)}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-700 transition-colors cursor-pointer shadow-2xs"
+                title="Invită utilizator nou cu rol specificat prin Brevo"
+              >
+                <UserPlus size={13} className="text-primary" />
+                <span>Invită Echipă</span>
+              </button>
+            )}
+
             {/* Subtle Divider */}
             <div className="h-6 w-px bg-gray-200 dark:bg-gray-700 mx-1" />
+
 
             {/* Executive User Avatar & Profile Dropdown */}
             <div className="relative" ref={profileDropdownRef}>
@@ -359,10 +402,31 @@ const Layout = () => {
                     className="hidden"
                   />
 
+                  {/* Invite Member Option in Dropdown */}
+                  {(user?.role === 'Super Admin' || user?.role === 'Axis Manager') && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsProfileOpen(false);
+                        setIsInviteModalOpen(true);
+                      }}
+                      className="w-full flex items-center gap-2.5 p-2 rounded-xl text-left bg-primary/5 hover:bg-primary/10 border border-primary/20 text-primary dark:bg-primary/15 transition-all mb-2 cursor-pointer font-bold text-xs"
+                    >
+                      <UserPlus size={15} className="text-primary shrink-0" />
+                      <div className="flex-1">
+                        <div>Invită Membru / Echipă</div>
+                        <div className="text-[10px] text-gray-500 dark:text-gray-400 font-normal">
+                          Generează cod & trimite invitație
+                        </div>
+                      </div>
+                    </button>
+                  )}
+
                   {/* Role Switcher Section */}
                   <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-gray-400">
                     Comutare Rol Utilizator
                   </div>
+
                   <div className="space-y-1 mb-2">
                     {[
                       { id: 'Super Admin', label: 'Super Admin', desc: 'Acces complet sistem & AI', icon: Shield },
@@ -420,15 +484,72 @@ const Layout = () => {
           </div>
         </header>
 
-        <div className="p-8">
-          <Outlet />
+        <div className="p-8 pb-12 flex flex-col justify-between min-h-[calc(100vh-80px)]">
+          <div>
+            <Outlet />
+          </div>
+
+          {/* Legal & GDPR Compliance Footer */}
+          <footer className="mt-16 pt-6 border-t border-gray-200/60 dark:border-gray-800/80 flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-gray-500 dark:text-gray-400 select-none">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-gray-700 dark:text-gray-300">AXIS MOBILITY S.R.L.</span>
+              <span>•</span>
+              <span>CUI RO41298450</span>
+              <span>•</span>
+              <span className="text-emerald-600 dark:text-emerald-400 font-medium">Platformă Securizată GDPR (UE 2016/679)</span>
+            </div>
+
+            <div className="flex items-center gap-3.5 flex-wrap">
+              <Link to="/privacy" className="hover:text-gray-900 dark:hover:text-white transition-colors underline">
+                Politica de Confidențialitate
+              </Link>
+              <span>•</span>
+              <Link to="/terms" className="hover:text-gray-900 dark:hover:text-white transition-colors underline">
+                Termeni și Condiții
+              </Link>
+              <span>•</span>
+              <Link to="/cookies" className="hover:text-gray-900 dark:hover:text-white transition-colors underline">
+                Politica Cookie
+              </Link>
+              <span>•</span>
+              <button
+                type="button"
+                onClick={() => window.__axisOpenCookiePreferences && window.__axisOpenCookiePreferences()}
+                className="hover:text-gray-900 dark:hover:text-white transition-colors underline cursor-pointer"
+              >
+                Setări Cookie
+              </button>
+              <span>•</span>
+              <a
+                href="https://www.dataprotection.ro"
+                target="_blank"
+                rel="noreferrer"
+                className="hover:text-primary transition-colors inline-flex items-center gap-1"
+                title="Autoritatea Națională de Supraveghere a Prelucrării Datelor cu Caracter Personal"
+              >
+                <span>ANSPDCP</span>
+                <ExternalLink size={10} />
+              </a>
+            </div>
+          </footer>
         </div>
       </main>
 
       {/* Axis In-App AI Copilot */}
       <AxisAiCopilot />
+
+      {/* GDPR Cookie Consent Manager */}
+      <CookieBanner />
+
+      {/* Super Admin Team Invitation Modal */}
+      <InviteMemberModal
+        isOpen={isInviteModalOpen}
+        onClose={() => setIsInviteModalOpen(false)}
+        currentUser={user}
+      />
     </div>
   );
 };
+
 
 export default Layout;

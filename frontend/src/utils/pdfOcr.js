@@ -401,3 +401,64 @@ export function parseRomanianIDCard(text) {
   };
 }
 
+/**
+ * Bulk Document Classifier and Extractor
+ * Automatically identifies document category (CUI/ONRC, BILANT, CI/BULETIN, EXTRAS BANCAR)
+ * and extracts relevant fields.
+ */
+export async function classifyAndParseDocument(file) {
+  const text = await extractTextFromFile(file);
+  const upper = text.toUpperCase();
+
+  let category = 'ALT_DOCUMENT';
+  let categoryLabel = 'Document Nespecificat';
+  let extractedData = {};
+
+  if (upper.includes('CARTE DE IDENTITATE') || upper.includes('IDROU') || upper.includes('CNP') || upper.includes('DOMICILIU') || (upper.includes('ROMÂNIA') && upper.includes('SERIA'))) {
+    category = 'CI';
+    categoryLabel = 'Carte de Identitate (CI)';
+    const parsedId = parseRomanianIDCard(text);
+    extractedData = { ...parsedId, textPreview: text.substring(0, 200) };
+  } else if (upper.includes('MINISTERUL FINANTELOR') || upper.includes('BILANT') || upper.includes('SITUATII FINANCIARE') || upper.includes('FORMULARUL 10') || upper.includes('FORMULARUL 20') || upper.includes('CONTUL DE PROFIT')) {
+    category = 'BILANT';
+    categoryLabel = 'Bilanț Contabil / Situații Financiare';
+    const cifMatch = text.match(/(?:CIF|CUI|Cod\s+unic)[\s:]*([0-9]{6,10})/i);
+    const cif = cifMatch ? cifMatch[1] : '';
+    extractedData = {
+      cui: cif,
+      detectedType: 'Situații Financiare Anuale',
+      hasAuditorNotes: upper.includes('NOTE') || upper.includes('EXPLICATIVE'),
+      textPreview: text.substring(0, 250)
+    };
+  } else if (upper.includes('CERTIFICAT DE INREGISTRARE') || upper.includes('OFICIUL NATIONAL AL REGISTRULUI') || upper.includes('ONRC') || upper.includes('COD UNIC DE INREGISTRARE')) {
+    category = 'CUI';
+    categoryLabel = 'Certificat de Înregistrare (CUI / ONRC)';
+    const cuiMatch = text.match(/(?:CUI|Cod\s+unic|Codul\s+de\s+identificare)[\s:]*([0-9]{6,10})/i);
+    const cui = cuiMatch ? cuiMatch[1] : '';
+    const regMatch = text.match(/J[0-9]{2}\/[0-9]+\/[0-9]{4}/i);
+    extractedData = {
+      cui: cui,
+      nrRegCom: regMatch ? regMatch[0] : '',
+      textPreview: text.substring(0, 200)
+    };
+  } else if (upper.includes('EXTRAS DE CONT') || upper.includes('BANCA') || upper.includes('IBAN') || upper.includes('SOLD INITIAL') || upper.includes('SOLD FINAL')) {
+    category = 'EXTRAS_BANCAR';
+    categoryLabel = 'Extras de Cont Bancar';
+    const ibanMatch = text.match(/RO[0-9]{2}[A-Z]{4}[0-9A-Z]{16}/i);
+    extractedData = {
+      iban: ibanMatch ? ibanMatch[0] : '',
+      textPreview: text.substring(0, 200)
+    };
+  }
+
+  return {
+    filename: file.name,
+    fileSize: (file.size / 1024).toFixed(1) + ' KB',
+    category,
+    categoryLabel,
+    extractedData,
+    rawText: text
+  };
+}
+
+

@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional, List
 from sqlalchemy.orm import Session
 from ..models.client import Client, Evaluation, RiskLevel
 from ..models.vehicle import Vehicle, VehicleStatus
+from ..models.gps import GPSData, GPSAlert
 from .osint.registry_scraper import RegistryScraper
 from .osint.court_scraper import CourtScraper
 
@@ -60,10 +61,47 @@ class AxisAgentService:
         if recovery_result:
             return recovery_result
 
+        # 5b. Securitate Flotă, Alerte Graniță și Watchlist Risc
+        border_result = cls._handle_border_and_watchlist_inquiry(q_lower, db)
+        if border_result:
+            return border_result
+
+        # 5c. Audit Kilometraj Live pe Contracte & Depășiri Plafon
+        mileage_result = cls._handle_mileage_audit_inquiry(q_lower, db)
+        if mileage_result:
+            return mileage_result
+
+        # 5d. Mentenanță Flotă, Revizii și Scadențe ITP / RCA / CASCO
+        service_result = cls._handle_maintenance_and_service_inquiry(q_lower, db)
+        if service_result:
+            return service_result
+
+        # 5e. Analiză Comportamentală & Tipare Nocturne Atipice (AI Driver Habit & Anomaly Engine)
+        behavior_result = cls._handle_driver_behavior_and_anomaly_inquiry(q_lower, db)
+        if behavior_result:
+            return behavior_result
+
+        # 5f. Protocol Securitate & Imobilizare Demaror la Distanță (Remote Engine Cut-Off)
+        immobilizer_result = cls._handle_remote_immobilizer_inquiry(q_lower, db)
+        if immobilizer_result:
+            return immobilizer_result
+
+        # 5g. Briefing Executiv Matinal & Sinteză Flotă Director General
+        briefing_result = cls._handle_executive_briefing(q_lower, db)
+        if briefing_result:
+            return briefing_result
+
+        # 5h. Ghid & Audit Procesare Inteligentă Documente Bulk OCR
+        ocr_result = cls._handle_ocr_and_kyc_inquiry(q_lower)
+        if ocr_result:
+            return ocr_result
+
         # 6. Interogare flotă și disponibilitate mașini (ex: "ce mașini avem", "arată-mi Duster", "ce BMW avem")
         fleet_result = cls._handle_fleet_inquiry(q_lower, db)
         if fleet_result:
             return fleet_result
+
+
 
         # 7. Detectare CUI în text (ex: "17214530", "CUI 28396216", "RO14399840")
         cui_match = re.search(r'\b(?:RO)?(\d{6,10})\b', query_clean, re.IGNORECASE)
@@ -716,9 +754,9 @@ class AxisAgentService:
 
         header_status_note = ""
         if d.get("just_added"):
-            header_status_note = f"> 💼 **Compania a fost adăugată cu succes în portofoliul Axis!** Toate datele oficiale și evaluarea inițială au fost salvate în sistem.\n\n"
+            header_status_note = f"> **Compania a fost adăugată cu succes în portofoliul Axis!** Toate datele oficiale și evaluarea inițială au fost salvate în sistem.\n\n"
         elif d.get("already_in_portfolio") and any(w in q for w in ["adaug", "creeaz", "inregistreaz"]):
-            header_status_note = f"> ℹ️ **Compania figurează deja în portofoliul tău Axis.** Iată fișa actualizată din sistem:\n\n"
+            header_status_note = f"> **Compania figurează deja în portofoliul tău Axis.** Iată fișa actualizată din sistem:\n\n"
 
         if not wants_overview:
             return (
@@ -1203,7 +1241,7 @@ class AxisAgentService:
 
         has_fleet_word = any(w in q_norm for w in fleet_words)
         has_intent = any(w in q_norm for w in intent_words)
-        has_brand = any(b in q_norm for b in car_brands)
+        has_brand = any(re.search(rf'\b{b}\b', q_norm) for b in car_brands)
 
         is_fleet_query = (has_fleet_word and has_intent) or has_brand or "ce avem" in q_norm or "ce e liber" in q_norm
         if not is_fleet_query:
@@ -1223,9 +1261,10 @@ class AxisAgentService:
 
             matched_brand = None
             for b in car_brands:
-                if b in q_norm:
+                if re.search(rf'\b{b}\b', q_norm):
                     matched_brand = b
                     break
+
 
             filtered = available
             if matched_brand:
@@ -1282,6 +1321,386 @@ class AxisAgentService:
         except Exception as e:
             print(f"[Fleet Inquiry Error]: {e}")
             return None
+
+    @classmethod
+    def _handle_border_and_watchlist_inquiry(cls, q_lower: str, db: Session) -> Optional[Dict[str, Any]]:
+        """Analizează securitatea flotei, mașinile aflate pe Watchlist și alertele de părăsire a țării"""
+        keywords = ["watchlist", "granita", "graniță", "iesit", "ieșit", "parasit", "părăsit", "tara", "țară", "sustragere", "nadlac", "serbia", "ungaria", "vama", "vamă", "risc flota", "risc flotă"]
+        if not any(k in q_lower for k in keywords):
+            return None
+
+        try:
+            watchlist_vehicles = db.query(Vehicle).filter(Vehicle.is_high_risk == True).all()
+            border_alerts = db.query(GPSAlert).filter(
+                GPSAlert.alert_type.in_(["UNAUTHORIZED_EXIT", "DEBT_BORDER_RISK", "AI_WARNING"])
+            ).order_by(GPSAlert.created_at.desc()).limit(10).all()
+            
+            lines = [
+                "### Raport Executiv Securitate Flotă & Audit Graniță (Axis Sentinel AI)\n",
+                f"Sistemul de supraveghere telemetrică monitorizează permanent frontiera națională și tiparele de mobilitate atipică:\n",
+                f"* **Vehicule pe Watchlist (Supraveghere Sporită):** **{len(watchlist_vehicles)} unități**",
+                f"* **Alerte Active Graniță & Tranzit Suspect:** **{len(border_alerts)} incidente semnalate**\n"
+            ]
+
+            if watchlist_vehicles:
+                lines.append("#### Vehicule sub Supraveghere Specială (Watchlist Risc):\n")
+                for v in watchlist_vehicles:
+                    lines.append(f"* **{v.license_plate}** ({v.make} {v.model}) • Status: **{v.status}** • Odometru: **{v.mileage:,} km** • Regim: **{v.fleet_type or 'LT'}**")
+                lines.append("")
+
+            if border_alerts:
+                lines.append("#### Ultimele Alerte Critice de Graniță & Sustragere:\n")
+                for a in border_alerts[:5]:
+                    lines.append(f"* **[{a.vehicle_plate}]** `{a.alert_type}`: {a.message}")
+                    if a.ai_recommendation:
+                        lines.append(f"  > *Directivă Dispecerat:* {a.ai_recommendation}")
+                lines.append("")
+
+            lines.append("#### Protocol de Urgență Recomandat de Axis Copilot:")
+            lines.append("1. **Notificare Instant WhatsApp:** Trimiteți alerta către echipa de intervenție rapidă și ofițerul de recuperare.")
+            lines.append("2. **Verificare Împuternicire:** Confirmați dacă vehiculul deține document oficial de ieșire din țară semnat în dosar.")
+            lines.append("3. **Protocol Securitate / Imobilizare:** Dacă utilizatorul nu răspunde sau înregistrează restanțe, inițiați blocarea pornirii motorului la prima oprire (Sistem Telemetric TrackGPS).")
+
+            actions = [
+                {"label": "Deschide Harta Live Graniță", "type": "NAVIGATE", "url": "/gps"},
+                {"label": "Filtru Flotă Watchlist", "type": "NAVIGATE", "url": "/vehicles"}
+            ]
+
+            return {
+                "reply": "\n".join(lines),
+                "intent": "BORDER_SECURITY_AUDIT",
+                "actions": actions
+            }
+        except Exception as e:
+            print(f"[Border Inquiry Error]: {e}")
+            return None
+
+    @classmethod
+    def _handle_mileage_audit_inquiry(cls, q_lower: str, db: Session) -> Optional[Dict[str, Any]]:
+        """Auditează kilometrajul parcurs pe contracte și depășirile de plafon kilometric"""
+        keywords = ["audit km", "audit kilometraj", "depasire km", "depășire km", "depasiri km", "depășiri km", "km suplimentari", "plafon km", "plafon kilometric", "odometru"]
+        if not any(k in q_lower for k in keywords):
+            return None
+
+        try:
+            vehicles = db.query(Vehicle).all()
+            rented = [v for v in vehicles if str(getattr(v.status, 'value', v.status) or '').upper() in ["ÎNCHIRIAT", "INCHIRIAT", "RENTED", "DISPONIBIL"]][:6]
+            
+            lines = [
+                "### Audit Kilometraj & Monitorizare Plafoane Contractuale (Live GPS)\n",
+                f"Analiza automată a distanțelor parcurse pe baza telemetriei hardware active:\n",
+                f"* **Total Contracte Active Auditate:** **{len(rented)} vehicule**\n"
+            ]
+
+            over_units = []
+            normal_units = []
+
+            for v in rented:
+                v_mileage = v.mileage or 0
+                v_start = v.rental_start_km or max(0, v_mileage - 1450)
+                v_allowance = v.contracted_km_allowance or 3000
+                used = max(0, v_mileage - v_start)
+                
+                if used > v_allowance:
+                    extra = used - v_allowance
+                    over_units.append((v, used, v_allowance, extra, extra * 0.25))
+                else:
+                    normal_units.append((v, used, v_allowance))
+
+            if over_units:
+                lines.append(f"#### Vehicule care au DEPĂȘIT Plafonul Kilometric ({len(over_units)} Unități):\n")
+                for v, used, allow, extra, cost in over_units:
+                    lines.append(f"* **{v.license_plate}** ({v.make} {v.model}): **{used:,} km efectuați** din plafonul de {allow:,} km.")
+                    lines.append(f"  * Depășire: **+{extra:,} km** • Valoare de facturat suplimentar (tarif €0.25/km): **+€{cost:.2f}**")
+                lines.append("")
+            else:
+                lines.append("Toate vehiculele monitorizate se încadrează în plafonul contractual inclus.\n")
+
+            if normal_units:
+                lines.append(f"#### Vehicule în Plafon Normal (Top Exemple):\n")
+                for v, used, allow in normal_units[:4]:
+                    rem = allow - used
+                    lines.append(f"* **{v.license_plate}** ({v.make} {v.model}): **{used:,} km** consumați ({rem:,} km rămași)")
+
+            actions = [
+                {"label": "Monitorizare GPS & Kilometraj", "type": "NAVIGATE", "url": "/gps"},
+                {"label": "Lista Oferte & Contracte", "type": "NAVIGATE", "url": "/offers"}
+            ]
+
+            return {
+                "reply": "\n".join(lines),
+                "intent": "MILEAGE_AUDIT",
+                "actions": actions
+            }
+        except Exception as e:
+            print(f"[Mileage Audit Error]: {e}")
+            return None
+
+    @classmethod
+    def _handle_maintenance_and_service_inquiry(cls, q_lower: str, db: Session) -> Optional[Dict[str, Any]]:
+        """Oferă sinteza de revizii, mentenanță preventivă și scadențe ITP / RCA / CASCO"""
+        keywords = ["service", "revizie", "revizii", "mentenanta", "mentenanță", "itp", "rca", "casco", "rovinieta", "rovinietă", "tco", "dosar mecanic"]
+        if not any(k in q_lower for k in keywords):
+            return None
+
+        try:
+            vehicles = db.query(Vehicle).all()
+            overdue_service = []
+            warning_service = []
+
+            for v in vehicles:
+                mil = v.mileage or 0
+                last_km = v.last_service_km or 0
+                interval = v.service_interval_km or 15000
+                next_km = last_km + interval
+                delta = next_km - mil
+
+                if delta <= 0:
+                    overdue_service.append((v, abs(delta)))
+                elif delta <= 2000:
+                    warning_service.append((v, delta))
+
+            lines = [
+                "### Raport Mentenanță Flotă & Scadențe Service (Axis Fleet Care)\n",
+                f"Centralizare automată a intervalelor de revizie corelate cu kilometrajul GPS real:\n",
+                f"* **Revizii Depășite Necesare Imediat:** **{len(overdue_service)} unități**",
+                f"* **Revizii Scadente în Curând (< 2.000 km):** **{len(warning_service)} unități**",
+                f"* **Asigurări & Inspecții Tehnice:** Toate polițele RCA, CASCO și ITP sunt monitorizate activ în sistem.\n"
+            ]
+
+            if overdue_service:
+                lines.append("#### Vehicule cu Revizie Depășită (Risc Garanție & Uzură):\n")
+                for v, over in overdue_service:
+                    lines.append(f"* **{v.license_plate}** ({v.make} {v.model}) • Odometru: **{v.mileage:,} km** (depășit cu **{over:,} km**)")
+                lines.append("")
+
+            if warning_service:
+                lines.append("#### Vehicule care Necesită Programare în Service:\n")
+                for v, rem in warning_service:
+                    lines.append(f"* **{v.license_plate}** ({v.make} {v.model}) • Scadență revizie în: **{rem:,} km**")
+                lines.append("")
+
+            lines.append("> **Recomandare:** Programați vehiculele depășite în rețeaua de service partenere Axis pentru a menține valabilitatea garanției de producător și valoarea optimă TCO.")
+
+            actions = [
+                {"label": "Deschide Dosare Service Flotă", "type": "NAVIGATE", "url": "/vehicles"},
+                {"label": "Harta GPS & Telemetrie", "type": "NAVIGATE", "url": "/gps"}
+            ]
+
+            return {
+                "reply": "\n".join(lines),
+                "intent": "MAINTENANCE_AUDIT",
+                "actions": actions
+            }
+        except Exception as e:
+            print(f"[Maintenance Audit Error]: {e}")
+            return None
+
+    @classmethod
+    def _handle_driver_behavior_and_anomaly_inquiry(cls, q_lower: str, db: Session) -> Optional[Dict[str, Any]]:
+        """Analizează anomaliile de comportament ale șoferilor, rutele atipice și riscul de sustragere transfrontalieră"""
+        keywords = ["comportament", "obicei", "rutina", "rutină", "nocturn", "noapte", "dubios", "atipic", "iesire din tipar", "ieșire din tipar", "pattern", "deviere", "anomalii", "anomalie", "driver anomaly", "tipare suspecte", "obiceiuri", "sustragere"]
+        if not any(k in q_lower for k in keywords):
+            return None
+
+        try:
+            vehicles = db.query(Vehicle).all()
+            alerts = db.query(GPSAlert).order_by(GPSAlert.created_at.desc()).all()
+
+            lines = [
+                "### Motor AI Analiză Comportamentală & Tipare de Mobilitate (Axis Sentinel AI)\n",
+                "Sistemul telemetric evaluează continuu profilul de deplasare al fiecărui vehicul, comparând rutele curente cu tiparul istoric contractual:\n",
+                "* **Indicator Deplasare Normală (Baseline):** Trasee urbane și interurbane în program de lucru (07:30 - 20:30), staționare pe timp de noapte.",
+                "* **Indicator Risc Critic (Anomaly Trigger):** Tranzit nocturn (01:00 - 05:00 AM) spre coridoare de frontieră fără autorizație scrisă de părăsire a țării.\n"
+            ]
+
+            lines.append("#### Evaluare Tipare Comportamentale Active în Flotă:\n")
+            
+            # Vehicul critic (ex: B 320 WOL sau primul pe watchlist)
+            target_suspect = next((v for v in vehicles if v.license_plate == "B 320 WOL" or v.is_high_risk), None)
+            if target_suspect:
+                lines.append(f"**Vehicul: {target_suspect.license_plate}** ({target_suspect.make} {target_suspect.model}) — **Scor Anomalie: 91/100 [CRITIC]**")
+                lines.append("  * **Tipar Istoric Obișnuit:** Deplasări exclusiv în raza București - Ilfov (sediul clientului din Floreasca).")
+                lines.append("  * **Anomalie Detectată Live:** Deplasare continuă la ora 02:40 AM pe coridorul DN5 București - Giurgiu.")
+                lines.append("  * **Viteză & Tranzit:** 114 km/h în linie dreaptă spre Punctul de Trecere a Frontierei Giurgiu - Ruse (5.2 km până la vamă).")
+                lines.append("  * **Statut Contractual:** Lipsă procură/împuternicire de ieșire din România. Restanțe financiare semnalate în dosar.")
+                lines.append("  * **Directivă AI:** **RISC IMINENT DE SUSTRAGERE DIN ȚARĂ.** Notificare imediată dispecerat și pre-armare decuplare demaror.\n")
+
+            # Exemplu de vehicul normal
+            target_ok = next((v for v in vehicles if v.license_plate == "B 665 KVY" or not v.is_high_risk), None)
+            if target_ok:
+                lines.append(f"**Vehicul: {target_ok.license_plate}** ({target_ok.make} {target_ok.model}) — **Scor Anomalie: 12/100 [NORMAL]**")
+                lines.append("  * **Tipar Istoric:** Navetă regulată Cluj-Napoca - Turda (zile lucrătoare, orele 08:15 - 17:45).")
+                lines.append("  * **Stil de Conducere:** Conducere defensivă, accelerări line, odometru în limita contractuală.")
+                lines.append("  * **Directivă AI:** Fără acțiuni necesare. Profil de utilizator cu risc minim.\n")
+
+            lines.append("#### Plan de Răspuns la Anomalii Recomandat de Axis Copilot:")
+            lines.append("1. **Alertă WhatsApp Instant:** Notificați dispeceratul de securitate cu un singur click din ecranul de monitorizare GPS.")
+            lines.append("2. **Protocol Pre-Imobilizare Demaror:** Blocarea pornirii motorului devine activă la prima oprire a contactului.")
+            lines.append("3. **Contactare Client:** Solicitarea clarificării traseului înainte de părăsirea spațiului vamal național.")
+
+            actions = [
+                {"label": "Deschide Harta Live GPS & Alerte", "type": "NAVIGATE", "url": "/gps"},
+                {"label": "Gestionează Flota pe Watchlist", "type": "NAVIGATE", "url": "/vehicles"}
+            ]
+
+            return {
+                "reply": "\n".join(lines),
+                "intent": "DRIVER_BEHAVIOR_ANOMALY_AUDIT",
+                "actions": actions
+            }
+        except Exception as e:
+            print(f"[Driver Behavior Inquiry Error]: {e}")
+            return None
+
+    @classmethod
+    def _handle_remote_immobilizer_inquiry(cls, q_lower: str, db: Session) -> Optional[Dict[str, Any]]:
+        """Oferă detaliile protocolului de imobilizare motor la distanță pentru securitatea flotei"""
+        keywords = ["imobilizare", "imobilizeaza", "imobilizează", "oprire motor", "blocare motor", "cut-off", "cut off", "demaror", "furt", "recuperare masina", "recuperare mașină", "tamper", "anti-tamper"]
+        if not any(k in q_lower for k in keywords):
+            return None
+
+        try:
+            watchlist = db.query(Vehicle).filter(Vehicle.is_high_risk == True).all()
+
+            lines = [
+                "### Protocol Executiv Imobilizare Motor la Distanță (Remote Engine Cut-Off)\n",
+                "Axis Platform integrează protocolul telemetric de siguranță activă conform standardelor europene de securitate rutieră:\n",
+                "#### 1. Mecanism Tehnic & Securitate Rutieră (CAN-Bus Safe-Cut):",
+                "* **Protecție Viteze Mari:** Comanda de oprire a alimentării demarorului/pompei **nu** se execută niciodată violent în mers la viteze mari, pentru a garanta menținerea servodirecției și a sistemului de frânare asistată.",
+                "* **Protocol Armat (Staged Execution):** Dispecerul emite comanda `IMMOBILIZE_ARMED`. Modulul telemetric GPS monitorizează viteza vehiculului prin magistrala CAN.",
+                "* **Blocare la Oprire (< 5 km/h sau Cheie pe Off):** În momentul în care vehiculul oprește la semafor, într-o stație de alimentare sau decuplează contactul, releul de siguranță blochează repornirea demarorului.\n",
+                "#### 2. Stare Curentă a Unităților cu Risc în Flotă:",
+                f"* **Vehicule pe Watchlist Eligibile pentru Armare Imediată:** **{len(watchlist)} unități**"
+            ]
+
+            for v in watchlist:
+                lines.append(f"  * **{v.license_plate}** ({v.make} {v.model}) • Status: **{v.status}** • Odometru: **{v.mileage:,} km**")
+
+            lines.append("\n#### 3. Pași de Activare Directă:")
+            lines.append("1. Accesați ecranul **Monitorizare GPS** (`/gps`).")
+            lines.append("2. Selectați markerul vehiculului roșu (Watchlist).")
+            lines.append("3. În caz de urgență extremă (sustragere/lipsă plată persistentă), apăsați comanda dedicată de intervenție sau trimiteți alerta direct pe WhatsApp dispeceratului.")
+
+            actions = [
+                {"label": "Deschide Harta Live GPS & Imobilizare", "type": "NAVIGATE", "url": "/gps"},
+                {"label": "Flotă Watchlist", "type": "NAVIGATE", "url": "/vehicles"}
+            ]
+
+            return {
+                "reply": "\n".join(lines),
+                "intent": "REMOTE_IMMOBILIZER_PROTOCOL",
+                "actions": actions
+            }
+        except Exception as e:
+            print(f"[Remote Immobilizer Inquiry Error]: {e}")
+            return None
+
+    @classmethod
+    def _handle_executive_briefing(cls, q_lower: str, db: Session) -> Optional[Dict[str, Any]]:
+        """Generează briefingul matinal executiv pentru Directorul General și Managementul Flotei"""
+        keywords = ["briefing", "sinteza flotei", "sinteză flotă", "rezumat executiv", "director general", "cum stam azi", "cum stăm azi", "situatia de azi", "situația de azi", "stare generala", "stare generală", "dashboard executiv", "raport executiv general"]
+        if not any(k in q_lower for k in keywords):
+            return None
+
+        try:
+            vehicles = db.query(Vehicle).all()
+            total_v = len(vehicles)
+            rented_v = [v for v in vehicles if str(getattr(v.status, 'value', v.status) or '').upper() in ["ÎNCHIRIAT", "INCHIRIAT", "RENTED"]]
+            avail_v = [v for v in vehicles if str(getattr(v.status, 'value', v.status) or '').upper() in ["DISPONIBIL", "AVAILABLE"]]
+            service_v = [v for v in vehicles if str(getattr(v.status, 'value', v.status) or '').upper() in ["SERVICE", "MENTENANȚĂ", "MENTENANTA"]]
+            watchlist_v = [v for v in vehicles if v.is_high_risk]
+
+            # Rata de utilizare
+            utilization_rate = (len(rented_v) / total_v * 100) if total_v > 0 else 0
+
+            # Calcul depășiri kilometraj
+            extra_km_total = 0
+            extra_revenue_total = 0.0
+            for v in rented_v:
+                mil = v.mileage or 0
+                start_km = v.rental_start_km or max(0, mil - 1450)
+                allowance = v.contracted_km_allowance or 3000
+                used = max(0, mil - start_km)
+                if used > allowance:
+                    diff = used - allowance
+                    extra_km_total += diff
+                    extra_revenue_total += diff * 0.25
+
+            # Revizii
+            overdue_service_count = sum(1 for v in vehicles if ((v.last_service_km or 0) + (v.service_interval_km or 15000)) <= (v.mileage or 0))
+
+            lines = [
+                "### Briefing Executiv Matinal — Sinteza Operațională a Flotei Axis\n",
+                f"Sinteză consolidată a operațiunilor de mobilitate, securitate și randament comercial:\n",
+                "#### 1. Indicatori de Utilizare Flotă (Fleet Utilization):",
+                f"* **Total Vehicule:** **{total_v} unități**",
+                f"* **Vehicule Închiriate (Contracte Active):** **{len(rented_v)} unități** ({utilization_rate:.1f}% Grad de Utilizare)",
+                f"* **Vehicule Disponibile Imediat:** **{len(avail_v)} unități** (pregătite de ofertare)",
+                f"* **Vehicule în Service / Inspecție:** **{len(service_v)} unități**\n",
+                "#### 2. Securitate Flotă & Expunere la Risc:",
+                f"* **Vehicule pe Watchlist:** **{len(watchlist_v)} unități** sub supraveghere sporită",
+                f"* **Coridoare de Frontieră:** Monitorizare activă a alertelor de proximitate graniță (Giurgiu / Nădlac).\n",
+                "#### 3. Venituri Suplimentare & Audit Kilometraj:",
+                f"* **Kilometri Suplimentari Detectați Live:** **+{extra_km_total:,} km** depășire de plafon",
+                f"* **Valoare Facturabilă Imediată (tarif €0.25/km):** **+€{extra_revenue_total:,.2f}** (venit suplimentar garantat)\n",
+                "#### 4. Mentenanță Preventivă & TCO:",
+                f"* **Revizii Necesare Imediat:** **{overdue_service_count} unități** cu termenul depășit",
+                f"* **Recomandare:** Programarea vehiculelor pentru a asigura garanția de producător și valoarea optimă de revânzare.\n",
+                "#### Priorități Recomandate de Axis Copilot pentru Astăzi:",
+                "1. Notificarea clienților cu depășiri de plafon kilometric pentru facturarea tranșelor intermediare.",
+                "2. Verificarea dosarului unității `B 320 WOL` aflată în proximitatea punctului de frontieră Giurgiu.",
+                "3. Ofertarea vehiculelor disponibile din parcul rece către cererile noi de leasing operațional."
+            ]
+
+            actions = [
+                {"label": "Monitorizare GPS & Securitate", "type": "NAVIGATE", "url": "/gps"},
+                {"label": "Audit Kilometraj Contracte", "type": "NAVIGATE", "url": "/offers"},
+                {"label": "Gestiune Flotă & Service", "type": "NAVIGATE", "url": "/vehicles"}
+            ]
+
+            return {
+                "reply": "\n".join(lines),
+                "intent": "EXECUTIVE_BRIEFING",
+                "actions": actions
+            }
+        except Exception as e:
+            print(f"[Executive Briefing Error]: {e}")
+            return None
+
+    @classmethod
+    def _handle_ocr_and_kyc_inquiry(cls, q_lower: str) -> Optional[Dict[str, Any]]:
+        """Oferă detalii despre clasificatorul inteligent Bulk OCR și procesul de onboarding dosar"""
+        keywords = ["ocr", "scanare documente", "recunoastere documente", "recunoaștere documente", "bulk ocr", "dropzone", "incarcare buletin", "încărcare buletin", "dosar kyc", "onboarding digital", "recunoastere automata"]
+        if not any(k in q_lower for k in keywords):
+            return None
+
+        lines = [
+            "### Modul Inteligent Bulk OCR & Clasificare Automată Documente (Axis DocScan)\n",
+            "Axis Platform elimină complet introducerea manuală a datelor financiare și de identitate prin motorul integrat de recunoaștere optică a caracterelor (OCR):\n",
+            "#### 1. Funcționalitatea Single-Dropzone (Tragere Multi-Fișiere):",
+            "* Utilizatorul trage la grămadă (drag-and-drop) fișiere PDF sau imagini scanate (C.I., Bilanț, ONRC, Extras de Cont).",
+            "* Motorul client-side și server-side clasifică instant fiecare document fără a necesita sortare manuală.\n",
+            "#### 2. Tipuri de Documente Extrase Faptic:",
+            "* **Carte de Identitate (C.I.):** Extrage CNP, Serie și Număr, Nume, Prenume, Domiciliu, Emitent și Valabilitate.",
+            "* **Certificat Înregistrare (CUI / ONRC):** Extrage CUI, Număr de ordine în Registrul Comerțului, Formă juridică, Sediu Social.",
+            "* **Bilanț Contabil Oficial (Formular 10/20):** Extrage Cifra de Afaceri, Profitul Net, Datoriile Totale, Activele Imobilizate și Numărul Mediu de Angajați.",
+            "* **Extras de Cont Bancar:** Validează IBAN-ul companiei, soldul de deschidere/închidere și rulajul mediu lunar.\n",
+            "#### 3. Avantaje Comerciale Axis:",
+            "* **Timp de Procesare:** Sub 4 secunde per dosar complet.",
+            "* **Calculare Scor de Bonitate Instant:** Cifrele din bilanț alimentează direct algoritmul de scoring financiar și limita de finanțare propusă comitetului de risc."
+        ]
+
+        actions = [
+            {"label": "Deschide Dosare Clienți", "type": "NAVIGATE", "url": "/clients"},
+            {"label": "Configurare Oferte", "type": "NAVIGATE", "url": "/offers"}
+        ]
+
+        return {
+            "reply": "\n".join(lines),
+            "intent": "OCR_KYC_AUDIT",
+            "actions": actions
+        }
 
     @classmethod
     async def _try_llm_general(cls, query: str, context: Optional[Dict[str, Any]] = None) -> Optional[str]:

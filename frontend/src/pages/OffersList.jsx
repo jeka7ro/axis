@@ -625,7 +625,7 @@ const OffersList = () => {
                     Status Plic Namirial: {selectedOfferForEsign.contract?.status || 'Generat'}
                   </span>
                   {selectedOfferForEsign.contract?.esign_envelope_id && (
-                    <span className="font-mono text-[11px] text-gray-500 bg-white dark:bg-gray-800 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700">
+                    <span className=" text-[11px] text-gray-500 bg-white dark:bg-gray-800 px-2 py-0.5 rounded border border-gray-200 dark:border-gray-700">
                       {selectedOfferForEsign.contract.esign_envelope_id}
                     </span>
                   )}
@@ -710,7 +710,7 @@ const OffersList = () => {
                       <div key={eIdx} className="p-2.5 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700/80 rounded-lg text-xs space-y-1">
                         <div className="flex items-center justify-between">
                           <span className="font-semibold text-gray-900 dark:text-white">{ev.event}</span>
-                          <span className="font-mono text-[10px] text-gray-400">{ev.timestamp}</span>
+                          <span className=" text-[10px] text-gray-400">{ev.timestamp}</span>
                         </div>
                         {ev.signer && (
                           <div className="text-gray-600 dark:text-gray-300">
@@ -718,7 +718,7 @@ const OffersList = () => {
                           </div>
                         )}
                         {ev.certificate_serial && (
-                          <div className="font-mono text-[10px] text-gray-400">
+                          <div className=" text-[10px] text-gray-400">
                             Serial: {ev.certificate_serial} • IP: {ev.ip_address}
                           </div>
                         )}

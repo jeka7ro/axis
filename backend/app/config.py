@@ -17,4 +17,11 @@ class Settings:
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_SERVICE_KEY: str = os.getenv("SUPABASE_SERVICE_KEY", "")
 
+    # Brevo (Sendinblue) Transactional API v3 configuration
+    BREVO_API_KEY: str = os.getenv("BREVO_API_KEY", "")
+    BREVO_API_URL: str = os.getenv("BREVO_API_URL", "https://api.brevo.com/v3/smtp/email")
+    BREVO_SENDER_NAME: str = os.getenv("BREVO_SENDER_NAME", "Axis Platform")
+    BREVO_SENDER_EMAIL: str = os.getenv("BREVO_SENDER_EMAIL", "jeka7ro@gmail.com")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:1987")
+
 settings = Settings()

@@ -5,7 +5,7 @@ import { jsPDF } from 'jspdf';
 import { 
   X, Maximize2, Minimize2, ZoomIn, ZoomOut, Target, Shield, FileDown, 
   Search, Building2, User, ExternalLink, GitBranch, Plus, Loader2, RotateCcw,
-  Users
+  Users, CheckCircle2, Info, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { fetchCompanyFullIntel, fetchPersonFullIntel } from '../services/api';
 
@@ -56,21 +56,31 @@ function formatCleanRoles(rawRoles, percent) {
   return cleaned.join(' • ') || rawRoles;
 }
 
+export function formatMoneyShort(amount) {
+  if (amount === undefined || amount === null || isNaN(amount)) return null;
+  const num = Number(amount);
+  const abs = Math.abs(num);
+  if (abs >= 1000000000) return (num / 1000000000).toFixed(1) + ' mld';
+  if (abs >= 1000000) return (num / 1000000).toFixed(1) + ' mil';
+  if (abs >= 1000) return (num / 1000).toFixed(0) + 'k';
+  return String(num);
+}
+
 const NODE_DIMENSIONS = {
-  company: { w: 176, h: 78 }, // Vedetă VIP card
-  related_company: { w: 104, h: 50 },
-  person: { w: 104, h: 50 },
-  person_historical: { w: 104, h: 50 },
-  address: { w: 110, h: 42 }, // Compact & discrete sediu
+  company: { w: 206, h: 92 }, // Vedetă VIP card cu bilanț & angajați & buton extindere
+  related_company: { w: 146, h: 76 }, // Firmă din rețea cu indicatori financiari & buton extindere rețea
+  person: { w: 138, h: 68 }, // Persoană / conducere cu indicatori & buton extindere firme
+  person_historical: { w: 138, h: 68 },
+  address: { w: 114, h: 44 }, // Compact & discrete sediu
   risk: { w: 72, h: 28 }, // Sleek, compact mini-tag for risk
 };
 
 const NODE_COLLISION_RADIUS = {
-  company: 130, // Generous breathing space for the star firm
-  related_company: 80,
-  person: 80,
-  person_historical: 80,
-  address: 62, // Small collision radius so address cluster does not overpower
+  company: 148,
+  related_company: 106,
+  person: 100,
+  person_historical: 100,
+  address: 65,
   risk: 50,
 };
 
@@ -221,6 +231,11 @@ function buildGraph(rawData, clientName, clientCui) {
                               hasLiquidatorAdmins;
 
   // 1. ROOT NODE: VEDETA INVESTIGAȚIEI (Subiectul Principal - ancorat în centrul absolut 0, 0)
+  const rootBal = rawData.balance || {};
+  const rootAng = rootBal.angajati !== undefined && rootBal.angajati !== null
+    ? rootBal.angajati
+    : (rootBal.numar_angajati !== undefined ? rootBal.numar_angajati : (rootBal.salariati !== undefined ? rootBal.salariati : null));
+
   addNode(companyId, clientName || 'Companie Investigată', 'company', {
     cui: clientCui,
     isRoot: true,
@@ -232,6 +247,12 @@ function buildGraph(rawData, clientName, clientCui) {
     isTerminated: isCompanyTerminated,
     telefon: (anaf.telefon && anaf.telefon !== 'Nespecificat') ? anaf.telefon : null,
     an_infiintare: anaf.an_infiintare || (anaf.data_inregistrare ? anaf.data_inregistrare.slice(0, 4) : null),
+    balance: rootBal,
+    angajati: rootAng,
+    cifra_afaceri: rootBal.cifra_afaceri,
+    profit_net: rootBal.profit_net,
+    pierdere_neta: rootBal.pierdere_neta,
+    an_bilant: rootBal.an,
   });
 
   let addrId = null;
@@ -282,6 +303,11 @@ function buildGraph(rawData, clientName, clientCui) {
     const initX = col === 0 ? -460 : -620;
     const initY = (row - (numRows - 1) / 2) * 56;
 
+    const compBal = comp.balance || {};
+    const compAng = comp.angajati !== undefined && comp.angajati !== null
+      ? comp.angajati
+      : (compBal.angajati !== undefined ? compBal.angajati : (compBal.numar_angajati !== undefined ? compBal.numar_angajati : (compBal.salariati !== undefined ? compBal.salariati : null)));
+
     addNode(relId, shortName, 'related_company', {
       cui: comp.cui,
       fullName: name,
@@ -290,6 +316,12 @@ function buildGraph(rawData, clientName, clientCui) {
       room: room,
       relation: 'Sediu Comun',
       fullAddr: comp.adresa || fullAddress,
+      balance: compBal,
+      angajati: compAng,
+      cifra_afaceri: comp.cifra_afaceri || compBal.cifra_afaceri,
+      profit_net: comp.profit_net || compBal.profit_net,
+      pierdere_neta: comp.pierdere_neta || compBal.pierdere_neta,
+      an_bilant: comp.an_bilant || compBal.an,
       x: initX,
       y: initY,
     });
@@ -691,6 +723,11 @@ function buildGraph(rawData, clientName, clientCui) {
       const fInitX = 480 + (fIdx % 2) * 130;
       const fInitY = pInitY + (fIdx - ((relatedFirme.length - 1) / 2)) * 52;
 
+      const firmaBal = firma.balance || {};
+      const firmaAng = firma.angajati !== undefined && firma.angajati !== null
+        ? firma.angajati
+        : (firmaBal.angajati !== undefined ? firmaBal.angajati : (firmaBal.numar_angajati !== undefined ? firmaBal.numar_angajati : (firmaBal.salariati !== undefined ? firmaBal.salariati : null)));
+
       addNode(firmaId, shortName, 'related_company', {
         cui: firma.cui,
         fullName: name,
@@ -698,6 +735,12 @@ function buildGraph(rawData, clientName, clientCui) {
         isHistorical: isHistoricalFirma,
         relation: isHistoricalFirma ? (periodStr ? `Fostă Afiliere (${periodStr})` : 'Fostă Afiliere') : (firma.calitate || 'Firmă Afiliată'),
         fullAddr: firma.sediu || firma.adresa,
+        balance: firmaBal,
+        angajati: firmaAng,
+        cifra_afaceri: firma.cifra_afaceri || firmaBal.cifra_afaceri,
+        profit_net: firma.profit_net || firmaBal.profit_net,
+        pierdere_neta: firma.pierdere_neta || firmaBal.pierdere_neta,
+        an_bilant: firma.an_bilant || firmaBal.an,
         x: fInitX,
         y: fInitY,
       });
@@ -768,7 +811,7 @@ function buildGraph(rawData, clientName, clientCui) {
 
 // ========== CANVAS RENDERING ==========
 
-function drawPinCard(node, ctx, globalScale, isDark = true) {
+function drawPinCard(node, ctx, globalScale, isDark = true, expandingNodeId = null, expandedNodeIds = null) {
   const currentTheme = isDark ? THEMES.dark : THEMES.light;
   const isHistorical = node.isHistorical || node.stare === 'Istoric' || node.stare === 'Mandat Încheiat' || node.stare === 'Inactiv';
   let cfgType = node.type;
@@ -979,7 +1022,36 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
 
     ctx.font = 'bold 6.2px Inter, sans-serif';
     ctx.fillStyle = isRootTerminated ? (isDark ? '#fca5a5' : '#b91c1c') : cfg.subtext;
-    ctx.fillText(subtitle, x + 8, y + 42);
+    ctx.fillText(subtitle, x + 8, y + 40);
+
+    // Financial & Employees Row for Root
+    const rootNet = (node.profit_net || 0) - (node.pierdere_neta || 0);
+    const hasFin = (node.angajati !== null && node.angajati !== undefined) || node.cifra_afaceri || node.profit_net !== undefined || node.pierdere_neta !== undefined;
+
+    if (hasFin) {
+      const isPos = rootNet >= 0;
+      const netColor = isPos ? (isDark ? '#34d399' : '#059669') : (isDark ? '#f87171' : '#dc2626');
+      const netStr = (isPos ? '+' : '') + formatMoneyShort(rootNet) + ' lei';
+      const angStr = (node.angajati !== null && node.angajati !== undefined) ? `${node.angajati} ang.` : null;
+      const caStr = node.cifra_afaceri ? `CA: ${formatMoneyShort(node.cifra_afaceri)}` : null;
+
+      let finPre = '';
+      if (angStr) finPre += `${angStr} • `;
+      if (caStr) finPre += `${caStr} • `;
+      finPre += 'Net: ';
+
+      ctx.font = 'bold 5.8px Inter, sans-serif';
+      ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+      ctx.fillText(finPre, x + 8, y + 54);
+      const finPreW = ctx.measureText(finPre).width;
+
+      ctx.fillStyle = netColor;
+      ctx.fillText(netStr, x + 8 + finPreW, y + 54);
+    } else {
+      ctx.font = '5.4px Inter, sans-serif';
+      ctx.fillStyle = isDark ? '#64748b' : '#94a3b8';
+      ctx.fillText('Bilanț fiscal complet disponibil în dosar', x + 8, y + 54);
+    }
 
     // Status bar at bottom
     const statusY = y + h - 12;
@@ -988,30 +1060,53 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
       ? (isRootTerminated ? '#fca5a5' : '#a7f3d0') 
       : (isRootTerminated ? '#b91c1c' : '#047857');
     const statusText = isRootTerminated 
-      ? `Radiată din data 24.05.2018 (Faliment - Lichidat)` 
+      ? `Radiată (Faliment)` 
       : 'Activ (Registrul Comerțului)';
 
     ctx.beginPath();
-    ctx.arc(x + 11, statusY, 3.2, 0, Math.PI * 2);
+    ctx.arc(x + 11, statusY, 3, 0, Math.PI * 2);
     ctx.fillStyle = statusColor;
     ctx.fill();
 
-    ctx.font = 'bold 6px Inter, sans-serif';
+    ctx.font = 'bold 5.8px Inter, sans-serif';
     ctx.fillStyle = statusTextColor;
     ctx.fillText(statusText, x + 18, statusY);
 
-    ctx.textAlign = 'right';
-    ctx.font = '5.5px Inter, sans-serif';
-    ctx.fillStyle = isRootTerminated ? '#ef4444' : '#64748b';
-    ctx.fillText(isRootTerminated ? 'ENTITATE RADIATĂ' : 'ȚINTĂ PRINCIPALĂ', x + w - 8, statusY);
+    // Direct Action Button on card: [ + Extinde Rețea ]
+    const btnW = 76;
+    const btnH = 17;
+    const btnX = x + w - btnW - 6;
+    const btnY = y + h - btnH - 5;
+    const isThisExpanding = expandingNodeId === node.id;
+    const isThisExpanded = expandedNodeIds && expandedNodeIds.has(node.id);
+
+    ctx.beginPath();
+    drawRoundedRect(ctx, btnX, btnY, btnW, btnH, 4);
+    ctx.fillStyle = isThisExpanding ? '#6366f1' : (isThisExpanded ? '#059669' : '#0284c7');
+    ctx.fill();
+    ctx.strokeStyle = isThisExpanding ? '#a5b4fc' : (isThisExpanded ? '#34d399' : '#38bdf8');
+    ctx.lineWidth = 1;
+    ctx.stroke();
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 6px Inter, sans-serif';
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(
+      isThisExpanding ? 'Extindere...' : (isThisExpanded ? '✓ Rețea Extinsă' : '+ Extinde Rețea'),
+      btnX + btnW / 2,
+      btnY + btnH / 2 + 0.3
+    );
   } else {
     // Normal node (Person, Related Company)
+    const isCompNode = node.type === 'company' || node.type === 'related_company';
+    const isPersNode = node.type === 'person' || node.type === 'person_historical';
+
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
-    ctx.font = 'bold 7px Inter, -apple-system, sans-serif';
+    ctx.font = 'bold 7.6px Inter, -apple-system, sans-serif';
     ctx.fillStyle = cfg.text;
 
-    const maxTextW = w - 28;
+    const maxTextW = w - 32;
     let title = node.fullName || node.label || '';
     if (ctx.measureText(title).width > maxTextW) {
       while (ctx.measureText(title + '…').width > maxTextW && title.length > 2) {
@@ -1019,17 +1114,17 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
       }
       title += '…';
     }
-    ctx.fillText(title, x + 25, y + 18.5);
+    ctx.fillText(title, x + 26, y + 19);
 
     // Subtitle
     let subtitle = '';
     if (node.cui) subtitle = `CUI: ${node.cui}${node.an_infiintare ? ` • An: ${node.an_infiintare}` : ''}`;
     else if (node.roles) subtitle = node.roles;
     else if (node.relation) subtitle = node.relation;
-    else if (node.full) subtitle = node.full.slice(0, 24) + (node.full.length > 24 ? '…' : '');
+    else if (node.full) subtitle = node.full.slice(0, 26) + (node.full.length > 26 ? '…' : '');
 
     if (subtitle) {
-      ctx.font = '5.5px Inter, sans-serif';
+      ctx.font = '5.4px Inter, sans-serif';
       ctx.fillStyle = cfg.subtext;
       let subDisplay = subtitle;
       const maxSubW = w - 12;
@@ -1039,22 +1134,53 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
         }
         subDisplay += '…';
       }
-      ctx.fillText(subDisplay, x + 6, y + 32);
+      ctx.fillText(subDisplay, x + 6, y + 31);
     }
 
-    // Status dot
-    const statusY = y + h - 8;
+    // Financial & Employees row for Companies!
+    if (isCompNode) {
+      const netVal = (node.profit_net || 0) - (node.pierdere_neta || 0);
+      const hasFin = (node.angajati !== null && node.angajati !== undefined) || node.cifra_afaceri || node.profit_net !== undefined || node.pierdere_neta !== undefined;
+
+      if (hasFin) {
+        const isPos = netVal >= 0;
+        const netColor = isPos ? (isDark ? '#34d399' : '#059669') : (isDark ? '#f87171' : '#dc2626');
+        const netStr = (isPos ? '+' : '') + formatMoneyShort(netVal) + ' lei';
+        const angStr = (node.angajati !== null && node.angajati !== undefined) ? `${node.angajati} ang.` : null;
+        const caStr = node.cifra_afaceri ? `CA: ${formatMoneyShort(node.cifra_afaceri)}` : null;
+
+        let finPrefix = '';
+        if (angStr) finPrefix += `${angStr} • `;
+        if (caStr) finPrefix += `${caStr} • `;
+        finPrefix += 'Net: ';
+
+        ctx.font = 'bold 5.4px Inter, sans-serif';
+        ctx.fillStyle = isDark ? '#94a3b8' : '#64748b';
+        ctx.fillText(finPrefix, x + 6, y + 44);
+        const finPreW = ctx.measureText(finPrefix).width;
+
+        ctx.fillStyle = netColor;
+        ctx.fillText(netStr, x + 6 + finPreW, y + 44);
+      } else {
+        ctx.font = '5.2px Inter, sans-serif';
+        ctx.fillStyle = isDark ? '#64748b' : '#94a3b8';
+        ctx.fillText('Bilanț: Click Extinde pt. date', x + 6, y + 44);
+      }
+    }
+
+    // Status dot at bottom
+    const statusY = isCompNode ? y + h - 10 : y + h - 9;
     if (node.stare) {
       const isClusterNode = node.relation === 'Sediu Comun';
       const isHistoricalNode = node.isHistorical || node.stare.includes('Istoric') || node.stare.includes('Mandat') || node.stare.includes('Inactiv') || node.stare.includes('Faliment') || node.stare.includes('Radiere');
       const isActive = !isHistoricalNode && !isClusterNode && (node.stare === 'Activ' || node.stare === 'Activa' || node.stare === 'funcţiune');
 
       ctx.beginPath();
-      ctx.arc(x + 9, statusY, 2, 0, Math.PI * 2);
+      ctx.arc(x + 9, statusY, 2.2, 0, Math.PI * 2);
       ctx.fillStyle = isActive ? '#10b981' : isClusterNode ? '#38bdf8' : isHistoricalNode ? '#f59e0b' : '#f43f5e';
       ctx.fill();
 
-      ctx.font = '5px Inter, sans-serif';
+      ctx.font = '5.2px Inter, sans-serif';
       if (isDark) {
         ctx.fillStyle = isActive ? '#a7f3d0' : isClusterNode ? '#7dd3fc' : isHistoricalNode ? '#fcd34d' : '#fecdd3';
       } else {
@@ -1063,18 +1189,56 @@ function drawPinCard(node, ctx, globalScale, isDark = true) {
 
       let statusDisplay = node.stare;
       if (isClusterNode) {
-        statusDisplay = 'Înregistrat la Sediu';
+        statusDisplay = 'La Sediu';
       } else if (isHistoricalNode) {
-        statusDisplay = node.stare.includes('Mandat') ? node.stare : (node.mandatPeriod ? `Mandat Încheiat (${node.mandatPeriod})` : 'Mandat Încheiat');
+        statusDisplay = 'Mandat Încheiat';
+      } else if (node.stare === 'funcţiune' || node.stare === 'in functiune') {
+        statusDisplay = 'În funcțiune';
       }
       ctx.fillText(statusDisplay, x + 15, statusY);
     }
 
-    if (node.percent > 0) {
-      ctx.textAlign = 'right';
-      ctx.font = 'bold 5.5px Inter, sans-serif';
+    // Direct Action Button on card (for both Company & Person!)
+    if (isCompNode || isPersNode) {
+      const isThisExpanding = expandingNodeId === node.id;
+      const isThisExpanded = expandedNodeIds && expandedNodeIds.has(node.id);
+      const btnW = isCompNode ? 58 : 56;
+      const btnH = 16;
+      const btnX = x + w - btnW - 5;
+      const btnY = y + h - btnH - 4;
+
+      ctx.beginPath();
+      drawRoundedRect(ctx, btnX, btnY, btnW, btnH, 4);
+      ctx.fillStyle = isThisExpanding 
+        ? '#6366f1' 
+        : (isThisExpanded 
+          ? '#059669' 
+          : (isCompNode ? '#0284c7' : '#4f46e5'));
+      ctx.fill();
+      ctx.strokeStyle = isThisExpanding 
+        ? '#a5b4fc' 
+        : (isThisExpanded 
+          ? '#34d399' 
+          : (isCompNode ? '#38bdf8' : '#818cf8'));
+      ctx.lineWidth = 0.9;
+      ctx.stroke();
+
+      ctx.textAlign = 'center';
+      ctx.font = 'bold 5.8px Inter, sans-serif';
+      ctx.fillStyle = '#ffffff';
+      const btnText = isThisExpanding 
+        ? 'Extindere...' 
+        : (isThisExpanded 
+          ? (isCompNode ? '✓ Rețea Extinsă' : '✓ Firme Extinse') 
+          : (isCompNode ? '+ Extinde Rețea' : '+ Extinde Firme'));
+      ctx.fillText(btnText, btnX + btnW / 2, btnY + btnH / 2 + 0.3);
+    }
+
+    if (node.percent > 0 && !isCompNode) {
+      ctx.textAlign = 'left';
+      ctx.font = 'bold 5.2px Inter, sans-serif';
       ctx.fillStyle = isDark ? '#fbbf24' : '#b45309';
-      ctx.fillText(`${node.percent}% cota`, x + w - 6, statusY);
+      ctx.fillText(`${node.percent}%`, x + 50, statusY);
     }
   }
 
@@ -1227,10 +1391,12 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
   const graphRef = useRef();
   const containerRef = useRef();
   const hasAutoCentered = useRef(false);
+  const lastClickRef = useRef({ time: 0, nodeId: null });
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [hoveredNode, setHoveredNode] = useState(null);
   const [selectedNode, setSelectedNode] = useState(null);
+  const [isInspectorMinimized, setIsInspectorMinimized] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
@@ -1294,6 +1460,67 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
 
   const [expandingNodeId, setExpandingNodeId] = useState(null);
   const [expandedNodeIds, setExpandedNodeIds] = useState(new Set());
+  const [expandNotice, setExpandNotice] = useState(null);
+
+  // Totalizator bilanțuri & angajați pe întreaga rețea vizibilă în graf
+  const financialSummary = useMemo(() => {
+    let totalAngajati = 0;
+    let totalCifraAfaceri = 0;
+    let totalNetProfitLoss = 0;
+    let companiesWithBalance = 0;
+
+    (graphData?.nodes || []).forEach(n => {
+      if (n.type === 'company' || n.type === 'related_company') {
+        const bal = n.balance || {};
+        const ang = (n.angajati !== undefined && n.angajati !== null) 
+          ? Number(n.angajati) 
+          : (bal.angajati !== undefined && bal.angajati !== null ? Number(bal.angajati) : (bal.numar_angajati !== undefined ? Number(bal.numar_angajati) : (bal.salariati !== undefined ? Number(bal.salariati) : null)));
+        
+        if (typeof ang === 'number' && !isNaN(ang)) {
+          totalAngajati += ang;
+        }
+
+        const ca = (n.cifra_afaceri !== undefined && n.cifra_afaceri !== null)
+          ? Number(n.cifra_afaceri)
+          : (bal.cifra_afaceri !== undefined ? Number(bal.cifra_afaceri) : null);
+        
+        if (typeof ca === 'number' && !isNaN(ca)) {
+          totalCifraAfaceri += ca;
+        }
+
+        const p = (n.profit_net !== undefined && n.profit_net !== null)
+          ? Number(n.profit_net)
+          : (bal.profit_net !== undefined ? Number(bal.profit_net) : null);
+
+        const l = (n.pierdere_neta !== undefined && n.pierdere_neta !== null)
+          ? Number(n.pierdere_neta)
+          : (bal.pierdere_neta !== undefined ? Number(bal.pierdere_neta) : null);
+
+        if (p !== null || l !== null) {
+          companiesWithBalance++;
+          const net = (p || 0) - (l || 0);
+          totalNetProfitLoss += net;
+        }
+      }
+    });
+
+    return {
+      totalAngajati,
+      totalCifraAfaceri,
+      totalNetProfitLoss,
+      companiesWithBalance,
+      isPositive: totalNetProfitLoss >= 0
+    };
+  }, [graphData]);
+
+  useEffect(() => {
+    window.__axisSelectNode = (node) => setSelectedNode(node);
+    window.__axisGetNodes = () => graphData?.nodes || [];
+    return () => {
+      delete window.__axisSelectNode;
+      delete window.__axisGetNodes;
+    };
+  }, [graphData]);
 
   // Extindere dinamică a unui nod (firmă sau persoană) direct în graf ("Caracatița")
   const handleExpandNode = async (node) => {
@@ -1312,6 +1539,9 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
         const intel = await fetchCompanyFullIntel(cleanCui, compName, false);
         if (!intel) return;
 
+        let addedNodesCount = 0;
+        let addedLinksCount = 0;
+
         setGraphData((prev) => {
           const newNodes = [...prev.nodes];
           const newLinks = [...prev.links];
@@ -1322,6 +1552,9 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             return `${s}->${t}`;
           }));
 
+          const originX = typeof node.x === 'number' ? node.x : 0;
+          const originY = typeof node.y === 'number' ? node.y : 0;
+
           const addNode = (id, label, type, extra = {}) => {
             if (nodeIds.has(id)) {
               const existing = newNodes.find(n => n.id === id);
@@ -1329,9 +1562,8 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
               return;
             }
             nodeIds.add(id);
-            const posX = typeof node.x === 'number' ? node.x + (Math.random() - 0.5) * 160 : undefined;
-            const posY = typeof node.y === 'number' ? node.y + (Math.random() - 0.5) * 160 : undefined;
-            newNodes.push({ id, label, type, x: posX, y: posY, ...extra });
+            addedNodesCount++;
+            newNodes.push({ id, label, type, ...extra });
           };
 
           const addLink = (source, target, label = '', type = 'default') => {
@@ -1341,10 +1573,70 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             if (linkKeys.has(key1) || linkKeys.has(key2)) return;
             linkKeys.add(key1);
             linkKeys.add(key2);
+            addedLinksCount++;
             newLinks.push({ source, target, label, type });
           };
 
-          // 1. Asociați & Conducere din noua firmă
+          // 1. Sediu Social & Cluster Firme de la aceeași adresă
+          const fullAddress = intel.address_check?.address || intel.general?.adresa || intel.anaf?.adresa || node.fullAddr;
+          if (fullAddress) {
+            const addrId = `addr_${cleanCui || node.id.replace('comp_', '')}`;
+            const parsed = parseAddressDisplay(fullAddress);
+            const cluster = intel.address_check?.companies || intel.visual?.companies || [];
+
+            const addrX = originX + 170;
+            const addrY = originY - 75;
+
+            addNode(addrId, parsed.line1, 'address', {
+              full: fullAddress,
+              addrLine1: parsed.line1,
+              addrLine2: parsed.line2,
+              clusterCount: cluster.length || (intel.address_check?.cluster_count || 1),
+              x: addrX,
+              y: addrY,
+            });
+
+            addLink(node.id, addrId, 'SEDIU SOCIAL', 'primary');
+
+            // Adăugare firme din clusterul de la sediu
+            const topCluster = cluster.slice(0, 8);
+            topCluster.forEach((comp, idx) => {
+              const cCui = String(comp.cui || '').replace(/\D/g, '');
+              if (cCui && (cCui === cleanCui || cCui === cleanClientCui)) return;
+              const cName = comp.denumire || comp.name || comp.nume || '';
+              if (!cName) return;
+
+              const cId = getCompanyNodeId(cCui, cName);
+              const shortName = cName.length > 20 ? cName.slice(0, 18) + '...' : cName;
+              const cX = addrX + 145;
+              const cY = addrY + (idx - Math.floor(topCluster.length / 2)) * 48;
+
+              const compBal = comp.balance || {};
+              const compAng = comp.angajati !== undefined && comp.angajati !== null
+                ? comp.angajati
+                : (compBal.angajati !== undefined ? compBal.angajati : (compBal.numar_angajati !== undefined ? compBal.numar_angajati : (compBal.salariati !== undefined ? compBal.salariati : null)));
+
+              addNode(cId, shortName, 'related_company', {
+                cui: comp.cui,
+                fullName: cName,
+                stare: comp.stare || comp.status || 'Sediu Comun',
+                relation: 'Sediu Comun',
+                fullAddr: comp.adresa || fullAddress,
+                balance: compBal,
+                angajati: compAng,
+                cifra_afaceri: comp.cifra_afaceri || compBal.cifra_afaceri,
+                profit_net: comp.profit_net || compBal.profit_net,
+                pierdere_neta: comp.pierdere_neta || compBal.pierdere_neta,
+                an_bilant: comp.an_bilant || compBal.an,
+                x: cX,
+                y: cY,
+              });
+
+              addLink(addrId, cId, 'SEDIU COMUN', 'address_branch');
+            });
+          }
+
+          // 2. Asociați & Conducere din firmă
           const allPeople = [
             ...(intel.holdings || []),
             ...(intel.personnel || []),
@@ -1352,7 +1644,7 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
           ];
 
           const seenPeople = new Set();
-          allPeople.forEach((p) => {
+          allPeople.forEach((p, pIdx) => {
             const rawName = p.name || p.nume;
             if (!rawName) return;
             const norm = normalizePersonName(rawName);
@@ -1363,53 +1655,109 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             if (isPJ) {
               const pjCui = String(p.cui || '').replace(/\D/g, '');
               const pjId = getCompanyNodeId(pjCui, rawName);
+              const pjX = originX + 180;
+              const pjY = originY + 50 + pIdx * 45;
               addNode(pjId, rawName.length > 20 ? rawName.slice(0, 18) + '...' : rawName, 'related_company', {
                 fullName: rawName,
                 cui: p.cui,
                 stare: 'Activ',
                 relation: 'Asociat PJ',
+                x: pjX,
+                y: pjY,
               });
-              addLink(pjId, node.id, p.percent ? `${p.percent}% ACȚIUNI` : 'ASOCIAT PJ', 'primary');
+              addLink(node.id, pjId, p.percent ? `${p.percent}% ACȚIUNI` : 'ASOCIAT PJ', 'primary');
             } else {
               const pId = `person_${norm.replace(/[^A-Z0-9]/g, '_')}`;
               const pct = Number(p.percent || p.cota_participare || 0);
               const isAdm = p.is_administrator || (p.rol && p.rol.toLowerCase().includes('admin'));
               const roleLabel = pct === 100 ? 'Asociat Unic (100%)' : pct > 0 ? `Asociat (${pct}%)` : (isAdm ? 'Administrator' : 'Conducere');
 
+              const pX = originX + 180;
+              const pY = originY + 50 + pIdx * 55;
+
               addNode(pId, formatPersonDisplayName(rawName), 'person', {
                 fullName: formatPersonDisplayName(rawName),
                 roles: roleLabel,
                 percent: pct,
                 stare: 'Activ',
+                x: pX,
+                y: pY,
               });
 
               addLink(node.id, pId, roleLabel, 'primary');
             }
           });
 
-          // 2. Firme din rețeaua administratorilor
+          // 3. Firme din rețeaua administratorilor și asociaților
           (intel.admin_networks || []).forEach((net) => {
             const netPersonNorm = normalizePersonName(net.nume);
             const netPersonId = `person_${netPersonNorm.replace(/[^A-Z0-9]/g, '_')}`;
 
-            (net.firme || []).forEach((f) => {
+            (net.firme || []).forEach((f, fIdx) => {
               const fCui = String(f.cui || '').replace(/\D/g, '');
-              if (fCui && fCui === cleanCui) return;
+              if (fCui && (fCui === cleanCui || fCui === cleanClientCui)) return;
               const fName = f.denumire || f.name || '';
               if (!fName) return;
 
               const fId = getCompanyNodeId(fCui, fName);
               const shortName = fName.length > 22 ? fName.slice(0, 19) + '...' : fName;
+              const fX = originX + 320 + (fIdx % 2) * 85;
+              const fY = originY + (fIdx - Math.floor((net.firme || []).length / 2)) * 48;
+
+              const fBal = f.balance || {};
+              const fAng = f.angajati !== undefined && f.angajati !== null
+                ? f.angajati
+                : (fBal.angajati !== undefined ? fBal.angajati : (fBal.numar_angajati !== undefined ? fBal.numar_angajati : (fBal.salariati !== undefined ? fBal.salariati : null)));
+
               addNode(fId, shortName, 'related_company', {
                 cui: f.cui,
                 fullName: fName,
                 stare: f.curent ? 'Activ' : 'Istoric',
                 relation: f.rol || 'Firmă Afiliată',
+                balance: fBal,
+                angajati: fAng,
+                cifra_afaceri: f.cifra_afaceri || fBal.cifra_afaceri,
+                profit_net: f.profit_net || fBal.profit_net,
+                pierdere_neta: f.pierdere_neta || fBal.pierdere_neta,
+                an_bilant: f.an_bilant || fBal.an,
+                x: fX,
+                y: fY,
               });
 
               addLink(netPersonId, fId, f.rol || 'AFILIAT', f.curent ? 'network' : 'network_historical');
             });
           });
+
+          // 4. Litigii / Dosare în Instanță
+          if (intel.court_cases && intel.court_cases.length > 0) {
+            const riskId = `risk_${cleanCui || node.id.replace('comp_', '')}`;
+            addNode(riskId, `${intel.court_cases.length} Dosare Just`, 'risk', {
+              fullText: `Compania figurează în ${intel.court_cases.length} dosare pe portal.just.ro.`,
+              x: originX,
+              y: originY + 95,
+            });
+            addLink(node.id, riskId, 'LITIGII', 'risk');
+          }
+
+          // Îmbogățim nodul curent cu datele extrase
+          const currentComp = newNodes.find(n => n.id === node.id);
+          if (currentComp) {
+            if (fullAddress && !currentComp.fullAddr) currentComp.fullAddr = fullAddress;
+            if (intel.general?.telefon && !currentComp.telefon) currentComp.telefon = intel.general.telefon;
+            if (intel.general?.an_infiintare && !currentComp.an_infiintare) currentComp.an_infiintare = intel.general.an_infiintare;
+            if (intel.general?.caen_descriere) currentComp.full = `${intel.general.cod_caen || ''} - ${intel.general.caen_descriere}`;
+            if (intel.balance) {
+              currentComp.balance = intel.balance;
+              const bAng = intel.balance.angajati !== undefined && intel.balance.angajati !== null
+                ? intel.balance.angajati
+                : (intel.balance.numar_angajati !== undefined ? intel.balance.numar_angajati : (intel.balance.salariati !== undefined ? intel.balance.salariati : null));
+              currentComp.angajati = bAng;
+              currentComp.cifra_afaceri = intel.balance.cifra_afaceri;
+              currentComp.profit_net = intel.balance.profit_net;
+              currentComp.pierdere_neta = intel.balance.pierdere_neta;
+              currentComp.an_bilant = intel.balance.an;
+            }
+          }
 
           return { nodes: newNodes, links: newLinks };
         });
@@ -1417,13 +1765,26 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
         setExpandedNodeIds(prev => new Set([...prev, node.id]));
         if (graphRef.current) {
           graphRef.current.d3ReheatSimulation();
+          if (typeof node.x === 'number' && typeof node.y === 'number') {
+            graphRef.current.centerAt(node.x, node.y, 450);
+          }
         }
+
+        setExpandNotice({
+          nodeId: node.id,
+          text: (addedNodesCount > 0 || addedLinksCount > 0)
+            ? `Rețea extinsă: +${addedNodesCount} noduri și +${addedLinksCount} conexiuni adăugate.`
+            : `Toate conexiunile disponibile din ONRC/ANAF sunt deja afișate în graf.`
+        });
       } else if (isPersonType) {
         const pName = node.fullName || node.label;
         if (!pName) return;
 
         const pIntel = await fetchPersonFullIntel(pName, clientCui);
         if (!pIntel) return;
+
+        let addedNodesCount = 0;
+        let addedLinksCount = 0;
 
         setGraphData((prev) => {
           const newNodes = [...prev.nodes];
@@ -1435,6 +1796,9 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             return `${s}->${t}`;
           }));
 
+          const originX = typeof node.x === 'number' ? node.x : 0;
+          const originY = typeof node.y === 'number' ? node.y : 0;
+
           const addNode = (id, label, type, extra = {}) => {
             if (nodeIds.has(id)) {
               const existing = newNodes.find(n => n.id === id);
@@ -1442,9 +1806,8 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
               return;
             }
             nodeIds.add(id);
-            const posX = typeof node.x === 'number' ? node.x + (Math.random() - 0.5) * 160 : undefined;
-            const posY = typeof node.y === 'number' ? node.y + (Math.random() - 0.5) * 160 : undefined;
-            newNodes.push({ id, label, type, x: posX, y: posY, ...extra });
+            addedNodesCount++;
+            newNodes.push({ id, label, type, ...extra });
           };
 
           const addLink = (source, target, label = '', type = 'default') => {
@@ -1454,26 +1817,37 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             if (linkKeys.has(key1) || linkKeys.has(key2)) return;
             linkKeys.add(key1);
             linkKeys.add(key2);
+            addedLinksCount++;
             newLinks.push({ source, target, label, type });
           };
 
+          const netFirme = [];
           (pIntel.network || []).forEach((net) => {
             (net.firme || []).forEach((f) => {
-              const fCui = String(f.cui || '').replace(/\D/g, '');
-              const fName = f.denumire || f.name || '';
-              if (!fName) return;
-
-              const fId = getCompanyNodeId(fCui, fName);
-              const shortName = fName.length > 22 ? fName.slice(0, 19) + '...' : fName;
-              addNode(fId, shortName, 'related_company', {
-                cui: f.cui,
-                fullName: fName,
-                stare: f.curent ? 'Activ' : 'Istoric',
-                relation: f.rol || 'Firmă Afiliată',
-              });
-
-              addLink(node.id, fId, f.rol || 'AFILIAT', f.curent ? 'network' : 'network_historical');
+              netFirme.push(f);
             });
+          });
+
+          netFirme.forEach((f, idx) => {
+            const fCui = String(f.cui || '').replace(/\D/g, '');
+            const fName = f.denumire || f.name || '';
+            if (!fName) return;
+
+            const fId = getCompanyNodeId(fCui, fName);
+            const shortName = fName.length > 22 ? fName.slice(0, 19) + '...' : fName;
+            const fX = originX + 180 + (idx % 2) * 80;
+            const fY = originY + (idx - Math.floor(netFirme.length / 2)) * 48;
+
+            addNode(fId, shortName, 'related_company', {
+              cui: f.cui,
+              fullName: fName,
+              stare: f.curent ? 'Activ' : 'Istoric',
+              relation: f.rol || 'Firmă Afiliată',
+              x: fX,
+              y: fY,
+            });
+
+            addLink(node.id, fId, f.rol || 'AFILIAT', f.curent ? 'network' : 'network_historical');
           });
 
           return { nodes: newNodes, links: newLinks };
@@ -1482,7 +1856,17 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
         setExpandedNodeIds(prev => new Set([...prev, node.id]));
         if (graphRef.current) {
           graphRef.current.d3ReheatSimulation();
+          if (typeof node.x === 'number' && typeof node.y === 'number') {
+            graphRef.current.centerAt(node.x, node.y, 450);
+          }
         }
+
+        setExpandNotice({
+          nodeId: node.id,
+          text: (addedNodesCount > 0 || addedLinksCount > 0)
+            ? `Rețea extinsă: +${addedNodesCount} firme conexe și +${addedLinksCount} conexiuni adăugate.`
+            : `Toate companiile asociate acestei persoane sunt deja afișate în graf.`
+        });
       }
     } catch (err) {
       console.error('Eroare extindere nod în graf:', err);
@@ -2543,196 +2927,296 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
         </div>
       </div>
 
-      {/* Floating Node Details Card on Select / Hover */}
-      {(selectedNode || hoveredNode) && (
-        <div className="absolute top-16 right-4 z-20 max-w-sm animate-in fade-in" style={{ animationDuration: '120ms' }}>
-          <div
-            className={`p-4 rounded-xl border shadow-xl transition-colors pointer-events-auto w-84 ${
-              isDark
-                ? 'bg-slate-900/95 border-slate-800 text-slate-100'
-                : 'bg-white/95 border-slate-200 text-slate-900'
-            }`}
-            style={{ backdropFilter: 'blur(16px)' }}
-          >
-            {(() => {
-              const activeNode = selectedNode || hoveredNode;
-              const isComp = activeNode.type === 'company' || activeNode.type === 'related_company';
-              const isPers = activeNode.type === 'person' || activeNode.type === 'person_historical';
-              const isHist = activeNode.type === 'person_historical' || activeNode.isHistorical;
-              const cleanRoles = formatCleanRoles(activeNode.roles, activeNode.percent);
+      {/* Lightweight Hover Tooltip at Top-Center (Zero obstruction of graph) */}
+      {hoveredNode && !selectedNode && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 pointer-events-none animate-in fade-in zoom-in-95 duration-100">
+          <div className={`px-3 py-1 rounded-full border shadow-md backdrop-blur-md flex items-center gap-2 text-xs ${
+            isDark ? 'bg-slate-900/90 border-slate-700 text-white' : 'bg-white/95 border-slate-200 text-slate-900'
+          }`}>
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 shrink-0 animate-pulse" />
+            <span className="font-bold truncate max-w-[260px]">{hoveredNode.fullName || hoveredNode.label}</span>
+            <span className="text-[10px] text-slate-400 border-l pl-2 border-slate-300 dark:border-slate-700">Click pt. opțiuni</span>
+          </div>
+        </div>
+      )}
 
-              let badgeLabel = 'Informație';
-              if (activeNode.isRoot) {
-                badgeLabel = 'Subiect Principal';
-              } else if (activeNode.relation === 'Sediu Comun' || activeNode.relation?.toLowerCase().includes('sediu')) {
-                badgeLabel = 'Firmă la Sediu Comun';
-              } else if (isComp) {
-                badgeLabel = activeNode.type === 'company' ? 'Firmă Principală' : 'Firmă din Rețea';
-              } else if (isPers) {
-                if (activeNode.percent === 100) badgeLabel = 'Asociat Unic (100%)';
-                else if (activeNode.percent > 0) badgeLabel = `Asociat (${activeNode.percent}%)`;
-                else if (isHist) badgeLabel = 'Fost Administrator';
-                else badgeLabel = 'Administrator';
-              } else if (activeNode.type === 'address') {
-                badgeLabel = 'Sediu / Punct Lucru';
-              } else if (activeNode.type === 'risk') {
-                badgeLabel = 'Semnal Risc';
-              }
+      {/* Floating Node Details Card on Select (Compact & Collapsible) */}
+      {selectedNode && (
+        <div className="absolute top-14 right-4 z-20 transition-all animate-in fade-in" style={{ animationDuration: '100ms' }}>
+          {isInspectorMinimized ? (
+            /* Minimized Pill: 34px height, does not obstruct the canvas */
+            <div
+              className={`px-3 py-1.5 rounded-full border shadow-lg flex items-center gap-2 backdrop-blur-xl transition-all ${
+                isDark ? 'bg-slate-900/90 border-slate-700 text-white' : 'bg-white/90 border-slate-200 text-slate-900'
+              }`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+              <span className="text-xs font-bold truncate max-w-[140px]">{selectedNode.fullName || selectedNode.label}</span>
 
-              return (
-                <>
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                      {badgeLabel}
-                    </span>
-                    {selectedNode && (
-                      <button
-                        type="button"
-                        onClick={() => setSelectedNode(null)}
-                        className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-md cursor-pointer transition-colors shrink-0"
-                        title="Închide card"
-                      >
-                        <X size={14} />
-                      </button>
-                    )}
-                  </div>
+              {(selectedNode.type === 'company' || selectedNode.type === 'related_company' || selectedNode.type === 'person' || selectedNode.type === 'person_historical') && (
+                <button
+                  type="button"
+                  disabled={expandingNodeId === selectedNode.id}
+                  onClick={() => handleExpandNode(selectedNode)}
+                  className="px-2.5 py-0.5 rounded-full bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 text-[10px] font-bold flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
+                  title="Extinde în graf"
+                >
+                  {expandingNodeId === selectedNode.id ? <Loader2 size={10} className="animate-spin" /> : <GitBranch size={10} />}
+                  <span>Extinde</span>
+                </button>
+              )}
 
-                  <div className="text-sm font-semibold text-slate-900 dark:text-white mt-2 leading-snug">
-                    {activeNode.fullName || activeNode.label}
-                  </div>
+              <button
+                type="button"
+                onClick={() => setIsInspectorMinimized(false)}
+                className="p-1 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                title="Deschide panoul complet"
+              >
+                <ChevronDown size={14} />
+              </button>
 
-                  {cleanRoles && (
-                    <div className="text-xs text-slate-600 dark:text-slate-400 mt-1 font-normal leading-relaxed">
-                      {cleanRoles}
+              <button
+                type="button"
+                onClick={() => setSelectedNode(null)}
+                className="p-1 rounded-full text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                title="Închide"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ) : (
+            /* Compact Tahoe Inspector Window */
+            <div
+              className={`p-3 rounded-2xl border shadow-xl transition-all pointer-events-auto w-[275px] max-h-[82vh] overflow-y-auto ${
+                isDark
+                  ? 'bg-slate-900/95 border-slate-800 text-slate-100'
+                  : 'bg-white/95 border-slate-200 text-slate-900'
+              }`}
+              style={{ backdropFilter: 'blur(20px)' }}
+            >
+              {(() => {
+                const activeNode = selectedNode;
+                const isComp = activeNode.type === 'company' || activeNode.type === 'related_company';
+                const isPers = activeNode.type === 'person' || activeNode.type === 'person_historical';
+                const isHist = activeNode.type === 'person_historical' || activeNode.isHistorical;
+                const cleanRoles = formatCleanRoles(activeNode.roles, activeNode.percent);
+
+                let badgeLabel = 'Informație';
+                if (activeNode.isRoot) {
+                  badgeLabel = 'Subiect Principal';
+                } else if (activeNode.relation === 'Sediu Comun' || activeNode.relation?.toLowerCase().includes('sediu')) {
+                  badgeLabel = 'Sediu Comun';
+                } else if (isComp) {
+                  badgeLabel = activeNode.type === 'company' ? 'Firmă Principală' : 'Firmă din Rețea';
+                } else if (isPers) {
+                  if (activeNode.percent === 100) badgeLabel = 'Asociat Unic (100%)';
+                  else if (activeNode.percent > 0) badgeLabel = `Asociat (${activeNode.percent}%)`;
+                  else if (isHist) badgeLabel = 'Fost Admin';
+                  else badgeLabel = 'Administrator';
+                } else if (activeNode.type === 'address') {
+                  badgeLabel = 'Sediu / Adresă';
+                } else if (activeNode.type === 'risk') {
+                  badgeLabel = 'Semnal Risc';
+                }
+
+                return (
+                  <>
+                    {/* Header Row with Badge & Controls */}
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                        {badgeLabel}
+                      </span>
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setIsInspectorMinimized(true)}
+                          className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                          title="Minimizează fereastra"
+                        >
+                          <ChevronUp size={13} />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedNode(null)}
+                          className="p-1 text-slate-400 hover:text-red-500 rounded-full hover:bg-red-50 dark:hover:bg-red-950/40 transition-colors cursor-pointer"
+                          title="Închide fereastra"
+                        >
+                          <X size={13} />
+                        </button>
+                      </div>
                     </div>
-                  )}
 
-                  {activeNode.cui && (
-                    <div className="text-xs text-slate-500 dark:text-slate-400 mt-1.5 font-medium">
-                      CUI: {activeNode.cui}
+                    {/* Node Title */}
+                    <div className="text-xs font-bold text-slate-900 dark:text-white mt-1.5 leading-snug line-clamp-2" title={activeNode.fullName || activeNode.label}>
+                      {activeNode.fullName || activeNode.label}
                     </div>
-                  )}
 
-                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    {(activeNode.stare || activeNode.isRoot || isHist) && (
-                      <div className="flex items-center gap-1.5">
-                        <span
-                          className={`w-1.5 h-1.5 rounded-full ${
-                            activeNode.stare === 'Activ' || activeNode.isRoot ? 'bg-emerald-500' : 'bg-slate-400'
-                          }`}
-                        />
-                        <span>
-                          {activeNode.isRoot
-                            ? 'Activ (Client înregistrat)'
-                            : isHist
-                            ? (activeNode.mandatPeriod ? `Mandat Încheiat (${activeNode.mandatPeriod})` : 'Mandat Încheiat')
-                            : (activeNode.stare || 'Înregistrat')}
-                        </span>
+                    {/* Clean Roles / Conducere */}
+                    {cleanRoles && (
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 mt-0.5 font-medium leading-tight">
+                        {cleanRoles}
                       </div>
                     )}
-                    {activeNode.an_infiintare && (
-                      <span>Înființare: {activeNode.an_infiintare}</span>
-                    )}
-                    {activeNode.telefon && (
-                      <span>Tel: {activeNode.telefon}</span>
-                    )}
-                    {activeNode.relation && !cleanRoles && (
-                      <span>Conexiune: {activeNode.relation}</span>
-                    )}
-                  </div>
 
-                  {activeNode.full && (
-                    <div className="text-[11px] mt-2 border-t border-slate-100 dark:border-slate-800 pt-1.5 text-slate-600 dark:text-slate-400">
-                      {activeNode.full}
-                    </div>
-                  )}
-
-                  {activeNode.fullAddr && (
-                    <div className="text-[11px] mt-2 border-t border-slate-100 dark:border-slate-800 pt-1.5 text-slate-500 dark:text-slate-400">
-                      {activeNode.fullAddr}
-                    </div>
-                  )}
-
-                  {activeNode.fullText && (
-                    <div className="text-xs mt-2 p-2 rounded-lg bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300">
-                      {activeNode.fullText}
-                    </div>
-                  )}
-
-                  {/* Direct Action Button to Open Dossier */}
-                  {(activeNode.cui || isComp) && onOpenCompany && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenCompany(activeNode.cui, activeNode.fullName || activeNode.label)}
-                      className="mt-3.5 w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
-                      title="Deschide dosar complet ANAF, bilanț, insolvență și asociați"
-                    >
-                      <Building2 size={13} />
-                      <span>Deschide Dosar Firmă</span>
-                      <ExternalLink size={12} className="opacity-70" />
-                    </button>
-                  )}
-
-                  {isComp && (
-                    <button
-                      type="button"
-                      disabled={expandingNodeId === activeNode.id}
-                      onClick={() => handleExpandNode(activeNode)}
-                      className="mt-2 w-full py-2 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
-                      title="Extinde asociații, administratorii și firmele conexe direct în panoul vizual"
-                    >
-                      {expandingNodeId === activeNode.id ? (
-                        <>
-                          <Loader2 size={13} className="animate-spin text-slate-400" />
-                          <span>Se extinde rețeaua în graf...</span>
-                        </>
-                      ) : (
-                        <>
-                          <GitBranch size={13} />
-                          <span>{expandedNodeIds.has(activeNode.id) ? 'Re-extinde Conexiunile în Graf' : 'Extinde Rețeaua Firmei în Graf'}</span>
-                        </>
+                    {/* Meta Info: CUI & Înființare */}
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] text-slate-500 dark:text-slate-400 mt-1">
+                      {activeNode.cui && (
+                        <span className="font-semibold text-slate-700 dark:text-slate-300">CUI: {activeNode.cui}</span>
                       )}
-                    </button>
-                  )}
-
-                  {isPers && onOpenPerson && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenPerson(activeNode.fullName || activeNode.label, clientCui)}
-                      className="mt-3.5 w-full py-2 px-3 rounded-lg bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs"
-                      title="Deschide dosar persoană cu companii deținute și dosare pe Portal Just.ro"
-                    >
-                      <User size={13} />
-                      <span>Dosar Persoană (Portal Just & Firme)</span>
-                      <ExternalLink size={12} className="opacity-70" />
-                    </button>
-                  )}
-
-                  {isPers && (
-                    <button
-                      type="button"
-                      disabled={expandingNodeId === activeNode.id}
-                      onClick={() => handleExpandNode(activeNode)}
-                      className="mt-2 w-full py-2 px-3 rounded-lg bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700/80 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 font-medium text-xs flex items-center justify-center gap-2 transition-colors cursor-pointer shadow-xs disabled:opacity-50"
-                      title="Extinde companiile asociate acestei persoane în panoul vizual"
-                    >
-                      {expandingNodeId === activeNode.id ? (
-                        <>
-                          <Loader2 size={13} className="animate-spin text-slate-400" />
-                          <span>Se încarcă companiile în graf...</span>
-                        </>
-                      ) : (
-                        <>
-                          <GitBranch size={13} />
-                          <span>{expandedNodeIds.has(activeNode.id) ? 'Re-extinde Firmele în Graf' : 'Extinde Firmele Persoanei în Graf'}</span>
-                        </>
+                      {activeNode.an_infiintare && (
+                        <span>Înființat: {activeNode.an_infiintare}</span>
                       )}
-                    </button>
-                  )}
-                </>
-              );
-            })()}
-          </div>
+                      {(activeNode.stare || activeNode.isRoot) && (
+                        <span className="flex items-center gap-1">
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              activeNode.stare === 'Activ' || activeNode.isRoot ? 'bg-emerald-500' : 'bg-slate-400'
+                            }`}
+                          />
+                          <span>{activeNode.isRoot ? 'Client' : (activeNode.stare || 'Activ')}</span>
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Address Line (Truncated cleanly) */}
+                    {activeNode.fullAddr && (
+                      <div className="text-[10px] text-slate-400 dark:text-slate-500 mt-1 line-clamp-1 truncate" title={activeNode.fullAddr}>
+                        {activeNode.fullAddr}
+                      </div>
+                    )}
+
+                    {/* Direct Action Buttons: Compact & Powerful */}
+                    <div className="mt-2.5 space-y-1.5">
+                      {isComp && (
+                        <button
+                          type="button"
+                          disabled={expandingNodeId === activeNode.id}
+                          onClick={() => handleExpandNode(activeNode)}
+                          className="w-full py-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                          title="Extinde conexiunile în graf"
+                        >
+                          {expandingNodeId === activeNode.id ? (
+                            <>
+                              <Loader2 size={12} className="animate-spin text-white dark:text-slate-900" />
+                              <span>Se extinde în graf...</span>
+                            </>
+                          ) : (
+                            <>
+                              <GitBranch size={12} />
+                              <span>{expandedNodeIds.has(activeNode.id) ? 'Re-extinde Conexiunile' : 'Extinde Rețeaua în Graf'}</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+
+                      {(activeNode.cui || isComp) && onOpenCompany && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenCompany(activeNode.cui, activeNode.fullName || activeNode.label)}
+                          className="w-full py-1.5 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-800 dark:text-slate-200 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
+                          title="Deschide dosar complet ANAF & Bilanț"
+                        >
+                          <Building2 size={11} />
+                          <span>Deschide Dosar Firmă</span>
+                          <ExternalLink size={10} className="opacity-60" />
+                        </button>
+                      )}
+
+                      {isPers && (
+                        <button
+                          type="button"
+                          disabled={expandingNodeId === activeNode.id}
+                          onClick={() => handleExpandNode(activeNode)}
+                          className="w-full py-1.5 px-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-100 dark:hover:bg-slate-200 text-white dark:text-slate-900 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+                          title="Extinde firmele persoanei în graf"
+                        >
+                          {expandingNodeId === activeNode.id ? (
+                            <>
+                              <Loader2 size={12} className="animate-spin text-white dark:text-slate-900" />
+                              <span>Se încarcă companiile...</span>
+                            </>
+                          ) : (
+                            <>
+                              <GitBranch size={12} />
+                              <span>{expandedNodeIds.has(activeNode.id) ? 'Re-extinde Firmele' : 'Extinde Firmele în Graf'}</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+
+                      {isPers && onOpenPerson && (
+                        <button
+                          type="button"
+                          onClick={() => onOpenPerson(activeNode.fullName || activeNode.label, clientCui)}
+                          className="w-full py-1.5 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700/80 text-slate-800 dark:text-slate-200 font-semibold text-[11px] flex items-center justify-center gap-1.5 transition-colors cursor-pointer border border-slate-200 dark:border-slate-700"
+                          title="Deschide dosar persoană"
+                        >
+                          <User size={11} />
+                          <span>Dosar Persoană</span>
+                          <ExternalLink size={10} className="opacity-60" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Compact Financial Strip */}
+                    {isComp && (activeNode.cifra_afaceri || activeNode.balance?.cifra_afaceri || activeNode.angajati !== undefined) && (() => {
+                      const ca = activeNode.cifra_afaceri || activeNode.balance?.cifra_afaceri;
+                      const p = activeNode.profit_net !== undefined && activeNode.profit_net !== null ? activeNode.profit_net : activeNode.balance?.profit_net;
+                      const l = activeNode.pierdere_neta !== undefined && activeNode.pierdere_neta !== null ? activeNode.pierdere_neta : activeNode.balance?.pierdere_neta;
+                      const netVal = (p || 0) - (l || 0);
+                      const isPos = netVal >= 0;
+                      const hasNet = p !== undefined || l !== undefined;
+
+                      return (
+                        <div className="mt-2 p-2 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200/60 dark:border-slate-700/60 text-[10px] space-y-1">
+                          <div className="flex items-center justify-between text-slate-500 font-medium">
+                            <span>Bilanț {activeNode.an_bilant || 'Fiscal'}</span>
+                            <span>{activeNode.angajati !== null && activeNode.angajati !== undefined ? `${activeNode.angajati} angajați` : ''}</span>
+                          </div>
+                          <div className="flex items-center justify-between font-bold text-slate-800 dark:text-slate-200">
+                            <span>CA: {ca ? `${formatMoneyShort(ca)} lei` : '-'}</span>
+                            {hasNet && (
+                              <span className={isPos ? 'text-emerald-600 dark:text-emerald-400 font-extrabold' : 'text-rose-600 dark:text-rose-400 font-extrabold'}>
+                                {isPos ? '+' : ''}{formatMoneyShort(netVal)} lei
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Feedback Notification for Expansion */}
+                    {expandNotice && expandNotice.nodeId === activeNode.id && (
+                      <div className="mt-2 p-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-[10px] text-emerald-800 dark:text-emerald-300 flex items-start gap-1 leading-snug">
+                        <CheckCircle2 size={12} className="shrink-0 mt-0.5 text-emerald-600 dark:text-emerald-400" />
+                        <span>{expandNotice.text}</span>
+                      </div>
+                    )}
+
+                    {/* Compact Footer: Direct connections & click away tip */}
+                    {(() => {
+                      const connCount = (graphData?.links || []).filter(l => {
+                        const s = typeof l.source === 'object' ? l.source.id : l.source;
+                        const t = typeof l.target === 'object' ? l.target.id : l.target;
+                        return s === activeNode.id || t === activeNode.id;
+                      }).length;
+                      return (
+                        <div className="mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+                          <span className="flex items-center gap-1 font-medium">
+                            <GitBranch size={10} className="text-indigo-500" />
+                            Conexiuni în graf:
+                          </span>
+                          <span className="font-bold text-slate-700 dark:text-slate-200 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.2 rounded-full">
+                            {connCount}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </>
+                );
+              })()}
+            </div>
+          )}
         </div>
       )}
 
@@ -2759,7 +3243,7 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
 
         <div className="flex items-center gap-2 pointer-events-auto">
           <div
-            className={`flex items-center gap-3 px-3.5 py-1.5 rounded-xl border shadow-lg transition-colors ${
+            className={`flex flex-wrap items-center gap-2 sm:gap-3 px-3.5 py-1.5 rounded-xl border shadow-lg transition-colors ${
               isDark
                 ? 'bg-gray-900/90 border-gray-700/60 text-gray-300'
                 : 'bg-white/95 border-gray-200 text-gray-700'
@@ -2768,6 +3252,31 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             <span className="text-[11px] font-semibold">{graphData.nodes.length} noduri în rețea</span>
             <span className={isDark ? 'text-gray-600' : 'text-gray-300'}>|</span>
             <span className="text-[11px] font-semibold">{graphData.links.length} conexiuni</span>
+            {financialSummary.totalAngajati > 0 && (
+              <>
+                <span className={isDark ? 'text-gray-600' : 'text-gray-300'}>|</span>
+                <span className="text-[11px] font-semibold flex items-center gap-1 text-slate-700 dark:text-slate-200">
+                  <Users size={12} className="text-blue-500" />
+                  {financialSummary.totalAngajati} angajați în rețea
+                </span>
+              </>
+            )}
+            {financialSummary.companiesWithBalance > 0 && (
+              <>
+                <span className={isDark ? 'text-gray-600' : 'text-gray-300'}>|</span>
+                <span className="text-[10px] uppercase font-bold text-slate-400">Total Bilanț:</span>
+                <span
+                  className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
+                    financialSummary.isPositive
+                      ? 'bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800'
+                      : 'bg-rose-50 dark:bg-rose-950/50 text-rose-600 dark:text-rose-400 border border-rose-200 dark:border-rose-800'
+                  }`}
+                >
+                  {financialSummary.isPositive ? '+' : ''}
+                  {formatMoneyShort(financialSummary.totalNetProfitLoss)} lei ({financialSummary.isPositive ? 'PROFIT' : 'PIERDERE'})
+                </span>
+              </>
+            )}
           </div>
 
           <button
@@ -2796,14 +3305,94 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
       </div>
 
       {/* ForceGraph Canvas */}
-      <div className="w-full h-full">
+      <div className="w-full h-full relative">
+        {/* Floating Action Pill directly over selected node on canvas */}
+        {selectedNode && !isExporting && (
+          (() => {
+            const coords = graphRef.current?.graph2ScreenCoords(selectedNode.x, selectedNode.y);
+            if (!coords || typeof coords.x !== 'number' || isNaN(coords.x)) return null;
+            const dim = selectedNode.isRoot ? NODE_DIMENSIONS.company : (NODE_DIMENSIONS[selectedNode.type] || { w: 146, h: 76 });
+            const isComp = selectedNode.type === 'company' || selectedNode.type === 'related_company';
+            const isPers = selectedNode.type === 'person' || selectedNode.type === 'person_historical';
+            if (!isComp && !isPers) return null;
+
+            return (
+              <div
+                className="absolute z-20 pointer-events-auto transition-all duration-150 animate-in fade-in zoom-in-95"
+                style={{
+                  left: `${coords.x}px`,
+                  top: `${Math.max(16, coords.y - (dim.h / 2) * (graphRef.current?.zoom() || 1) - 38)}px`,
+                  transform: 'translateX(-50%)',
+                }}
+              >
+                <div className="flex items-center gap-1.5 p-1 rounded-full bg-slate-900/90 dark:bg-slate-900/95 backdrop-blur-md border border-slate-700/80 shadow-2xl text-white">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleExpandNode(selectedNode);
+                    }}
+                    disabled={expandingNodeId === selectedNode.id}
+                    className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-600 hover:bg-blue-500 text-white text-[11px] font-semibold transition-all cursor-pointer shadow-sm disabled:opacity-50"
+                    title="Extinde rețeaua completă în graf"
+                  >
+                    {expandingNodeId === selectedNode.id ? (
+                      <>
+                        <Loader2 size={12} className="animate-spin" />
+                        <span>Extindere...</span>
+                      </>
+                    ) : (
+                      <>
+                        <GitBranch size={12} />
+                        <span>{isComp ? 'Extinde Rețea Firmei' : 'Extinde Firme Persoanei'}</span>
+                      </>
+                    )}
+                  </button>
+
+                  {isComp && onOpenCompany && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenCompany(selectedNode.cui, selectedNode.fullName || selectedNode.label);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-full hover:bg-slate-800 text-slate-300 hover:text-white text-[11px] font-medium transition-colors cursor-pointer"
+                      title="Deschide dosar complet firmă"
+                    >
+                      <Building2 size={11} />
+                      <span>Dosar</span>
+                      <ExternalLink size={10} className="opacity-70" />
+                    </button>
+                  )}
+
+                  {isPers && onOpenPerson && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenPerson(selectedNode.fullName || selectedNode.label, clientCui);
+                      }}
+                      className="flex items-center gap-1 px-2.5 py-1 rounded-full hover:bg-slate-800 text-slate-300 hover:text-white text-[11px] font-medium transition-colors cursor-pointer"
+                      title="Deschide dosar persoană"
+                    >
+                      <User size={11} />
+                      <span>Dosar</span>
+                      <ExternalLink size={10} className="opacity-70" />
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()
+        )}
+
         <ForceGraph2D
           ref={graphRef}
           graphData={graphData}
           width={dimensions.width}
           height={dimensions.height}
           backgroundColor="transparent"
-          nodeCanvasObject={(node, ctx, globalScale) => drawPinCard(node, ctx, globalScale, isDark)}
+          nodeCanvasObject={(node, ctx, globalScale) => drawPinCard(node, ctx, globalScale, isDark, expandingNodeId, expandedNodeIds)}
           linkCanvasObject={(link, ctx, globalScale) => drawStringLink(link, ctx, globalScale, isDark)}
           onRenderFramePost={(ctx) => {
             if (graphData && graphData.links) {
@@ -2811,19 +3400,66 @@ export default function InvestigationBoard({ rawData, clientName, clientCui, onC
             }
           }}
           nodePointerAreaPaint={(node, color, ctx) => {
-            const dim = node.isRoot ? NODE_DIMENSIONS.company : (NODE_DIMENSIONS[node.type] || { w: 90, h: 48 });
+            const dim = node.isRoot ? NODE_DIMENSIONS.company : (NODE_DIMENSIONS[node.type] || { w: 146, h: 76 });
             ctx.beginPath();
-            ctx.rect(node.x - dim.w / 2 - 2, node.y - dim.h / 2 - 2, dim.w + 4, dim.h + 4);
+            ctx.rect(node.x - dim.w / 2 - 3, node.y - dim.h / 2 - 3, dim.w + 6, dim.h + 6);
             ctx.fillStyle = color;
             ctx.fill();
           }}
           onNodeHover={setHoveredNode}
-          onNodeClick={(node) => {
-            setSelectedNode(node);
-            if (graphRef.current) {
-              graphRef.current.centerAt(node.x, node.y, 400);
-              graphRef.current.zoom(2.2, 400);
+          onNodeClick={(node, event) => {
+            const now = Date.now();
+            const isDoubleClick = (now - lastClickRef.current.time < 400) && (lastClickRef.current.nodeId === node.id);
+            lastClickRef.current = { time: now, nodeId: node.id };
+
+            // Detecție sigură și 100% precisă a click-ului pe butonul de acțiune
+            const canvasEl = event?.target?.tagName === 'CANVAS'
+              ? event.target
+              : containerRef.current?.querySelector('canvas');
+
+            const clientX = event?.clientX ?? event?.nativeEvent?.clientX;
+            const clientY = event?.clientY ?? event?.nativeEvent?.clientY;
+
+            let clickedButton = false;
+            if (canvasEl && graphRef.current && clientX !== undefined && clientY !== undefined) {
+              const canvasRect = canvasEl.getBoundingClientRect();
+              const mouseX = clientX - canvasRect.left;
+              const mouseY = clientY - canvasRect.top;
+              const gCoords = graphRef.current.screen2GraphCoords(mouseX, mouseY);
+              const dim = node.isRoot ? NODE_DIMENSIONS.company : (NODE_DIMENSIONS[node.type] || { w: 146, h: 76 });
+              const isComp = node.type === 'company' || node.type === 'related_company';
+              const btnW = node.isRoot ? 76 : (isComp ? 58 : 56);
+              const btnH = node.isRoot ? 17 : 16;
+              const btnX = (node.x + dim.w / 2 - btnW - 6);
+              const btnY = (node.y + dim.h / 2 - btnH - 5);
+
+              // Click cu toleranță generoasă (+/- 12px) pe buton sau pe cadranul de acțiune dreapta-jos al cardului
+              if (
+                (gCoords.x >= btnX - 12 &&
+                gCoords.x <= btnX + btnW + 12 &&
+                gCoords.y >= btnY - 12 &&
+                gCoords.y <= btnY + btnH + 12) ||
+                (gCoords.y >= node.y && gCoords.x >= node.x - 10)
+              ) {
+                clickedButton = true;
+              }
             }
+
+            const wasAlreadySelected = selectedNode && selectedNode.id === node.id;
+            if (clickedButton || wasAlreadySelected || isDoubleClick) {
+              handleExpandNode(node);
+              setSelectedNode(node);
+            } else {
+              setSelectedNode(node);
+              if (graphRef.current) {
+                graphRef.current.centerAt(node.x, node.y, 400);
+                graphRef.current.zoom(1.8, 400);
+              }
+            }
+          }}
+          onNodeDoubleClick={(node) => {
+            // Double-click pe orice card expandează instantaneu rețeaua!
+            handleExpandNode(node);
           }}
           onNodeDrag={(node) => {
             node.fx = node.x;

@@ -29,6 +29,7 @@ import JEVValidationCard from '../components/JEVValidationCard';
 import { getCaenInfo, getCaenDescription } from '../utils/caenHelper';
 import { generateCreditCommitteeReport } from '../utils/creditCommitteeReportGenerator';
 import { generateOnrcCertificate } from '../utils/onrcCertificateGenerator';
+import { classifyAndParseDocument } from '../utils/pdfOcr';
 
 const customMapPinIcon = typeof window !== 'undefined' && L ? L.divIcon({
   className: 'custom-leaflet-marker',
@@ -172,6 +173,8 @@ const ClientDetails = () => {
   const [exportingOnrcCert, setExportingOnrcCert] = useState(false);
   const [clientDocs, setClientDocs] = useState([]);
   const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(null);
+  const [ocrResults, setOcrResults] = useState([]);
   const [copiedCuiToast, setCopiedCuiToast] = useState(false);
   const [selectedWorkPointRows, setSelectedWorkPointRows] = useState([]);
   const [workPointsPage, setWorkPointsPage] = useState(1);
@@ -225,17 +228,41 @@ const ClientDetails = () => {
   };
 
   const handleDocUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const fileList = Array.from(e.target.files || []);
+    if (fileList.length === 0) return;
     setUploadingDoc(true);
     try {
-      await uploadClientDocument(id, file, "Certificat Constatator ONRC");
+      const parsedItems = [];
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        setOcrProgress({ current: i + 1, total: fileList.length, filename: file.name });
+        
+        let categoryLabel = "Certificat Constatator ONRC";
+        let parsed = null;
+        try {
+          parsed = await classifyAndParseDocument(file);
+          if (parsed?.categoryLabel) {
+            categoryLabel = parsed.categoryLabel;
+          }
+        } catch (ocrErr) {
+          console.warn("OCR classify error, defaulting:", ocrErr);
+        }
+
+        await uploadClientDocument(id, file, categoryLabel);
+        if (parsed) {
+          parsedItems.push(parsed);
+        }
+      }
+      if (parsedItems.length > 0) {
+        setOcrResults(prev => [...parsedItems, ...prev]);
+      }
       await loadClientDocs(id);
     } catch (err) {
       console.error("Upload error:", err);
-      alert("Eroare la incarcarea documentului: " + err.message);
+      alert("Eroare la încărcarea documentelor: " + err.message);
     } finally {
       setUploadingDoc(false);
+      setOcrProgress(null);
       e.target.value = "";
     }
   };
@@ -404,6 +431,12 @@ const ClientDetails = () => {
         }
         if (!base.anaf && evRaw.anaf) {
           base.anaf = evRaw.anaf;
+        }
+        if (!base.balance && evRaw.balance) {
+          base.balance = evRaw.balance;
+        }
+        if (!base.stare && evRaw.stare) {
+          base.stare = evRaw.stare;
         }
       } catch (e) {
         // ignore
@@ -3949,29 +3982,96 @@ const ClientDetails = () => {
               </div>
             </div>
 
-            {/* Opțiunea A: Dosar Documente & Încărcare Certificat Constatator Extern */}
+            {/* Opțiunea A: Dosar Digital & Clasificare Automată Multi-Document (Bulk OCR) */}
             <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-3xl p-6 shadow-sm flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between pb-4 border-b border-gray-100 dark:border-gray-700 mb-4">
                   <div className="flex items-center gap-3">
                     <div className="p-2.5 rounded-full bg-indigo-50 dark:bg-indigo-950/60 border border-indigo-200 dark:border-indigo-800 text-indigo-600 dark:text-indigo-400">
-                      <Paperclip size={20} />
+                      <Sparkles size={20} />
                     </div>
                     <div>
-                      <h4 className="text-sm font-bold text-gray-900 dark:text-white">
-                        Dosar Documente & Certificate ONRC
-                      </h4>
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-bold text-gray-900 dark:text-white">
+                          Dosar Digital & Clasificare Automată Multi-Document (Bulk OCR)
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 text-[10px] font-extrabold uppercase tracking-wide">
+                          Smart OCR
+                        </span>
+                      </div>
                       <p className="text-[11px] text-gray-500 dark:text-gray-400">
-                        Atașează certificate descărcate din MyONRC sau alte documente justificative
+                        Trage la grămadă buletinul, bilanțul, certificatul ONRC sau extrasul de cont. Sistemul clasifică automat fiecare fișier și extrage datele.
                       </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Upload Box */}
-                <label className="border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-indigo-500 dark:hover:border-indigo-400 rounded-2xl p-4 text-center block cursor-pointer transition-colors bg-gray-50/50 dark:bg-gray-900/30">
+                {/* Checklist Automat Dosar Complet Onboarding */}
+                {(() => {
+                  const allDocs = [...clientDocs, ...ocrResults];
+                  const hasCI = allDocs.some(d => (d.document_type || d.categoryLabel || d.category || '').toLowerCase().includes('carte de identitate') || (d.document_type || '').includes('CI'));
+                  const hasONRC = allDocs.some(d => (d.document_type || d.categoryLabel || d.category || '').toLowerCase().includes('onrc') || (d.document_type || '').includes('CUI') || (d.document_type || '').includes('Certificat Constatator'));
+                  const hasBilant = allDocs.some(d => (d.document_type || d.categoryLabel || d.category || '').toLowerCase().includes('bilanț') || (d.document_type || '').toLowerCase().includes('bilant') || (d.document_type || '').includes('Financiare'));
+                  const hasExtras = allDocs.some(d => (d.document_type || d.categoryLabel || d.category || '').toLowerCase().includes('extras'));
+
+                  return (
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+                      <div className={`p-2.5 rounded-2xl border text-xs flex flex-col gap-1 transition-all ${
+                        hasCI 
+                          ? 'bg-purple-50/80 dark:bg-purple-950/40 border-purple-200 dark:border-purple-800/60 text-purple-900 dark:text-purple-200' 
+                          : 'bg-gray-50/80 dark:bg-gray-900/40 border-gray-200 dark:border-gray-800 text-gray-400'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[11px]">C.I. Administrator</span>
+                          {hasCI ? <Check size={13} className="text-purple-600 font-bold" /> : <span className="text-[10px] text-gray-400">Lipsă</span>}
+                        </div>
+                        <span className="text-[10px] opacity-80">{hasCI ? 'Identificat & Validat' : 'Necesar în dosar'}</span>
+                      </div>
+
+                      <div className={`p-2.5 rounded-2xl border text-xs flex flex-col gap-1 transition-all ${
+                        hasONRC 
+                          ? 'bg-indigo-50/80 dark:bg-indigo-950/40 border-indigo-200 dark:border-indigo-800/60 text-indigo-900 dark:text-indigo-200' 
+                          : 'bg-gray-50/80 dark:bg-gray-900/40 border-gray-200 dark:border-gray-800 text-gray-400'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[11px] flex items-center gap-1"><Building2 size={12} /> Certificat ONRC</span>
+                          {hasONRC ? <Check size={13} className="text-indigo-600 font-bold" /> : <span className="text-[10px] text-gray-400">Lipsă</span>}
+                        </div>
+                        <span className="text-[10px] opacity-80">{hasONRC ? 'CUI & RegCom Valid' : 'Necesar în dosar'}</span>
+                      </div>
+
+                      <div className={`p-2.5 rounded-2xl border text-xs flex flex-col gap-1 transition-all ${
+                        hasBilant 
+                          ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-200 dark:border-blue-800/60 text-blue-900 dark:text-blue-200' 
+                          : 'bg-gray-50/80 dark:bg-gray-900/40 border-gray-200 dark:border-gray-800 text-gray-400'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[11px] flex items-center gap-1"><FileSpreadsheet size={12} /> Bilanț Contabil</span>
+                          {hasBilant ? <Check size={13} className="text-blue-600 font-bold" /> : <span className="text-[10px] text-gray-400">Lipsă</span>}
+                        </div>
+                        <span className="text-[10px] opacity-80">{hasBilant ? 'Cifră Afaceri & Profit' : 'Necesar în dosar'}</span>
+                      </div>
+
+                      <div className={`p-2.5 rounded-2xl border text-xs flex flex-col gap-1 transition-all ${
+                        hasExtras 
+                          ? 'bg-emerald-50/80 dark:bg-emerald-950/40 border-emerald-200 dark:border-emerald-800/60 text-emerald-900 dark:text-emerald-200' 
+                          : 'bg-gray-50/80 dark:bg-gray-900/40 border-gray-200 dark:border-gray-800 text-gray-400'
+                      }`}>
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-[11px] flex items-center gap-1"><FileText size={12} /> Extras Bancar</span>
+                          {hasExtras ? <Check size={13} className="text-emerald-600 font-bold" /> : <span className="text-[10px] text-gray-400">Lipsă</span>}
+                        </div>
+                        <span className="text-[10px] opacity-80">{hasExtras ? 'IBAN & Sold Verificat' : 'Opțional'}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Upload Dropzone Box (Multi-file enabled) */}
+                <label className="border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-indigo-500 dark:hover:border-indigo-400 rounded-3xl p-5 text-center block cursor-pointer transition-all bg-gray-50/50 dark:bg-gray-900/30 hover:bg-indigo-50/20 shadow-2xs">
                   <input
                     type="file"
+                    multiple
                     accept=".pdf,.png,.jpg,.jpeg"
                     onChange={handleDocUpload}
                     disabled={uploadingDoc}
@@ -3979,23 +4079,35 @@ const ClientDetails = () => {
                   />
                   <div className="flex flex-col items-center justify-center gap-2">
                     {uploadingDoc ? (
-                      <>
-                        <Loader2 size={24} className="animate-spin text-indigo-600" />
-                        <span className="text-xs font-semibold text-gray-700 dark:text-gray-200">
-                          Se încarcă documentul...
+                      <div className="space-y-1.5 py-1">
+                        <div className="flex items-center justify-center gap-2">
+                          <Loader2 size={22} className="animate-spin text-indigo-600" />
+                          <span className="text-xs font-bold text-gray-800 dark:text-gray-200">
+                            {ocrProgress 
+                              ? `Analizez OCR: Fișierul ${ocrProgress.current} din ${ocrProgress.total}...`
+                              : 'Clasific documentele încărcate...'}
+                          </span>
+                        </div>
+                        {ocrProgress?.filename && (
+                          <span className="text-[11px] text-indigo-600 dark:text-indigo-400 block truncate max-w-sm">
+                            {ocrProgress.filename}
+                          </span>
+                        )}
+                        <span className="text-[10px] text-gray-400 block">
+                          Extracție optică automată și recunoaștere entități oficiale
                         </span>
-                      </>
+                      </div>
                     ) : (
                       <>
-                        <div className="p-2 bg-indigo-50 dark:bg-indigo-950/60 rounded-full text-indigo-600 dark:text-indigo-400">
-                          <Upload size={18} />
+                        <div className="p-3 bg-indigo-50 dark:bg-indigo-950/60 rounded-full text-indigo-600 dark:text-indigo-400 shadow-2xs">
+                          <Upload size={20} />
                         </div>
                         <div>
-                          <span className="text-xs font-bold text-gray-800 dark:text-gray-200 block">
-                            Apasă pentru a încărca Certificat Constatator (PDF)
+                          <span className="text-xs font-bold text-gray-900 dark:text-gray-100 block">
+                            Trage fișierele aici sau apasă pentru a încărca (Multi-Fișier PDF / Imagini)
                           </span>
-                          <span className="text-[10px] text-gray-500 dark:text-gray-400">
-                            sau trage fișierul aici (max. 20MB)
+                          <span className="text-[11px] text-gray-500 dark:text-gray-400 block mt-0.5">
+                            Poți selecta concomitent Buletin, Bilanț, CUI și Extras — Sistemul le separă și le recunoaște automat.
                           </span>
                         </div>
                       </>
@@ -4005,54 +4117,82 @@ const ClientDetails = () => {
 
                 {/* Document List */}
                 <div className="mt-4 space-y-2">
-                  <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 block">
-                    Documente salvate în dosar ({clientDocs.length})
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-gray-700 dark:text-gray-300 block">
+                      Documente salvate în dosar ({clientDocs.length})
+                    </span>
+                    <span className="text-[10px] text-gray-400">
+                      Asociate faptic la profilul clientului
+                    </span>
+                  </div>
 
                   {clientDocs.length === 0 ? (
                     <div className="p-6 text-center text-xs text-gray-400 border border-gray-100 dark:border-gray-800 rounded-2xl bg-gray-50/30 dark:bg-gray-900/20">
-                      Nu a fost încărcat niciun certificat extern pentru acest client.
+                      Nu a fost încărcat niciun document extern pentru acest client.
                       <p className="text-[11px] text-gray-500 mt-1">
-                        Puteți folosi butonul de mai sus pentru descărcarea certificatului instant generat de Axis sau încărca certificatul emis de portalul MyONRC.
+                        Puteți folosi dropzone-ul de mai sus pentru încărcarea automată sau genera certificatul instant din butonul din stânga.
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                      {clientDocs.map((doc, dIdx) => (
-                        <div key={dIdx} className="p-3 rounded-2xl bg-gray-50/80 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 text-xs">
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <FileText size={16} className="text-indigo-600 shrink-0" />
-                            <div className="min-w-0">
-                              <span className="font-semibold text-gray-900 dark:text-white block truncate" title={doc.filename}>
-                                {doc.filename}
-                              </span>
-                              <span className="text-[10px] text-gray-400">
-                                {doc.size_bytes ? `${Math.round(doc.size_bytes / 1024)} KB • ` : ''}
-                                {new Date(doc.uploaded_at || Date.now()).toLocaleDateString('ro-RO')}
-                              </span>
+                    <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                      {clientDocs.map((doc, dIdx) => {
+                        const docType = doc.document_type || 'Document';
+                        const isCI = docType.includes('Carte de Identitate') || docType.includes('CI');
+                        const isBilant = docType.includes('Bilanț') || docType.includes('Financiare');
+                        const isONRC = docType.includes('ONRC') || docType.includes('Certificat');
+                        const isExtras = docType.includes('Extras');
+
+                        const badgeColor = isCI
+                          ? 'bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-950/40 dark:text-purple-300 dark:border-purple-800'
+                          : isBilant
+                          ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
+                          : isONRC
+                          ? 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-800'
+                          : isExtras
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
+                          : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:border-gray-700';
+
+                        return (
+                          <div key={dIdx} className="p-3 rounded-2xl bg-gray-50/80 dark:bg-gray-900/60 border border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3 text-xs shadow-2xs">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <FileText size={16} className="text-indigo-600 shrink-0" />
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-bold text-gray-900 dark:text-white block truncate" title={doc.filename}>
+                                    {doc.filename}
+                                  </span>
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-semibold border ${badgeColor}`}>
+                                    {docType}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] text-gray-400 block mt-0.5">
+                                  {doc.size_bytes ? `${Math.round(doc.size_bytes / 1024)} KB • ` : ''}
+                                  {new Date(doc.uploaded_at || Date.now()).toLocaleDateString('ro-RO')}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              <a
+                                href={`http://127.0.0.1:8000${doc.url}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors inline-flex items-center justify-center cursor-pointer text-gray-600 dark:text-gray-300 shadow-2xs"
+                                title="Deschide document"
+                              >
+                                <ExternalLink size={12} />
+                              </a>
+                              <a
+                                href={`http://127.0.0.1:8000${doc.url}`}
+                                download
+                                className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors inline-flex items-center justify-center cursor-pointer text-gray-600 dark:text-gray-300 shadow-2xs"
+                                title="Descarcă document"
+                              >
+                                <Download size={12} />
+                              </a>
                             </div>
                           </div>
-                          <div className="flex items-center gap-1 shrink-0">
-                            <a
-                              href={`http://127.0.0.1:8000${doc.url}`}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors inline-flex items-center justify-center cursor-pointer text-gray-600 dark:text-gray-300"
-                              title="Deschide document"
-                            >
-                              <ExternalLink size={12} />
-                            </a>
-                            <a
-                              href={`http://127.0.0.1:8000${doc.url}`}
-                              download
-                              className="p-1.5 border border-gray-200 dark:border-gray-700 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors inline-flex items-center justify-center cursor-pointer text-gray-600 dark:text-gray-300"
-                              title="Descarcă document"
-                            >
-                              <Download size={12} />
-                            </a>
-                          </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
                 </div>
