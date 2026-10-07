@@ -1388,6 +1388,7 @@ function drawLinkLabel(link, ctx, isDark = true) {
 }
 
 export default function InvestigationBoard({ rawData, clientName, clientCui, onClose, onOpenCompany, onOpenPerson, onOpenGovernance }) {
+  const cleanClientCui = String(clientCui || '').replace(/\D/g, '');
   const graphRef = useRef();
   const containerRef = useRef();
   const hasAutoCentered = useRef(false);
