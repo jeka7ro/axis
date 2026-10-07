@@ -63,16 +63,22 @@ const Login = () => {
       <div className="max-w-md w-full bg-white dark:bg-gray-900 p-8 sm:p-10 rounded-3xl shadow-xl border border-gray-200/90 dark:border-gray-800 space-y-6">
         
         {/* Brand Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex p-3 rounded-2xl bg-primary/10 text-primary mb-1">
-            <AxisAiIcon size="md" showAiBadge={false} />
+        <div className="text-center space-y-3">
+          <Link to="/" className="inline-block">
+            <img 
+              src="/footer-logo.png" 
+              alt="Axis Premium Mobility" 
+              className="h-16 w-auto mx-auto object-contain dark:invert transition-transform hover:scale-105" 
+            />
+          </Link>
+          <div>
+            <h2 className="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+              Axis Platform
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm mx-auto mt-1">
+              Autentificare în panoul operațional de management flotă & scoring financiar.
+            </p>
           </div>
-          <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-            Axis Platform
-          </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
-            Autentificare în panoul operațional de management flotă & scoring financiar.
-          </p>
         </div>
 
         {/* Error Alert */}

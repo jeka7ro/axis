@@ -9,6 +9,7 @@ import useAuthStore from '../store/authStore';
 import AxisAiCopilot from './AxisAiCopilot';
 import CookieBanner from './CookieBanner';
 import InviteMemberModal from './InviteMemberModal';
+import { BUILD_NUMBER, BUILD_DATE, BUILD_HASH } from '../config/buildInfo';
 
 
 const Layout = () => {
@@ -108,16 +109,16 @@ const Layout = () => {
   };
 
   const getPageTitle = (path) => {
-    if (path.startsWith('/clients')) return 'Management Clienți & AI Intel';
-    if (path.startsWith('/vehicles')) return 'Flotă Proprie & Disponibilitate';
-    if (path.startsWith('/blacklist')) return 'Black List & Evaluare Risc';
-    if (path.startsWith('/offers')) return 'Oferte & Contracte Leasing';
-    if (path.startsWith('/campaigns')) return 'Campanii Marketing Axis';
-    if (path.startsWith('/gps')) return 'Monitorizare Flotă Live (MS)';
-    if (path.startsWith('/alerts')) return 'Centru Istoric Alerte';
-    if (path.startsWith('/scenarios')) return 'Configurator Scenarii Scoring';
-    if (path.startsWith('/nomenclatures')) return 'Nomenclatoare Sistem';
-    return 'Panou de Control';
+    if (path.startsWith('/clients')) return 'Clienți & AI';
+    if (path.startsWith('/vehicles')) return 'Flotă Proprie';
+    if (path.startsWith('/blacklist')) return 'Black List';
+    if (path.startsWith('/offers')) return 'Oferte & Contracte';
+    if (path.startsWith('/campaigns')) return 'Campanii Axis';
+    if (path.startsWith('/gps')) return 'Monitorizare Flotă (MS)';
+    if (path.startsWith('/alerts')) return 'Istoric Alerte';
+    if (path.startsWith('/scenarios')) return 'Configurator Scenarii';
+    if (path.startsWith('/nomenclatures')) return 'Nomenclatoare';
+    return 'Dashboard';
   };
 
   if (!isAuthenticated) {
@@ -164,7 +165,7 @@ const Layout = () => {
           ) : (
             <>
               <Link to="/dashboard" className="flex items-center pl-1">
-                <img src="https://axisrent.ro/wp-content/uploads/2025/06/Black-AXIS-logo-1.png" alt="Axis Rent" className="h-9 object-contain dark:invert" />
+                <img src="/footer-logo.png" alt="Axis Premium Mobility" className="h-9 w-auto object-contain dark:invert" />
               </Link>
               <button
                 type="button"
@@ -205,26 +206,32 @@ const Layout = () => {
         </nav>
 
         {/* Clean Minimal Sidebar Footer */}
-        <div className="p-3.5 border-t border-gray-200 dark:border-gray-700/80 bg-gray-50/60 dark:bg-gray-800/40">
+        <div className="p-3 border-t border-gray-200 dark:border-gray-700/80 bg-gray-50/60 dark:bg-gray-800/40">
           {isSidebarCollapsed ? (
-            <div className="flex justify-center" title="Axis Cloud v2.4 Pro">
+            <div className="flex justify-center" title={`Axis Cloud v2.4 Pro (Build #${BUILD_NUMBER} · ${BUILD_DATE})`}>
               <span className="relative flex h-2 w-2">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
               </span>
             </div>
           ) : (
-            <div className="flex items-center justify-between px-1 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            <div className="space-y-1.5 px-1">
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="relative flex h-2 w-2">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                  <span className="font-semibold text-gray-700 dark:text-gray-200">Axis Cloud</span>
+                </div>
+                <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-700/70 px-2 py-0.5 rounded-md border border-gray-200/60 dark:border-gray-600/60 font-mono">
+                  v2.4 Pro
                 </span>
-                <span className="font-medium text-gray-600 dark:text-gray-300">Axis Cloud</span>
               </div>
-              <span className="text-[11px] font-semibold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-700/70 px-2 py-0.5 rounded-full border border-gray-200/60 dark:border-gray-600/60">
-                v2.4 Pro
-              </span>
+              <div className="flex items-center justify-between text-[10px] text-gray-400 dark:text-gray-500 font-mono pt-1 border-t border-gray-200/60 dark:border-gray-700/60">
+                <span>Build #{BUILD_NUMBER}</span>
+                <span>{BUILD_DATE}</span>
+              </div>
             </div>
           )}
         </div>
@@ -244,14 +251,9 @@ const Layout = () => {
                 <PanelLeft size={18} />
               </button>
             )}
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-white tracking-tight">
-                {getPageTitle(location.pathname)}
-              </h2>
-              <p className="text-xs text-gray-500 dark:text-gray-400 hidden sm:block">
-                Platformă integrată de leasing operațional și evaluare inteligentă
-              </p>
-            </div>
+            <h1 className="text-sm font-semibold text-gray-800 dark:text-gray-100 tracking-tight">
+              {getPageTitle(location.pathname)}
+            </h1>
           </div>
 
           <div className="flex items-center gap-3">

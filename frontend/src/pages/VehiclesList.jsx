@@ -345,11 +345,26 @@ const VehiclesList = () => {
     const kmUntilService = nextServiceKm - mileage;
 
     if (kmUntilService <= 0) {
-      return { status: 'OVERDUE', label: `Revizie Depășită (${Math.abs(kmUntilService)} km)`, color: 'text-red-700 bg-red-50 border-red-200 dark:bg-red-950/40 dark:border-red-800' };
+      return { 
+        status: 'OVERDUE', 
+        kmUntilService,
+        label: `Depășită (${Math.abs(kmUntilService).toLocaleString('ro-RO')} km)`, 
+        color: 'text-rose-700 bg-rose-50 border-rose-200 dark:bg-rose-950/40 dark:border-rose-800 dark:text-rose-300' 
+      };
     } else if (kmUntilService <= 1500) {
-      return { status: 'WARNING', label: `Revizie în ${kmUntilService} km`, color: 'text-amber-700 bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800' };
+      return { 
+        status: 'WARNING', 
+        kmUntilService,
+        label: `În ${kmUntilService.toLocaleString('ro-RO')} km`, 
+        color: 'text-amber-700 bg-amber-50 border-amber-200 dark:bg-amber-950/40 dark:border-amber-800 dark:text-amber-300' 
+      };
     } else {
-      return { status: 'OK', label: `Revizie în ${kmUntilService} km`, color: 'text-emerald-700 bg-emerald-50 border-emerald-200 dark:bg-emerald-950/40 dark:border-emerald-800' };
+      return { 
+        status: 'OK', 
+        kmUntilService,
+        label: `În ${kmUntilService.toLocaleString('ro-RO')} km`, 
+        color: 'text-gray-600 bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300' 
+      };
     }
   };
 
@@ -1352,22 +1367,18 @@ const VehiclesList = () => {
                           </div>
                           <div className="flex items-center gap-1.5 mt-0.5">
                             {v.is_high_risk ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-red-100 text-red-800 dark:bg-red-950/80 dark:text-red-300 border border-red-300 dark:border-red-800">
-                                <ShieldAlert size={11} /> Watchlist
+                              <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-rose-600 dark:text-rose-400">
+                                <ShieldAlert size={12} className="text-rose-500 shrink-0" /> Watchlist
                               </span>
                             ) : (
-                              <span className="text-[10px] text-gray-400">VIN: {v.vin ? v.vin.substring(0, 10) + '...' : '-'}</span>
+                              <span className="text-[11px] text-gray-400">VIN: {v.vin ? v.vin.substring(0, 10) + '...' : '-'}</span>
                             )}
                           </div>
                         </td>
 
                         {/* Regim Flotă */}
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-semibold border ${
-                            (v.fleet_type || 'LT') === 'LT'
-                              ? 'bg-blue-50 text-blue-800 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
-                              : 'bg-emerald-50 text-emerald-800 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800'
-                          }`}>
+                          <span className="h-6 inline-flex items-center px-2.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200/80 dark:border-gray-700">
                             {v.fleet_type || 'LT'} ({v.fleet_type === 'ST' ? 'Rent' : 'Leasing'})
                           </span>
                         </td>
@@ -1378,26 +1389,37 @@ const VehiclesList = () => {
                             <button
                               type="button"
                               onClick={() => setReservationModalVehicle(v)}
-                              className="group inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800 hover:bg-purple-100 dark:hover:bg-purple-900/60 transition-all cursor-pointer shadow-2xs"
-                              title="Vehicul Rezervat • Click pentru detalii beneficiar, contact și deblocare prematură"
+                              className="h-6 inline-flex items-center gap-1.5 px-2.5 rounded-full text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100 dark:bg-purple-950/50 dark:text-purple-300 dark:border-purple-800 transition-colors cursor-pointer"
+                              title="Vehicul Rezervat • Click pentru detalii rezervare"
                             >
-                              <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" />
+                              <span className="w-1.5 h-1.5 rounded-full bg-purple-500 shrink-0" />
                               <span>Rezervat</span>
-                              <Clock size={11} className="text-purple-500 group-hover:scale-110 transition-transform" />
+                              <Clock size={11} className="text-purple-500 shrink-0" />
                             </button>
                           ) : (
-                            <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium border ${
+                            <span className={`h-6 inline-flex items-center gap-1.5 px-2.5 rounded-full text-xs font-medium border ${
                               v.status === 'Disponibil' 
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300' 
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-950/40 dark:text-emerald-300 dark:border-emerald-800' 
                                 : v.status === 'Închiriat'
-                                ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:text-blue-300 dark:border-blue-800'
                                 : v.status === 'În Service'
-                                ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300'
+                                ? 'bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-950/40 dark:text-amber-300 dark:border-amber-800'
                                 : v.status === 'Daună'
-                                ? 'bg-red-50 text-red-700 border-red-200 dark:bg-red-950/40 dark:text-red-300'
-                                : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-700 dark:text-gray-300'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-950/40 dark:text-rose-300 dark:border-rose-800'
+                                : 'bg-gray-100 text-gray-700 border-gray-200 dark:bg-gray-800 dark:text-gray-300'
                             }`}>
-                              {v.status}
+                              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                                v.status === 'Disponibil'
+                                  ? 'bg-emerald-500'
+                                  : v.status === 'Închiriat'
+                                  ? 'bg-blue-500'
+                                  : v.status === 'În Service'
+                                  ? 'bg-amber-500'
+                                  : v.status === 'Daună'
+                                  ? 'bg-rose-500'
+                                  : 'bg-gray-400'
+                              }`} />
+                              <span>{v.status}</span>
                             </span>
                           )}
                         </td>
@@ -1413,12 +1435,27 @@ const VehiclesList = () => {
 
                         {/* Revizie & Service Status */}
                         <td className="px-5 py-4 whitespace-nowrap">
-                          <span 
-                            onClick={() => handleOpenDetails(v, 'service')}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold border cursor-pointer hover:opacity-80 transition-opacity ${srv.color}`}
-                          >
-                            <Wrench size={11} /> {srv.label}
-                          </span>
+                          {srv.status === 'OK' ? (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDetails(v, 'service')}
+                              className="inline-flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 cursor-pointer transition-colors"
+                              title="Revizie în grafic normal • Click pentru detalii service"
+                            >
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                              <span>{srv.kmUntilService.toLocaleString('ro-RO')} km rămași</span>
+                            </button>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={() => handleOpenDetails(v, 'service')}
+                              className={`h-6 inline-flex items-center gap-1.5 px-2.5 rounded-full text-xs font-medium border cursor-pointer hover:opacity-85 transition-opacity ${srv.color}`}
+                              title={srv.status === 'OVERDUE' ? 'Revizie depășită • Click pentru detalii service' : 'Atenție revizie apropiată • Click pentru detalii service'}
+                            >
+                              <Wrench size={11} className="shrink-0" />
+                              <span>{srv.status === 'OVERDUE' ? `Depășită (${Math.abs(srv.kmUntilService).toLocaleString('ro-RO')} km)` : `În ${srv.kmUntilService.toLocaleString('ro-RO')} km`}</span>
+                            </button>
+                          )}
                         </td>
 
                         {/* Preț / Lună */}

@@ -145,7 +145,7 @@ const Register = () => {
         initials: formData.fullName.split(' ').map(n => n[0]).join('').toUpperCase() || 'AX'
       };
 
-      setSuccessMsg('Contul a fost creat cu succes! Un email de bun venit a fost expediat prin Brevo.');
+      setSuccessMsg('Contul a fost creat cu succes! Bine ai venit pe platforma Axis.');
 
       // Login automatically and redirect
       login(userProfile, res.access_token || 'bearer-token');
@@ -165,16 +165,22 @@ const Register = () => {
       <div className="max-w-lg w-full bg-white dark:bg-gray-900 p-8 sm:p-10 rounded-3xl shadow-xl border border-gray-200/90 dark:border-gray-800 space-y-6">
         
         {/* Brand Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex p-3 rounded-2xl bg-primary/10 text-primary mb-1">
-            <AxisAiIcon size="md" showAiBadge={false} />
+        <div className="text-center space-y-3">
+          <Link to="/" className="inline-block">
+            <img 
+              src="/footer-logo.png" 
+              alt="Axis Premium Mobility" 
+              className="h-16 w-auto mx-auto object-contain dark:invert transition-transform hover:scale-105" 
+            />
+          </Link>
+          <div>
+            <h2 className="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+              Creează Cont Executiv
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm mx-auto mt-1">
+              Înregistrează-te pe platforma Axis Mobility pentru management flotă, scoring financiar și comitet de credit.
+            </p>
           </div>
-          <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-            Creează Cont Executiv
-          </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
-            Înregistrează-te pe platforma Axis Mobility pentru management flotă, scoring financiar și comitet de credit.
-          </p>
         </div>
 
         {/* Error / Success Feedback */}
@@ -210,7 +216,7 @@ const Register = () => {
                 required
                 value={formData.inviteCode}
                 onChange={e => setFormData({ ...formData, inviteCode: e.target.value.toUpperCase() })}
-                placeholder="ex: AXIS-INV-36DAA096 sau AXIS-ROOT-2026"
+                placeholder="Cod de invitație"
                 className="w-full pl-3.5 pr-10 py-2.5 bg-gray-50 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 rounded-2xl text-xs font-bold tracking-wider text-gray-900 dark:text-white uppercase focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
               />
               <div className="absolute right-3.5 top-1/2 -translate-y-1/2">
@@ -385,13 +391,6 @@ const Register = () => {
             </div>
           )}
 
-          {/* Brevo Notification Banner */}
-          <div className="p-3 rounded-2xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/60 text-[11px] text-blue-700 dark:text-blue-300 flex items-start gap-2 leading-relaxed">
-            <Sparkles size={14} className="shrink-0 text-blue-600 mt-0.5" />
-            <span>
-              La finalizarea înregistrării vei primi automat un <strong>email de confirmare și bun venit</strong> expediat securizat prin <strong>Brevo Transactional API v3</strong>.
-            </span>
-          </div>
 
           {/* Mandatory GDPR & Legal Consent Box */}
           <div className="p-3.5 rounded-2xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 space-y-2.5 text-xs text-gray-700 dark:text-gray-300">

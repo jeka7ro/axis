@@ -35,16 +35,22 @@ const ForgotPassword = () => {
       <div className="max-w-md w-full bg-white dark:bg-gray-900 p-8 sm:p-10 rounded-3xl shadow-xl border border-gray-200/90 dark:border-gray-800 space-y-6">
         
         {/* Header */}
-        <div className="text-center space-y-2">
-          <div className="inline-flex p-3 rounded-2xl bg-primary/10 text-primary mb-1">
-            <AxisAiIcon size="md" showAiBadge={false} />
+        <div className="text-center space-y-3">
+          <Link to="/" className="inline-block">
+            <img 
+              src="/footer-logo.png" 
+              alt="Axis Premium Mobility" 
+              className="h-16 w-auto mx-auto object-contain dark:invert transition-transform hover:scale-105" 
+            />
+          </Link>
+          <div>
+            <h2 className="text-xl font-extrabold text-gray-900 dark:text-white tracking-tight">
+              Ai Uitat Parola?
+            </h2>
+            <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm mx-auto mt-1">
+              Introdu adresa de email a contului tău Axis pentru a primi un link securizat de resetare.
+            </p>
           </div>
-          <h2 className="text-2xl font-extrabold text-gray-900 dark:text-white tracking-tight">
-            Ai Uitat Parola?
-          </h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400 max-w-sm mx-auto">
-            Introdu adresa de email a contului tău Axis pentru a primi un link securizat de resetare prin Brevo.
-          </p>
         </div>
 
         {/* Error Alert */}
@@ -73,7 +79,7 @@ const ForgotPassword = () => {
             <div className="p-3.5 rounded-2xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200/80 dark:border-blue-900/60 text-[11px] text-blue-700 dark:text-blue-300 space-y-1">
               <div className="flex items-center gap-1.5 font-bold">
                 <Sparkles size={13} className="text-blue-600" />
-                <span>Serviciu Tranzacțional Brevo API v3:</span>
+                <span>Instrucțiuni de securitate:</span>
               </div>
               <p className="leading-relaxed">
                 Mesajul conține un link securizat valabil timp de <strong>60 de minute</strong>. Verifică atât folderul <strong>Inbox</strong>, cât și <strong>Spam / Promoții</strong>.
@@ -117,13 +123,6 @@ const ForgotPassword = () => {
               </div>
             </div>
 
-            <div className="p-3 rounded-2xl bg-gray-50 dark:bg-gray-800/60 border border-gray-200/80 dark:border-gray-700/80 text-[11px] text-gray-500 dark:text-gray-400 flex items-start gap-2 leading-relaxed">
-              <Sparkles size={14} className="shrink-0 text-primary mt-0.5" />
-              <span>
-                Vom expedia instantaneu instrucțiunile de resetare prin <strong>Brevo (Sendinblue) Transactional v3</strong>.
-              </span>
-            </div>
-
             <button
               type="submit"
               disabled={loading || !email.trim()}
@@ -132,7 +131,7 @@ const ForgotPassword = () => {
               {loading ? (
                 <>
                   <Loader2 size={16} className="animate-spin" />
-                  <span>Se trimite linkul prin Brevo...</span>
+                  <span>Se trimite linkul de resetare...</span>
                 </>
               ) : (
                 <>
