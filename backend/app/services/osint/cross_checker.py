@@ -89,28 +89,75 @@ class CrossChecker:
         admin_networks: List[Dict] = None,
         holdings_data: List[Dict] = None,
         administrators_data: List[Dict] = None,
-        caen_data: Dict = None
+        caen_data: Dict = None,
+        court_cases: List[Dict] = None
     ) -> Dict:
         """
-        Cross-checks ANAF data with personnel history (shareholders & administrators), financial balance sheets, BPI (Insolvență), MOF and network ("Caracatița").
+        Cross-checks ANAF data with personnel history (shareholders & administrators), financial balance sheets, BPI (Insolvență), MOF, court cases (Just.ro) and network ("Caracatița").
         """
         risk_score = 0
         flags = []
         
-        # 0. Verificare Insolvență BPI (Risc Maxim)
-        if bpi_data and bpi_data.get("has_insolvency"):
-            count = bpi_data.get("count", 1)
-            risk_score += 85
-            flags.append(f"ALERTA CRITICĂ: Compania figurează în Buletinul Procedurilor de Insolvență (BPI) cu {count} dosare/publicații active!")
+        # 0. Verificare & Sincronizare Deterministă Insolvență (BPI, Portal Just.ro & ANAF)
+        insolvency_court_cases = []
+        if court_cases:
+            for c in court_cases:
+                text_to_scan = f"{c.get('obiect', '')} {c.get('categorie', '')} {c.get('stadiu', '')}".lower()
+                if any(w in text_to_scan for w in ['faliment', 'insolven', 'concordat preventiv', 'deschiderea procedurii', 'l85/2014', 'legea 85/2014', 'reorganizare judiciară']):
+                    insolvency_court_cases.append(c)
 
-        # 1. Verifica Inactivitate Fiscala si Status ANAF
+        is_anaf_insolvent = anaf_data.get("is_insolvent") or any(w in str(anaf_data.get("stare", "")).upper() for w in ["INSOLVEN", "FALIMENT", "LICHID"])
+        has_liquidators = any(
+            any(w in str(a.get("calitate") or a.get("functie") or a.get("rol") or "").lower() for w in ["lichidator", "administrator judiciar", "practician"])
+            for a in (administrators_data or []) + personnel_data
+        )
+
+        # Sincronizare BPI: dacă Just.ro, ANAF sau lista de lichidatori confirmă procedura de insolvență,
+        # BPI devine True cu cazurile concrete pentru a preveni contradicțiile de UI
+        bpi_active = bool(bpi_data and bpi_data.get("has_insolvency"))
+        if not bpi_active and (insolvency_court_cases or is_anaf_insolvent or has_liquidators):
+            bpi_data = bpi_data or {}
+            bpi_data["has_insolvency"] = True
+            bpi_data["count"] = max(bpi_data.get("count", 0), len(insolvency_court_cases), 1)
+            if not bpi_data.get("records") and insolvency_court_cases:
+                bpi_data["records"] = insolvency_court_cases
+            bpi_data["source"] = "Portal Just.ro & Evidențe Judiciare"
+            bpi_active = True
+
+        if bpi_active:
+            count = bpi_data.get("count", max(len(insolvency_court_cases), 1))
+            risk_score += 85
+            flags.append(f"ALERTA CRITICĂ: Compania figurează în Procedură de Insolvență / Faliment ({count} dosare/publicații active)!")
+        elif insolvency_court_cases:
+            risk_score += 75
+            nums = [c.get('numar', 'Dosar') for c in insolvency_court_cases[:2]]
+            flags.append(f"ALERTA JUST.RO: Procedură de insolvență / faliment identificată pe rolul instanțelor ({', '.join(nums)})!")
+        elif court_cases and len(court_cases) >= 15:
+            risk_score += 20
+            flags.append(f"Atenție litigii frecvente: {len(court_cases)} dosare identificate pe portal.just.ro.")
+        elif court_cases and len(court_cases) >= 5:
+            risk_score += 10
+            flags.append(f"Atenție litigii: {len(court_cases)} dosare înregistrate pe rolul instanțelor.")
+
+        # 1. Verificare Inactivitate Fiscala, Suspendare si Status ANAF
         if anaf_data.get("inactiv_fiscal") is True:
             risk_score += 60
             flags.append("Compania este declarată INACTIVĂ FISCAL de către ANAF (Risc Critic!)")
 
-        if anaf_data.get("status") != "Activa":
-            risk_score += 50
-            flags.append(f"Compania figurează cu status: {anaf_data.get('status', 'Radiată')} la ANAF.")
+        if anaf_data.get("is_suspended") or "SUSPEND" in str(anaf_data.get("stare", "")).upper():
+            risk_score += 45
+            date_match = str(anaf_data.get("stare", "")).split("din data")
+            date_str = f" (din {date_match[1].strip()})" if len(date_match) > 1 else ""
+            flags.append(f"ALERTA: Compania figurează cu ACTIVITATE SUSPENDATĂ la Registrul Comerțului / ANAF{date_str}!")
+        elif anaf_data.get("status") == "Radiata" or anaf_data.get("is_radiated"):
+            risk_score += 85
+            flags.append("Compania figurează ca RADIATĂ din evidențele oficiale ANAF / ONRC.")
+        elif anaf_data.get("status") == "Insolventa" or is_anaf_insolvent:
+            risk_score += 70
+            flags.append("Compania figurează în stare oficială de INSOLVENȚĂ / FALIMENT la ANAF.")
+        elif anaf_data.get("status") and anaf_data.get("status") != "Activa":
+            risk_score += 40
+            flags.append(f"Compania figurează cu status: {anaf_data.get('status')} la ANAF.")
 
         if not anaf_data.get("tva_activ", True):
             risk_score += 15
@@ -177,15 +224,25 @@ class CrossChecker:
                 risk_score += 20
                 flags.append(f"Declin sever al cifrei de afaceri ({evol}% vs exercițiul precedent).")
                 
-        # 4. Verificare Sediu & Cluster Firme (Căsuță Poștală / Firmă fantomă)
+        # 4. Verificare Sediu & Cluster Firme (Căsuță Poștală vs. Turn de Birouri)
         if address_data:
-            cluster_count = address_data.get("cluster_count", 0)
-            if cluster_count >= 10:
+            exact_count = address_data.get("exact_match_count", 0)
+            is_office = address_data.get("is_office_building", False)
+            is_mailbox = address_data.get("is_mailbox", False)
+            bld_count = address_data.get("building_cluster_count", address_data.get("cluster_count", 0))
+
+            if is_mailbox or exact_count >= 5:
+                # Doar dacă adresa este EXACT IDENTICĂ (aceeași cameră/apartament pentru 5+ firme)
                 risk_score += 20
-                flags.append(f"Sediu cu risc ridicat (Căsuță Poștală): Peste {cluster_count} firme înregistrate la aceeași adresă/clădire!")
-            elif cluster_count >= 5:
-                risk_score += 10
-                flags.append(f"Atenție: Densitate ridicată de firme ({cluster_count} firme) la aceeași adresă/clădire.")
+                flags.append(f"Sediu cu risc ridicat (Căsuță Poștală): {exact_count} firme înregistrate la aceeași încăpere/cameră exactă!")
+            elif exact_count >= 2:
+                risk_score += 5
+                flags.append(f"Notă sediu: {exact_count} firme identificate la aceeași unitate/încăpere.")
+            elif is_office:
+                # Turn de birouri / Business Park / Complex Comercial: ZERO penalizare de risc!
+                flags.append(f"Sediu în clădire de birouri / centru de afaceri ({bld_count} entități în imobil).")
+            elif bld_count >= 10:
+                flags.append(f"Imobil cu densitate comercială ({bld_count} entități la acest număr stradal).")
                 
         # Normalize score
         final_score = max(5, 100 - min(risk_score, 95))
@@ -203,5 +260,6 @@ class CrossChecker:
             "raw_address": address_data or {},
             "raw_bpi": bpi_data or {},
             "raw_mof": mof_data or [],
+            "court_cases": court_cases or [],
             "admin_networks": admin_networks or []
         }

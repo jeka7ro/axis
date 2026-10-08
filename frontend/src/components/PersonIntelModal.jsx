@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { 
   X, User, Building2, Scale, ExternalLink, ShieldAlert, 
-  CheckCircle2, Loader2, Eye, UserCheck, AlertTriangle, ArrowLeft, ChevronRight
+  CheckCircle2, Loader2, Eye, UserCheck, AlertTriangle, ArrowLeft, ChevronRight,
+  Search, RefreshCw
 } from 'lucide-react';
-import { fetchPersonFullIntel } from '../services/api';
+import { fetchPersonFullIntel, fetchPortalJustCases } from '../services/api';
 
 const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany, history = [], onBack }) => {
   const [data, setData] = useState(null);
@@ -11,6 +12,12 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany, 
   const [activeTab, setActiveTab] = useState('network');
   const [expandedCase, setExpandedCase] = useState(null);
   const [selectedPersonIndex, setSelectedPersonIndex] = useState(0);
+
+  // Just.ro Live Query state
+  const [justSearchTerm, setJustSearchTerm] = useState('');
+  const [customCourtCases, setCustomCourtCases] = useState(null);
+  const [justSearching, setJustSearching] = useState(false);
+  const [justSearchError, setJustSearchError] = useState(null);
 
   useEffect(() => {
     if (!isOpen || !name) return;
@@ -21,10 +28,17 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany, 
     setActiveTab('network');
     setExpandedCase(null);
     setSelectedPersonIndex(0);
+    setCustomCourtCases(null);
+    setJustSearchError(null);
+    setJustSearchTerm(name || '');
 
     fetchPersonFullIntel(name, contextCui || '')
       .then(res => {
-        if (isMounted) setData(res);
+        if (isMounted) {
+          setData(res);
+          const firstPerson = res?.network?.[0]?.nume || name;
+          if (firstPerson) setJustSearchTerm(firstPerson);
+        }
       })
       .catch(err => {
         console.error('Eroare fetchPersonFullIntel:', err);
@@ -62,6 +76,54 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany, 
   const totalFirme = currentFirme.length;
   const activeFirme = currentFirme.filter(f => f.curent).length;
   const ceasedFirme = totalFirme - activeFirme;
+
+  const displayCourtCases = customCourtCases !== null ? customCourtCases : courtCases;
+
+  const handleSearchJust = async (searchTerm) => {
+    const q = (searchTerm !== undefined ? searchTerm : justSearchTerm || '').trim();
+    if (!q || q.length < 2) return;
+    setJustSearching(true);
+    setJustSearchError(null);
+    setExpandedCase(null);
+    try {
+      const res = await fetchPortalJustCases(q);
+      setCustomCourtCases(res || []);
+    } catch (err) {
+      console.error('Eroare căutare Portal Just.ro:', err);
+      setJustSearchError('Eroare la conectarea cu portalquery.just.ro. Reîncercați.');
+    } finally {
+      setJustSearching(false);
+    }
+  };
+
+  const justSuggestions = (() => {
+    const list = [];
+    const rawName = currentPerson.nume || name || '';
+    if (!rawName) return list;
+
+    list.push({ label: `Nume: "${rawName}"`, value: rawName });
+
+    // Inverted order
+    const parts = rawName.split(/\s+/).filter(Boolean);
+    if (parts.length === 2) {
+      const inv = `${parts[1]} ${parts[0]}`;
+      list.push({ label: `Inversat: "${inv}"`, value: inv });
+    }
+
+    // Without diacritics
+    const noDiacritics = rawName.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (noDiacritics !== rawName && !list.some(s => s.value.toLowerCase() === noDiacritics.toLowerCase())) {
+      list.push({ label: `Fără diacritice: "${noDiacritics}"`, value: noDiacritics });
+    }
+
+    // Connected companies
+    (currentFirme || []).slice(0, 2).forEach(f => {
+      if (f.denumire && !list.some(s => s.value.toLowerCase() === f.denumire.toLowerCase())) {
+        list.push({ label: `Firmă: "${f.denumire}"`, value: f.denumire });
+      }
+    });
+    return list;
+  })();
 
   return (
     <div 
@@ -138,9 +200,9 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany, 
                   </span>
                 )}
                 <span className={`px-2.5 py-0.5 rounded-md text-xs font-semibold ${
-                  courtCases.length > 0 ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+                  displayCourtCases.length > 0 ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
                 }`}>
-                  {courtCases.length} Dosare Just.ro
+                  {displayCourtCases.length} Dosare Just.ro
                 </span>
               </div>
             </div>
@@ -232,9 +294,9 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany, 
             <Scale size={14} />
             <span>Dosare Personale (Portal Just.ro)</span>
             <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold ${
-              courtCases.length > 0 ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+              displayCourtCases.length > 0 ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
             }`}>
-              {courtCases.length}
+              {displayCourtCases.length}
             </span>
           </button>
         </div>
@@ -345,98 +407,214 @@ const PersonIntelModal = ({ isOpen, onClose, name, contextCui, onSelectCompany, 
               {/* TAB 2: LITIGII JUST.RO */}
               {activeTab === 'just' && (
                 <div className="space-y-4">
-                  {courtCases.length === 0 ? (
-                    <div className="p-8 text-center bg-gray-50 dark:bg-gray-900/40 rounded-lg border border-gray-200 dark:border-gray-700">
+                  {/* Informational Banner */}
+                  <div className="p-3 bg-blue-50/80 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-xl flex items-center justify-between text-xs text-blue-800 dark:text-blue-300">
+                    <div className="flex items-center gap-2">
+                      <Scale size={16} className="text-blue-600 shrink-0" />
+                      <span>Verificare live prin SOAP <strong>portalquery.just.ro</strong> (Ministerul Justiției) • 0 credite consumate.</span>
+                    </div>
+                    <span className="font-bold whitespace-nowrap px-2.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200">
+                      {displayCourtCases.length} {displayCourtCases.length === 1 ? 'Dosar Găsit' : 'Dosare Găsite'}
+                    </span>
+                  </div>
+
+                  {/* Interactive Live Search Bar */}
+                  <div className="p-3.5 bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl space-y-3">
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSearchJust();
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <div className="relative flex-1">
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="text"
+                          value={justSearchTerm}
+                          onChange={(e) => setJustSearchTerm(e.target.value)}
+                          placeholder="Caută după nume complet, nume inversat (NUME PRENUME) sau număr dosar..."
+                          className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={justSearching || !justSearchTerm.trim()}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0"
+                      >
+                        {justSearching ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin" />
+                            <span>Interogare Just.ro...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Search size={13} />
+                            <span>Caută pe Just.ro</span>
+                          </>
+                        )}
+                      </button>
+
+                      {customCourtCases !== null && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomCourtCases(null);
+                            setJustSearchTerm(currentPerson.nume || name);
+                          }}
+                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                          title="Resetează căutarea"
+                        >
+                          <RefreshCw size={12} />
+                          <span>Reset</span>
+                        </button>
+                      )}
+                    </form>
+
+                    {/* Quick Suggestion Chips */}
+                    {justSuggestions.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                        <span className="text-gray-400 font-medium mr-1">Sugestii rapide:</span>
+                        {justSuggestions.map((sug, sIdx) => {
+                          const isCurrent = justSearchTerm.trim().toLowerCase() === sug.value.trim().toLowerCase();
+                          return (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => {
+                                setJustSearchTerm(sug.value);
+                                handleSearchJust(sug.value);
+                              }}
+                              className={`px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors cursor-pointer ${
+                                isCurrent
+                                  ? 'bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200'
+                                  : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-750'
+                              }`}
+                            >
+                              {sug.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {justSearchError && (
+                      <p className="text-[11px] text-red-600 dark:text-red-400 font-medium">
+                        {justSearchError}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Results Display */}
+                  {displayCourtCases.length === 0 ? (
+                    <div className="p-8 text-center bg-gray-50 dark:bg-gray-900/40 rounded-2xl border border-gray-200 dark:border-gray-700">
                       <CheckCircle2 size={32} className="text-emerald-500 mx-auto mb-2" />
-                      <h5 className="font-bold text-gray-900 dark:text-white text-sm">Fără Dosare sau Litigii Înregistrate</h5>
+                      <h5 className="font-bold text-gray-900 dark:text-white text-sm">Fără Dosare Înregistrate</h5>
                       <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
-                        Nu au fost identificate dosare civile, comerciale sau penale pe numele acestei persoane pe portalquery.just.ro.
+                        Nu au fost identificate dosare civile, comerciale sau penale pe numele "{justSearchTerm || currentPerson.nume || name}" pe portal.just.ro. Încercați inversarea prenumelui sau căutarea fără diacritice.
                       </p>
                     </div>
                   ) : (
-                    <div className="space-y-3">
-                      <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
+                    <div className="rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800 shadow-2xs">
+                      <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
-                          <thead className="bg-gray-50/70 dark:bg-gray-900/40 text-gray-500 uppercase font-medium border-b border-gray-200 dark:border-gray-700">
+                          <thead className="bg-gray-50/80 dark:bg-gray-900/50 text-gray-500 uppercase font-medium border-b border-gray-200 dark:border-gray-700">
                             <tr>
+                              <th className="px-3.5 py-2.5 whitespace-nowrap">Nr. Crt.</th>
                               <th className="px-3.5 py-2.5 whitespace-nowrap">Număr Dosar</th>
                               <th className="px-3.5 py-2.5 whitespace-nowrap">Data</th>
                               <th className="px-3.5 py-2.5 whitespace-nowrap">Instanță</th>
                               <th className="px-3.5 py-2.5 whitespace-nowrap">Obiect / Categorie</th>
                               <th className="px-3.5 py-2.5 whitespace-nowrap">Stadiu</th>
-                              <th className="px-3.5 py-2.5 whitespace-nowrap text-right">Detalii</th>
+                              <th className="px-3.5 py-2.5 whitespace-nowrap text-right">Detalii Soluție</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {courtCases.map((c, idx) => (
-                              <tr key={idx} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/40 transition-colors">
-                                <td className="px-3.5 py-2.5 font-bold text-primary whitespace-nowrap">
-                                  <a 
-                                    href={`https://portal.just.ro/SitePages/cautare.aspx?k=${encodeURIComponent(c.numar)}`} 
-                                    target="_blank" 
-                                    rel="noreferrer"
-                                    className="hover:underline inline-flex items-center gap-1 text-xs"
-                                  >
-                                    <span>{c.numar}</span>
-                                    <ExternalLink size={10} />
-                                  </a>
-                                </td>
-                                <td className="px-3.5 py-2.5 text-gray-500 whitespace-nowrap">{c.data || '-'}</td>
-                                <td className="px-3.5 py-2.5 font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{c.institutie}</td>
-                                <td className="px-3.5 py-2.5 whitespace-nowrap">
-                                  <span className="text-gray-900 dark:text-white font-medium">{c.obiect}</span>
-                                  {c.categorie && (
-                                    <span className="text-[10px] text-gray-400 ml-1">({c.categorie})</span>
-                                  )}
-                                </td>
-                                <td className="px-3.5 py-2.5 whitespace-nowrap">
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                                    {c.stadiu || 'Fond'}
-                                  </span>
-                                </td>
-                                <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
-                                  <button
-                                    type="button"
-                                    onClick={() => setExpandedCase(expandedCase === idx ? null : idx)}
-                                    className="px-2.5 py-1 text-[11px] rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
-                                  >
-                                    {expandedCase === idx ? 'Ascunde' : 'Vezi Părți & Soluție'}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
+                            {displayCourtCases.map((c, idx) => {
+                              const portalUrl = c.url_portal || `https://portal.just.ro/SitePages/cautare.aspx?k=${encodeURIComponent(c.numar)}`;
+                              const isExpanded = expandedCase === idx;
+                              return (
+                                <tr key={idx} className="hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors">
+                                  <td className="px-3.5 py-2.5 text-gray-400 whitespace-nowrap font-medium">{idx + 1}</td>
+                                  <td className="px-3.5 py-2.5 font-bold text-primary whitespace-nowrap">
+                                    <a 
+                                      href={portalUrl} 
+                                      target="_blank" 
+                                      rel="noreferrer"
+                                      className="hover:underline inline-flex items-center gap-1 text-xs"
+                                    >
+                                      <span>{c.numar}</span>
+                                      <ExternalLink size={10} />
+                                    </a>
+                                  </td>
+                                  <td className="px-3.5 py-2.5 text-gray-500 whitespace-nowrap">{c.data || '-'}</td>
+                                  <td className="px-3.5 py-2.5 font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{c.institutie}</td>
+                                  <td className="px-3.5 py-2.5 whitespace-nowrap">
+                                    <span className="text-gray-900 dark:text-white font-medium">{c.obiect}</span>
+                                    {c.categorie && (
+                                      <span className="text-[10px] text-gray-400 ml-1">({c.categorie})</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3.5 py-2.5 whitespace-nowrap">
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                      {c.stadiu || 'Fond'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedCase(isExpanded ? null : idx)}
+                                      className="px-2.5 py-1 text-[11px] rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 font-semibold text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+                                    >
+                                      {isExpanded ? 'Ascunde' : 'Vezi Părți & Soluție'}
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
 
+                      {/* Table Footer */}
+                      <div className="px-4 py-2.5 bg-gray-50/60 dark:bg-gray-900/40 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs text-gray-500">
+                        <span className="font-semibold">Total: {displayCourtCases.length} {displayCourtCases.length === 1 ? 'dosar înregistrat' : 'dosare înregistrate'}</span>
+                        <span className="text-[11px]">Sursă: Ministerul Justiției ECRIS SOAP</span>
+                      </div>
+
                       {/* Expandable Case Drawer/Details */}
-                      {expandedCase !== null && courtCases[expandedCase] && (
-                        <div className="p-4 bg-gray-50 dark:bg-gray-900/70 border-t border-gray-200 dark:border-gray-700 text-xs space-y-3 animate-in fade-in rounded-lg">
+                      {expandedCase !== null && displayCourtCases[expandedCase] && (
+                        <div className="p-4 bg-gray-50 dark:bg-gray-900/80 border-t border-gray-200 dark:border-gray-700 text-xs space-y-3 animate-in fade-in">
                           <div className="flex items-center justify-between">
                             <h5 className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                              <span>Părți în dosarul {courtCases[expandedCase].numar}</span>
+                              <span>Părți în dosarul {displayCourtCases[expandedCase].numar}</span>
                             </h5>
-                            <button onClick={() => setExpandedCase(null)} className="text-gray-400 hover:text-gray-600 text-xs cursor-pointer flex items-center gap-1">
+                            <button 
+                              type="button"
+                              onClick={() => setExpandedCase(null)} 
+                              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs cursor-pointer flex items-center gap-1"
+                            >
                               <X size={14} /> Închide
                             </button>
                           </div>
 
                           <div className="flex flex-wrap gap-2">
-                            {courtCases[expandedCase].parti?.map((p, pIdx) => (
+                            {displayCourtCases[expandedCase].parti?.map((p, pIdx) => (
                               <div key={pIdx} className="px-2.5 py-1 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center gap-1.5 text-[11px]">
                                 <span className="font-medium text-gray-800 dark:text-gray-200">{p.nume}</span>
-                                <span className="px-1.5 py-0.2 rounded text-[9px] bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-semibold">
+                                <span className="px-1.5 py-0.2 rounded-md text-[9px] bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-semibold">
                                   {p.calitate}
                                 </span>
                               </div>
                             ))}
                           </div>
 
-                          {courtCases[expandedCase].sedinte?.length > 0 && (
+                          {displayCourtCases[expandedCase].sedinte?.length > 0 && (
                             <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-                              <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">Soluție Ședință ({courtCases[expandedCase].sedinte[0].data}):</span>
-                              <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
-                                {courtCases[expandedCase].sedinte[0].sumar || courtCases[expandedCase].sedinte[0].solutie || 'Fără sumar publicat.'}
+                              <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">Soluție Ședință ({displayCourtCases[expandedCase].sedinte[0].data}):</span>
+                              <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
+                                {displayCourtCases[expandedCase].sedinte[0].sumar || displayCourtCases[expandedCase].sedinte[0].solutie || 'Fără sumar publicat.'}
                               </p>
                             </div>
                           )}

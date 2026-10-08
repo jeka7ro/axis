@@ -79,6 +79,7 @@ class AIEngineService:
                 "bpi": osint_data.get("raw_bpi", {}),
                 "mof": osint_data.get("raw_mof", []),
                 "admin_networks": osint_data.get("admin_networks", []),
+                "court_cases": osint_data.get("court_cases", []),
                 "jev_certificate": jev_certificate
             })
         }

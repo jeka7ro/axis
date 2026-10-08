@@ -141,21 +141,42 @@ class JEVEngine:
                     "detail": f"Niciunul dintre administratori ({', '.join(adm_names)}) nu deține părți sociale. Acționariatul este deținut exclusiv de {', '.join(sh_names)}."
                 })
 
-        # B. Cluster căsuță poștală la sediu social
-        cluster_count = address.get("cluster_count") or (len(address.get("companies", [])) if address.get("companies") else 1)
-        if cluster_count >= 10:
+        # B. Cluster căsuță poștală la sediu social vs Turn de birouri
+        exact_cluster = address.get("exact_match_count", 0)
+        is_office_bld = address.get("is_office_building", False)
+        is_mailbox_risk = address.get("is_mailbox", False)
+        cluster_count = address.get("building_cluster_count") or address.get("cluster_count") or (len(address.get("companies", [])) if address.get("companies") else 1)
+        bld_count = cluster_count
+
+        if is_mailbox_risk or exact_cluster >= 5:
+            # DOAR dacă adresa este EXACT IDENTICĂ (aceeași cameră / birou / spațiu pentru mai multe firme)
             reasoning_gaps.append({
                 "type": "MAILBOX_CLUSTER",
                 "severity": "CRITICAL",
-                "title": "Risc de Sediu Căsuță Poștală / Incubator Masiv",
-                "detail": f"La adresa sediului social au fost identificate determinist {cluster_count} companii diferite. Risc crescut de neidentificare fizică a activității."
+                "title": "Risc de Sediu Căsuță Poștală (Adresă Exactă Identică)",
+                "detail": f"La camera/unitatea exactă a sediului social au fost identificate {exact_cluster} companii diferite. Risc confirmat de căsuță poștală / incubator fictiv."
             })
-        elif cluster_count >= 5:
+        elif is_office_bld:
+            # Clădire de birouri / Turn de afaceri — Densitate complet legitimă!
+            reasoning_gaps.append({
+                "type": "BUSINESS_CENTER_LOCATION",
+                "severity": "INFO",
+                "title": "Sediu în Clădire de Birouri / Centru de Afaceri",
+                "detail": f"Compania își desfășoară activitatea într-o clădire de birouri / parc de afaceri alături de alte {bld_count} companii în spații sau birouri distincte. Activitate comercială legitimă."
+            })
+        elif exact_cluster >= 2:
+            reasoning_gaps.append({
+                "type": "SHARED_UNIT",
+                "severity": "LOW",
+                "title": "Unitate/Spațiu Partajat",
+                "detail": f"Identificate {exact_cluster} firme la aceeași unitate/încăpere. Se recomandă verificarea contractului de închiriere/comodat."
+            })
+        elif bld_count >= 10:
             reasoning_gaps.append({
                 "type": "SHARED_OFFICE",
-                "severity": "MEDIUM",
-                "title": "Sediu cu Densitate Medie (Clădire Birouri / Co-working)",
-                "detail": f"Identificate {cluster_count} firme la aceeași adresă. Se recomandă verificarea numărului camerei/biroului conform contractului de comodat/închiriere."
+                "severity": "INFO",
+                "title": "Imobil cu Activitate Comercială Multiplă",
+                "detail": f"La acest număr poștal funcționează {bld_count} companii în spații separate."
             })
 
         # C. Contagiune de Rețea prin Caracatiță
@@ -174,13 +195,27 @@ class JEVEngine:
                 "detail": f"Administratorii/asociații figurează în companii cu probleme juridice/faliment: {', '.join(high_risk_network_firms[:3])}."
             })
 
-        # D. Verificare Litigii și Insolvență
-        if bpi.get("has_insolvency") or (isinstance(bpi.get("count"), int) and bpi.get("count") > 0):
+        # D. Verificare Suspendare Activitate, Litigii și Insolvență
+        if anaf.get("is_suspended") or "SUSPEND" in str(anaf.get("stare", "")).upper():
+            reasoning_gaps.append({
+                "type": "ACTIVITY_SUSPENDED",
+                "severity": "HIGH",
+                "title": "Activitate Comercială Suspendată",
+                "detail": f"Compania are activitatea temporar suspendată la Registrul Comerțului / ANAF ({anaf.get('stare', 'Suspendată')})."
+            })
+
+        has_court_insolvency = any(
+            any(w in f"{c.get('obiect', '')} {c.get('categorie', '')} {c.get('stadiu', '')}".lower() for w in ['faliment', 'insolven', 'concordat preventiv', 'deschiderea procedurii', 'l85/2014'])
+            for c in court_cases
+        )
+        is_insolvent_official = bpi.get("has_insolvency") or (isinstance(bpi.get("count"), int) and bpi.get("count") > 0) or has_court_insolvency or anaf.get("is_insolvent")
+
+        if is_insolvent_official:
             reasoning_gaps.append({
                 "type": "INSOLVENCY_ACTIVE",
                 "severity": "CRITICAL",
-                "title": "Dosar de Insolvență Înregistrat în BPI",
-                "detail": "Compania figurează în Buletinul Procedurilor de Insolvență cu procedură activă."
+                "title": "Procedură de Insolvență / Faliment Activă",
+                "detail": "Compania figurează cu procedură judiciară de insolvență sau faliment pe rolul instanțelor / în buletinele oficiale."
             })
 
         # =========================================================================

@@ -2684,9 +2684,32 @@ const ClientsList = () => {
                               </div>
                               <div>
                                 <span className="text-gray-400 block text-[11px]">Stare Activitate:</span>
-                                <span className={`font-semibold ${rawData.anaf?.stare_inactiv ? 'text-red-600' : 'text-emerald-600'}`}>
-                                  {rawData.anaf?.stare_inactiv ? 'Inactivă' : 'Activă'}
-                                </span>
+                                {(() => {
+                                  const rawStare = String(rawData.stare || rawData.anaf?.stare || rawData.anaf?.status || '').toUpperCase();
+                                  const isInact = Boolean(rawData.anaf?.inactiv_fiscal || rawData.anaf?.stare_inactiv);
+                                  const isSusp = rawStare.includes('SUSPEND');
+                                  const isInsolv = rawStare.includes('INSOLVEN') || rawStare.includes('FALIMENT') || rawStare.includes('LICHID');
+                                  const isRad = rawStare.includes('RADIAT') || rawStare.includes('RADIER');
+
+                                  let label = 'Activă';
+                                  let color = 'text-emerald-600 dark:text-emerald-400';
+
+                                  if (isRad) {
+                                    label = 'Radiată';
+                                    color = 'text-rose-600 dark:text-rose-400';
+                                  } else if (isInsolv) {
+                                    label = 'În Insolvență';
+                                    color = 'text-red-600 dark:text-red-400';
+                                  } else if (isSusp) {
+                                    label = 'Suspendată';
+                                    color = 'text-amber-600 dark:text-amber-400';
+                                  } else if (isInact) {
+                                    label = 'Inactivă Fiscal';
+                                    color = 'text-red-600 dark:text-red-400';
+                                  }
+
+                                  return <span className={`font-semibold ${color}`}>{label}</span>;
+                                })()}
                               </div>
                               <div>
                                 <span className="text-gray-400 block text-[11px]">Sediu Social:</span>
@@ -2698,40 +2721,52 @@ const ClientsList = () => {
                           </div>
 
                           {/* 2. Litigii & Dosare Just.ro / BPI */}
-                          <div className="p-4 bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-2xl space-y-2">
-                            <div className="flex items-center justify-between border-b border-gray-200/60 dark:border-gray-700/60 pb-2">
-                              <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                                <Scale size={14} className="text-amber-500" /> Litigii & Just.ro (BPI)
-                              </span>
-                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                                rawData.bpi?.has_insolvency 
-                                  ? 'bg-red-100 text-red-700' 
-                                  : 'bg-emerald-100 text-emerald-700'
-                              }`}>
-                                {rawData.bpi?.has_insolvency ? 'Alerte BPI' : 'Fără Insolvențe'}
-                              </span>
-                            </div>
-                            <div className="space-y-1.5 text-xs pt-1">
-                              <div className="flex items-center justify-between">
-                                <span className="text-gray-500">Dosare Instanță Portal Just:</span>
-                                <span className="font-bold text-gray-900 dark:text-white">
-                                  {rawData.court_cases?.length || rawData.dosare?.length || 0} dosare
-                                </span>
+                          {(() => {
+                            const courtCases = rawData.court_cases || rawData.dosare || [];
+                            const insolvencyCases = courtCases.filter(c => 
+                              /faliment|insolven|concordat|reorganizare|deschiderea procedurii|l85\/2014/i.test(`${c.obiect || ''} ${c.categorie || ''} ${c.stadiu || ''}`)
+                            );
+                            const fiscalStare = String(rawData.stare || rawData.anaf?.stare || '').toUpperCase();
+                            const hasInsolv = Boolean(rawData.bpi?.has_insolvency) || insolvencyCases.length > 0 || fiscalStare.includes('FALIMENT') || fiscalStare.includes('INSOLVEN');
+                            const insolvencyCount = rawData.bpi?.count || insolvencyCases.length || (hasInsolv ? 1 : 0);
+
+                            return (
+                              <div className="p-4 bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-2xl space-y-2">
+                                <div className="flex items-center justify-between border-b border-gray-200/60 dark:border-gray-700/60 pb-2">
+                                  <span className="text-xs font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                                    <Scale size={14} className="text-amber-500" /> Litigii & Just.ro (BPI)
+                                  </span>
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                    hasInsolv 
+                                      ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-300' 
+                                      : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/50 dark:text-emerald-300'
+                                  }`}>
+                                    {hasInsolv ? 'Alerte Insolvență / BPI' : 'Fără Insolvențe'}
+                                  </span>
+                                </div>
+                                <div className="space-y-1.5 text-xs pt-1">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-gray-500">Dosare Instanță Portal Just:</span>
+                                    <span className="font-bold text-gray-900 dark:text-white">
+                                      {courtCases.length} dosare
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-gray-500">Proceduri de Insolvență (BPI):</span>
+                                    <span className={`font-bold ${hasInsolv ? 'text-red-600 dark:text-red-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                      {hasInsolv ? `${insolvencyCount} ${insolvencyCount === 1 ? 'caz activ' : 'cazuri active'}` : '0 cazuri'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-gray-500">Risc Executare Silită:</span>
+                                    <span className="font-semibold text-gray-700 dark:text-gray-300">
+                                      {score < 50 || hasInsolv ? 'Risc Ridicat' : 'Risc Minim'}
+                                    </span>
+                                  </div>
+                                </div>
                               </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-gray-500">Proceduri de Insolvență (BPI):</span>
-                                <span className={`font-bold ${rawData.bpi?.has_insolvency ? 'text-red-600' : 'text-emerald-600'}`}>
-                                  {rawData.bpi?.has_insolvency ? `${rawData.bpi?.count || 1} cazuri active` : '0 cazuri'}
-                                </span>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-gray-500">Risc Executare Silită:</span>
-                                <span className="font-semibold text-gray-700 dark:text-gray-300">
-                                  {score < 50 ? 'Risc Ridicat' : 'Risc Minim'}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
+                            );
+                          })()}
 
                           {/* 3. Situație Financiară (Bilanț) */}
                           <div className="p-4 bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-2xl space-y-2">

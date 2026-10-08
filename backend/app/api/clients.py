@@ -552,6 +552,17 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
                             print(f"[ADDRESS CHECK ERROR CACHED] {addr_err}")
                     _enrich_networks_with_financials(db, prev_d.get("admin_networks", []), address_check)
 
+                    cached_cases = prev_d.get("court_cases") or []
+                    if not cached_cases and existing_client.name:
+                        try:
+                            cached_cases = await court_scraper.search_court_cases(existing_client.name, limit=20)
+                            if cached_cases:
+                                prev_d["court_cases"] = cached_cases
+                                prev_eval.raw_financial_data = json.dumps(prev_d, default=str)
+                                db.commit()
+                        except Exception as ce:
+                            print(f"[JUST.RO ENRICH CACHE ERROR] {ce}")
+
                     return {
                         "cui": clean_cui,
                         "denumire": existing_client.name,
@@ -568,8 +579,8 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
                         "balance": prev_d.get("balance", {}),
                         "bpi": prev_d.get("bpi", {}),
                         "mof": prev_d.get("mof", []),
-                        "court_cases": prev_d.get("court_cases", []),
-                        "total_dosare": len(prev_d.get("court_cases", [])),
+                        "court_cases": cached_cases,
+                        "total_dosare": len(cached_cases),
                         "cached": True,
                         "credits_used": 0,
                         "jev_certificate": jev_cert
@@ -632,19 +643,53 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
             if company_stare:
                 break
 
+    # Sincronizare dosare insolvență Just.ro
+    insolvency_court_cases = [
+        c for c in court_cases
+        if any(w in f"{c.get('obiect', '')} {c.get('categorie', '')} {c.get('stadiu', '')}".lower() for w in ['faliment', 'insolven', 'concordat preventiv', 'deschiderea procedurii', 'l85/2014', 'legea 85/2014', 'reorganizare judiciară'])
+    ]
+
     has_liquidators = any("LICHIDATOR" in str(adm.get("calitate") or adm.get("functie") or adm.get("rol") or "").upper() for adm in administrators)
     if not company_stare and has_liquidators:
         company_stare = "LICHIDARE JUDICIARĂ (FALIMENT)"
+    elif not company_stare and insolvency_court_cases:
+        company_stare = f"PROCEDURĂ DE INSOLVENȚĂ / FALIMENT (Dosar {insolvency_court_cases[0].get('numar', '')})"
 
-    is_terminated = any(term in company_stare for term in ["RADIERE", "RADIAT", "LICHIDARE", "DIZOLVARE", "FALIMENT"]) or has_liquidators
-    if is_terminated:
-        gen_data["stare"] = company_stare or "RADIERE din data 24.05.2018"
+    is_radiated = any(term in company_stare for term in ["RADIERE", "RADIAT", "DIZOLVARE"])
+    is_suspended = "SUSPEND" in company_stare
+    is_insolvent = any(term in company_stare for term in ["LICHIDARE", "FALIMENT", "INSOLVEN"]) or has_liquidators or bool(insolvency_court_cases)
+
+    # Sincronizare deterministă BPI
+    if is_insolvent:
+        bpi = bpi or {}
+        bpi["has_insolvency"] = True
+        bpi["count"] = max(bpi.get("count", 0), len(insolvency_court_cases), 1)
+        if not bpi.get("records") and insolvency_court_cases:
+            bpi["records"] = insolvency_court_cases
+        bpi["source"] = "Portal Just.ro & Evidențe Judiciare"
+
+    if is_radiated:
+        gen_data["stare"] = company_stare or "Societate Radiată"
         for adm in administrators:
             adm["stare"] = "Mandat Încheiat (Radiere)"
             adm["mandat_activ"] = False
         for p in personnel:
             p["stare"] = "Mandat Încheiat (Radiere)"
             p["mandat_activ"] = False
+    elif is_suspended:
+        gen_data["stare"] = company_stare or "Suspendare Activitate"
+        for adm in administrators:
+            adm["stare"] = "Mandat Suspendat"
+            adm["mandat_activ"] = False
+        for p in personnel:
+            p["stare"] = "Mandat Suspendat"
+            p["mandat_activ"] = False
+    elif is_insolvent:
+        gen_data["stare"] = company_stare or "Procedură de Insolvență / Faliment"
+        for adm in administrators:
+            if not any(w in str(adm.get("calitate") or "").upper() for w in ["LICHIDATOR", "ADMINISTRATOR JUDICIAR"]):
+                adm["stare"] = "Mandat Ridicat (Procedură Insolvență)"
+                adm["mandat_activ"] = False
 
     smart_ownership = cross_checker.analyze_ownership_structure(personnel, admin_networks)
 
@@ -673,17 +718,25 @@ async def get_company_full_intel(cui: str, name: str = "", force_refresh: bool =
             website=gen_data.get("site")
         )
 
-        eval_score = 0 if is_terminated else 85
-        eval_risk = RiskLevel.critical if is_terminated else RiskLevel.low
-        eval_summary = (
-            f"[SOCIETATE RADIATĂ / PROCEDURĂ FALIMENT] {official_name} figurează cu starea {company_stare or 'RADIATĂ'}. "
-            f"Mandatele organelor de conducere sunt încetate de drept. Finanțarea este respinsă automat."
-            if is_terminated else
-            f"Snapshot inteligență OSINT stocat local pentru {official_name}"
-        )
+        if is_radiated:
+            eval_score = 0
+            eval_risk = RiskLevel.CRITICAL
+            eval_summary = f"[SOCIETATE RADIATĂ] {official_name} figurează radiată din evidențele oficiale ({company_stare}). Mandatele statutare sunt stinse. Finanțarea este respinsă automat."
+        elif is_insolvent:
+            eval_score = 0
+            eval_risk = RiskLevel.CRITICAL
+            eval_summary = f"[PROCEDURĂ DE INSOLVENȚĂ / FALIMENT] {official_name} figurează cu procedură judiciară deschisă ({company_stare}). Risc critic de neplată. Finanțarea este respinsă automat."
+        elif is_suspended:
+            eval_score = 20
+            eval_risk = RiskLevel.HIGH
+            eval_summary = f"[ACTIVITATE SUSPENDATĂ] {official_name} figurează cu activitatea comercială suspendată la Registrul Comerțului ({company_stare}). Nu se recomandă creditare fără reluarea activității."
+        else:
+            eval_score = 85
+            eval_risk = RiskLevel.LOW
+            eval_summary = f"Snapshot inteligență OSINT stocat local pentru {official_name}."
 
         saved_intel_payload = {
-            "stare": company_stare or ("RADIERE din data 24.05.2018" if is_terminated else "Activ"),
+            "stare": company_stare or ("Radiată" if is_radiated else ("Suspendată" if is_suspended else ("În Insolvență" if is_insolvent else "Activă"))),
             "anaf": gen_data,
             "visual": visual_intel,
             "personnel": personnel,
@@ -925,6 +978,52 @@ async def evaluate_client(client_id: int, force_refresh: bool = False, db: Sessi
             )
             if existing_eval and existing_eval.raw_financial_data:
                 print(f"[DB CACHE HIT - 0 CREDITE] Evaluare existentă pentru clientul {client.name} (CUI {client.cui_cnp}) preluată direct din baza Axis.")
+                try:
+                    prev_d = json.loads(existing_eval.raw_financial_data) if isinstance(existing_eval.raw_financial_data, str) else existing_eval.raw_financial_data
+                    has_changes = False
+
+                    if (not prev_d.get("court_cases") or len(prev_d.get("court_cases", [])) == 0) and client.name:
+                        court_scraper = CourtScraper()
+                        cached_cases = await court_scraper.search_court_cases(client.name, limit=25)
+                        if cached_cases:
+                            prev_d["court_cases"] = cached_cases
+                            has_changes = True
+
+                    # Re-enrich address_check with modern office tower / exact subunit detection
+                    addr_data = prev_d.get("address_check") or {}
+                    if addr_data:
+                        AddressChecker()._enrich_cached_address(addr_data, addr_data.get("address") or client.address or "")
+                        prev_d["address_check"] = addr_data
+                        has_changes = True
+
+                    # If score was previously crushed by office tower MAILBOX_CLUSTER (e.g. score <= 35)
+                    # and now recognized as office building with no exact mailbox cluster:
+                    jev_cert = prev_d.get("jev_certificate") or {}
+                    gaps = jev_cert.get("reasoning_gaps", [])
+                    had_mailbox_gap = any(g.get("type") == "MAILBOX_CLUSTER" for g in gaps)
+                    if had_mailbox_gap and addr_data.get("is_office_building") and not addr_data.get("is_mailbox"):
+                        # Re-run determinist cross check and AI engine without calling external APIs
+                        re_cross = CrossChecker().evaluate_risk(
+                            prev_d.get("anaf", {}), prev_d.get("personnel", []), prev_d.get("balance", {}),
+                            addr_data, prev_d.get("bpi", {}), prev_d.get("mof", []), prev_d.get("admin_networks", []),
+                            holdings_data=prev_d.get("holdings", []), administrators_data=prev_d.get("administrators", []),
+                            caen_data=prev_d.get("caen_activities", {}), court_cases=prev_d.get("court_cases", [])
+                        )
+                        re_ai = AIEngineService.evaluate_client(name=client.name, osint_data=re_cross)
+                        existing_eval.score = re_ai["score"]
+                        existing_eval.risk_level = re_ai["risk_level"].value if hasattr(re_ai["risk_level"], "value") else str(re_ai["risk_level"])
+                        existing_eval.ai_summary = re_ai["ai_summary"]
+                        existing_eval.raw_financial_data = re_ai["raw_financial_data"]
+                        has_changes = False
+                        db.commit()
+                        print(f"[RE-SCORE OFFICE TOWER] Scor corectat automat pentru {client.name}: {existing_eval.score} (Eliminat penalizare eronată de turn de birouri).")
+
+                    if has_changes:
+                        existing_eval.raw_financial_data = json.dumps(prev_d, ensure_ascii=False)
+                        db.commit()
+                except Exception as c_err:
+                    print(f"[JUST.RO CACHE ENRICH ERROR] {c_err}")
+
                 risk_str = existing_eval.risk_level.value if hasattr(existing_eval.risk_level, 'value') else str(existing_eval.risk_level)
                 return JSONResponse(content={
                     "id": existing_eval.id,
@@ -948,6 +1047,7 @@ async def evaluate_client(client_id: int, force_refresh: bool = False, db: Sessi
             registry_scraper = RegistryScraper()
             cross_checker = CrossChecker()
             address_checker = AddressChecker()
+            court_scraper = CourtScraper()
             
             print(f"[EVALUATE] Client {client_id} ({client.name}) — Starting OSINT pipeline...")
             
@@ -961,6 +1061,13 @@ async def evaluate_client(client_id: int, force_refresh: bool = False, db: Sessi
             holdings_data = await registry_scraper.fetch_company_holdings(client.cui_cnp)
             admins_data = await registry_scraper.fetch_company_administrators(client.cui_cnp)
             caen_data = await registry_scraper.fetch_company_caen(client.cui_cnp)
+            
+            # Verificare Portal Just.ro (Litigii & Dosare)
+            comp_search_name = anaf_data.get("nume") or client.name
+            court_cases = await court_scraper.search_court_cases(comp_search_name, limit=25)
+            if not court_cases and client.name and client.name != comp_search_name:
+                court_cases = await court_scraper.search_court_cases(client.name, limit=25)
+            print(f"[EVALUATE] Just.ro OK: {len(court_cases)} dosare găsite pentru {comp_search_name}")
             print(f"[EVALUATE] FirmeAPI OK: personnel={len(personnel_data)}, admins={len(admins_data)}")
             
             # Reverse Lookup Administrator Network ("Caracatița" extinsă)
@@ -1025,7 +1132,8 @@ async def evaluate_client(client_id: int, force_refresh: bool = False, db: Sessi
                 admin_networks,
                 holdings_data=holdings_data,
                 administrators_data=admins_data,
-                caen_data=caen_data
+                caen_data=caen_data,
+                court_cases=court_cases
             )
             print(f"[EVALUATE] Cross-check OK: score={osint_data.get('osint_score')}")
         else:

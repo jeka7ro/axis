@@ -15,7 +15,8 @@ import L from 'leaflet';
 import { 
   fetchClient, evaluateClient, evaluateCompanyByCui, fetchAdminNetwork, 
   fetchClientFleetTelemetryReport, fetchClientJEVAudit,
-  fetchClientOnrcDetails, uploadClientDocument, fetchClientDocuments 
+  fetchClientOnrcDetails, uploadClientDocument, fetchClientDocuments,
+  fetchPortalJustCases
 } from '../services/api';
 import CompanyIntelModal from '../components/CompanyIntelModal';
 import PersonIntelModal from '../components/PersonIntelModal';
@@ -83,7 +84,7 @@ const ClientDetails = () => {
   const [selectedHomonymIndex, setSelectedHomonymIndex] = useState(0);
   const [dismissedHomonymIndices, setDismissedHomonymIndices] = useState([]);
   const [showAllHomonyms, setShowAllHomonyms] = useState(false);
-  const [companyIntelTarget, setCompanyIntelTarget] = useState({ isOpen: false, cui: null, name: '' });
+  const [companyIntelTarget, setCompanyIntelTarget] = useState({ isOpen: false, cui: null, name: '', initialTab: 'general' });
   const [personIntelTarget, setPersonIntelTarget] = useState({ isOpen: false, name: '', contextCui: null });
   const [intelHistory, setIntelHistory] = useState([]);
   const [selectedMofPub, setSelectedMofPub] = useState(null);
@@ -92,6 +93,8 @@ const ClientDetails = () => {
   const [exportingCreditReport, setExportingCreditReport] = useState(false);
   const [telemetryReport, setTelemetryReport] = useState(null);
   const [loadingTelemetry, setLoadingTelemetry] = useState(false);
+  const [liveCourtCases, setLiveCourtCases] = useState(null);
+  const [loadingJustCases, setLoadingJustCases] = useState(false);
 
   const toggleMofExpand = (idx) => {
     setExpandedMofIndices(prev => 
@@ -99,8 +102,12 @@ const ClientDetails = () => {
     );
   };
 
-  const openCompanyIntel = (cui, name, addToHistory = true) => {
+  const openCompanyIntel = (cui, name, initialTab = 'general', addToHistory = true) => {
     if (!cui && !name) return;
+    if (typeof initialTab === 'boolean') {
+      addToHistory = initialTab;
+      initialTab = 'general';
+    }
     if (addToHistory) {
       if (companyIntelTarget.isOpen && companyIntelTarget.cui) {
         setIntelHistory(prev => [...prev, { type: 'company', cui: companyIntelTarget.cui, name: companyIntelTarget.name }]);
@@ -109,7 +116,7 @@ const ClientDetails = () => {
       }
     }
     setPersonIntelTarget({ isOpen: false, name: '', contextCui: null });
-    setCompanyIntelTarget({ isOpen: true, cui: String(cui).trim(), name: name || '' });
+    setCompanyIntelTarget({ isOpen: true, cui: String(cui).trim(), name: name || '', initialTab: initialTab || 'general' });
   };
 
   const closeCompanyIntel = () => {
@@ -385,10 +392,7 @@ const ClientDetails = () => {
     }
   };
 
-  if (loading) return <div className="p-8 text-center">Se încarcă detaliile clientului...</div>;
-  if (!client) return <div className="p-8 text-center text-red-500">Clientul nu a fost găsit.</div>;
-
-  const latestEval = client.evaluations && client.evaluations.length > 0 
+  const latestEval = client?.evaluations && client.evaluations.length > 0 
     ? client.evaluations[client.evaluations.length - 1] 
     : null;
 
@@ -438,12 +442,43 @@ const ClientDetails = () => {
         if (!base.stare && evRaw.stare) {
           base.stare = evRaw.stare;
         }
+        if ((!base.court_cases || base.court_cases.length === 0) && evRaw.court_cases?.length > 0) {
+          base.court_cases = evRaw.court_cases;
+        }
       } catch (e) {
         // ignore
       }
     }
     return base;
   })();
+
+  // Live free query to Portal Just.ro if client is PJ and court_cases is not yet populated
+  useEffect(() => {
+    if (!client?.name || client.type !== 'PJ') return;
+    const existing = enrichedRawData?.court_cases;
+    if (existing && existing.length > 0) {
+      setLiveCourtCases(existing);
+      return;
+    }
+    let isMounted = true;
+    setLoadingJustCases(true);
+    fetchPortalJustCases(client.name)
+      .then(cases => {
+        if (isMounted && cases) {
+          setLiveCourtCases(cases);
+        }
+      })
+      .catch(err => {
+        console.error('Eroare fetchPortalJustCases în ClientDetails:', err);
+      })
+      .finally(() => {
+        if (isMounted) setLoadingJustCases(false);
+      });
+    return () => { isMounted = false; };
+  }, [client?.id, client?.name, enrichedRawData?.court_cases?.length]);
+
+  if (loading) return <div className="p-8 text-center">Se încarcă detaliile clientului...</div>;
+  if (!client) return <div className="p-8 text-center text-red-500">Clientul nu a fost găsit.</div>;
 
   return (
     <div className="space-y-6">
@@ -593,27 +628,55 @@ const ClientDetails = () => {
                 const hasLiquidators = (activeData?.administrators || []).some(a => 
                   String(a.functie || a.calitate || a.rol || '').toLowerCase().includes('lichidator')
                 );
-                const isTerminated = fiscalStare.includes('RADIAT') || 
-                                     fiscalStare.includes('RADIER') || 
-                                     fiscalStare.includes('FALIMENT') || 
-                                     fiscalStare.includes('LICHID') || 
-                                     hasLiquidators;
-                if (!isTerminated) return null;
-
-                const displayDate = fiscalStare.match(/\d{2}\.\d{2}\.\d{4}/)?.[0] || '24.05.2018';
-
-                return (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-xs animate-in fade-in">
-                    <ShieldAlert size={14} className="text-rose-600 dark:text-rose-400" />
-                    <span>SOCIETATE RADIATĂ ({displayDate})</span>
-                  </span>
+                const allCases = liveCourtCases?.length ? liveCourtCases : (activeData?.court_cases || []);
+                const hasInsolvencyCases = allCases.some(c => 
+                  /faliment|insolven|concordat|reorganizare|deschiderea procedurii|l85\/2014/i.test(`${c.obiect || ''} ${c.categorie || ''} ${c.stadiu || ''}`)
                 );
+                const isBpiInsolvency = Boolean(activeData?.bpi?.has_insolvency);
+
+                const isRadiated = fiscalStare.includes('RADIAT') || fiscalStare.includes('RADIER') || fiscalStare.includes('DIZOLV');
+                const isSuspended = fiscalStare.includes('SUSPEND');
+                const isInsolvent = fiscalStare.includes('FALIMENT') || fiscalStare.includes('LICHID') || fiscalStare.includes('INSOLVEN') || hasLiquidators || hasInsolvencyCases || isBpiInsolvency;
+
+                if (!isRadiated && !isSuspended && !isInsolvent) return null;
+
+                const displayDate = fiscalStare.match(/\d{2}\.\d{2}\.\d{4}/)?.[0] || '';
+                const dateSuffix = displayDate ? ` (${displayDate})` : '';
+
+                if (isRadiated) {
+                  return (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-rose-100 dark:bg-rose-950/60 text-rose-700 dark:text-rose-300 border border-rose-300 dark:border-rose-800 shadow-xs animate-in fade-in">
+                      <ShieldAlert size={14} className="text-rose-600 dark:text-rose-400" />
+                      <span>SOCIETATE RADIATĂ{dateSuffix}</span>
+                    </span>
+                  );
+                }
+
+                if (isInsolvent) {
+                  return (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-red-100 dark:bg-red-950/60 text-red-700 dark:text-red-300 border border-red-300 dark:border-red-800 shadow-xs animate-in fade-in">
+                      <ShieldAlert size={14} className="text-red-600 dark:text-red-400" />
+                      <span>PROCEDURĂ DE INSOLVENȚĂ / FALIMENT{dateSuffix}</span>
+                    </span>
+                  );
+                }
+
+                if (isSuspended) {
+                  return (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-950/60 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-700 shadow-xs animate-in fade-in">
+                      <AlertTriangle size={14} className="text-amber-600 dark:text-amber-400" />
+                      <span>ACTIVITATE SUSPENDATĂ{dateSuffix}</span>
+                    </span>
+                  );
+                }
+
+                return null;
               })()}
 
               {client.type === 'PJ' && (
                 <button
                   type="button"
-                  onClick={() => openCompanyIntel(client.cui_cnp, client.name)}
+                  onClick={() => openCompanyIntel(client.cui_cnp, client.name, 'just')}
                   className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-700/60 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white transition-all cursor-pointer shadow-2xs"
                   title="Deschide dosar complet OSINT & Portal Just.ro"
                 >
@@ -728,17 +791,53 @@ const ClientDetails = () => {
               const hasLiquidators = (activeData?.administrators || []).some(a => 
                 String(a.functie || a.calitate || a.rol || '').toLowerCase().includes('lichidator')
               );
-              const isTerminated = fiscalStare.includes('RADIAT') || 
-                                   fiscalStare.includes('RADIER') || 
-                                   fiscalStare.includes('FALIMENT') || 
-                                   fiscalStare.includes('LICHID') || 
-                                   hasLiquidators;
+              const allCases = liveCourtCases?.length ? liveCourtCases : (activeData?.court_cases || []);
+              const hasInsolvencyCases = allCases.some(c => 
+                /faliment|insolven|concordat|reorganizare|deschiderea procedurii|l85\/2014/i.test(`${c.obiect || ''} ${c.categorie || ''} ${c.stadiu || ''}`)
+              );
+              const isBpiInsolvency = Boolean(activeData?.bpi?.has_insolvency);
+
+              const isRadiated = fiscalStare.includes('RADIAT') || fiscalStare.includes('RADIER') || fiscalStare.includes('DIZOLV');
+              const isSuspended = fiscalStare.includes('SUSPEND');
+              const isInsolvent = fiscalStare.includes('FALIMENT') || fiscalStare.includes('LICHID') || fiscalStare.includes('INSOLVEN') || hasLiquidators || hasInsolvencyCases || isBpiInsolvency;
 
               if (!latestEval) {
                 return <div className="text-xs text-gray-400 p-2">Neevaluat financiar</div>;
               }
 
-              const displayScore = isTerminated ? 0 : latestEval.score;
+              let displayScore = latestEval.score;
+              let riskLabel = `Risc: ${latestEval.risk_level}`;
+              let badgeColor = 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200/60';
+              let circleColor = 'text-rose-500';
+              let icon = <AlertTriangle size={11} />;
+
+              if (isRadiated) {
+                displayScore = 0;
+                riskLabel = 'Risc: CRITIC (Radiată)';
+                badgeColor = 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border-rose-200/60';
+                circleColor = 'text-rose-500';
+                icon = <ShieldAlert size={11} />;
+              } else if (isInsolvent) {
+                displayScore = 0;
+                riskLabel = 'Risc: CRITIC (Insolvență)';
+                badgeColor = 'bg-red-50 text-red-700 dark:bg-red-950/40 dark:text-red-400 border-red-200/60';
+                circleColor = 'text-red-500';
+                icon = <ShieldAlert size={11} />;
+              } else if (isSuspended) {
+                displayScore = Math.min(displayScore, 20);
+                riskLabel = 'Risc: RIDICAT (Suspendată)';
+                badgeColor = 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200/60';
+                circleColor = 'text-amber-500';
+                icon = <AlertTriangle size={11} />;
+              } else if (latestEval.score > 70) {
+                badgeColor = 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border-emerald-200/60';
+                circleColor = 'text-emerald-500';
+                icon = <ShieldCheck size={11} />;
+              } else if (latestEval.score > 40) {
+                badgeColor = 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border-amber-200/60';
+                circleColor = 'text-amber-500';
+                icon = <AlertTriangle size={11} />;
+              }
 
               return (
                 <>
@@ -757,13 +856,13 @@ const ClientDetails = () => {
                         strokeWidth="4.5"
                         strokeLinecap="round"
                         fill="transparent"
-                        className={isTerminated ? 'text-rose-500' : (latestEval.score > 70 ? 'text-emerald-500' : latestEval.score > 40 ? 'text-amber-500' : 'text-rose-500')}
+                        className={circleColor}
                         strokeDasharray="144.5"
                         strokeDashoffset={144.5 - (144.5 * Math.min(100, Math.max(0, displayScore))) / 100}
                       />
                     </svg>
                     <div className="absolute inset-0 flex items-center justify-center">
-                      <span className={`text-base font-bold tracking-tight ${isTerminated ? 'text-rose-600 dark:text-rose-400' : 'text-gray-900 dark:text-white'}`}>
+                      <span className={`text-base font-bold tracking-tight ${(isRadiated || isInsolvent) ? 'text-rose-600 dark:text-rose-400' : isSuspended ? 'text-amber-600 dark:text-amber-400' : 'text-gray-900 dark:text-white'}`}>
                         {displayScore}
                       </span>
                     </div>
@@ -772,17 +871,9 @@ const ClientDetails = () => {
                     <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider block">
                       Scor Finanțare
                     </span>
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold mt-0.5 ${
-                      isTerminated 
-                        ? 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200/60' 
-                        : (latestEval.score > 70 
-                          ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-400 border border-emerald-200/60' 
-                          : latestEval.score > 40 
-                            ? 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-400 border border-amber-200/60' 
-                            : 'bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-400 border border-rose-200/60')
-                    }`}>
-                      {isTerminated ? <ShieldAlert size={11} /> : (latestEval.score > 70 ? <ShieldCheck size={11} /> : <AlertTriangle size={11} />)}
-                      <span>{isTerminated ? 'Risc: CRITIC (Radiată)' : `Risc: ${latestEval.risk_level}`}</span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold mt-0.5 border ${badgeColor}`}>
+                      {icon}
+                      <span>{riskLabel}</span>
                     </span>
                   </div>
                 </>
@@ -818,15 +909,21 @@ const ClientDetails = () => {
                 Portal Just.ro
               </span>
               <span className="text-xs font-bold text-gray-800 dark:text-gray-200 block truncate">
-                {enrichedRawData?.court_cases?.length 
-                  ? `${enrichedRawData.court_cases.length} dosare identificate`
-                  : 'Fără litigii înregistrate'}
+                {loadingJustCases ? (
+                  <span className="inline-flex items-center gap-1 text-gray-400">
+                    <Loader2 size={11} className="animate-spin" /> Verificare Just.ro...
+                  </span>
+                ) : (
+                  (liveCourtCases?.length || enrichedRawData?.court_cases?.length)
+                    ? `${liveCourtCases?.length || enrichedRawData?.court_cases?.length} dosare identificate`
+                    : 'Fără litigii înregistrate'
+                )}
               </span>
               {client.type === 'PJ' && (
                 <button 
                   type="button"
-                  onClick={() => openCompanyIntel(client.cui_cnp, client.name)}
-                  className="text-[10px] text-gray-500 hover:text-gray-800 dark:hover:text-white font-medium hover:underline inline-flex items-center gap-1 cursor-pointer"
+                  onClick={() => openCompanyIntel(client.cui_cnp, client.name, 'just')}
+                  className="text-[10px] text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 font-medium hover:underline inline-flex items-center gap-1 cursor-pointer"
                 >
                   <span>Vezi dosare</span>
                   <ExternalLink size={9} />
@@ -1233,10 +1330,22 @@ const ClientDetails = () => {
                             <h3 className="text-base font-bold text-gray-900 dark:text-white tracking-tight">
                               Verificare Sediu Social &amp; Clădire
                             </h3>
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200 border border-gray-200 dark:border-gray-600">
-                              <span className={`w-1.5 h-1.5 rounded-full ${addrCheck.cluster_count >= 10 ? 'bg-rose-500 animate-pulse' : addrCheck.cluster_count >= 4 ? 'bg-amber-500' : 'bg-emerald-500'}`} />
-                              {addrCheck.cluster_count >= 10 ? `Sediu Aglomerat (${addrCheck.cluster_count} firme)` : `Sediu Normal (${addrCheck.cluster_count} firme)`}
-                            </span>
+                            {addrCheck.is_office_building ? (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                                <span className="w-1.5 h-1.5 rounded-full bg-blue-500" />
+                                Clădire Birouri / Business Park ({addrCheck.building_cluster_count || addrCheck.cluster_count} firme)
+                              </span>
+                            ) : addrCheck.is_mailbox || (addrCheck.exact_match_count >= 5) ? (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-rose-50 dark:bg-rose-900/30 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                                Risc Căsuță Poștală ({addrCheck.exact_match_count} firme la aceeași cameră)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                                Sediu Normal ({addrCheck.building_cluster_count || addrCheck.cluster_count || 1} entități)
+                              </span>
+                            )}
                           </div>
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 flex items-center gap-1.5 break-words">
                             <MapPin size={13} className="shrink-0 text-gray-400" /> {addrCheck.address}
@@ -1265,8 +1374,8 @@ const ClientDetails = () => {
                       </div>
                     </div>
 
-                    {/* Attention-Drawing Alert */}
-                    {addrCheck.cluster_count >= 4 && (
+                    {/* Attention-Drawing Alert / Notice */}
+                    {addrCheck.is_mailbox || addrCheck.exact_match_count >= 5 ? (
                       <div className="mt-5 p-4 rounded-2xl bg-gray-950 text-white dark:bg-gray-900 dark:border dark:border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
                         <div className="flex items-start gap-3.5">
                           <div className="p-2 rounded-xl bg-white/10 text-white shrink-0 mt-0.5">
@@ -1275,25 +1384,79 @@ const ClientDetails = () => {
                           <div>
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-bold uppercase tracking-wider text-rose-400">
-                                Avertisment Densitate Sediu
+                                Avertisment Risc Căsuță Poștală
                               </span>
                               <span className="text-gray-400 text-xs">•</span>
                               <span className="text-xs font-medium text-gray-200">
-                                {addrCheck.cluster_count} entități juridice identificate la această adresă
+                                {addrCheck.exact_match_count} companii identificate la aceeași cameră/unitate identică
                               </span>
                             </div>
                             <p className="text-xs text-gray-300 mt-1 leading-relaxed max-w-3xl">
-                              Densitate ridicată de firme: specifică sediilor virtuale, căsuțelor poștale sau cabinetelor de avocatură cu găzduire de sediu fără spațiu operațional dedicat.
+                              Suprapunere exactă de spațiu: mai multe firme înregistrate determinist la aceeași cameră sau apartament, specific sediilor virtuale sau cabinetelor de avocatură fără spațiu operațional dedicat.
                             </p>
                           </div>
                         </div>
                         <div className="shrink-0 flex items-center sm:self-center">
                           <span className="px-3 py-1 rounded-full text-xs font-semibold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                            Risc Sediu: {addrCheck.risk_level}
+                            Risc Sediu: Ridicat
                           </span>
                         </div>
                       </div>
-                    )}
+                    ) : addrCheck.is_office_building ? (
+                      <div className="mt-5 p-4 rounded-2xl bg-blue-950/60 text-white border border-blue-800/60 dark:bg-gray-900 dark:border-blue-900/50 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                        <div className="flex items-start gap-3.5">
+                          <div className="p-2 rounded-xl bg-blue-500/20 text-blue-400 shrink-0 mt-0.5">
+                            <Building2 size={18} className="text-blue-400" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold uppercase tracking-wider text-blue-400">
+                                Clădire de Birouri / Parc de Afaceri
+                              </span>
+                              <span className="text-blue-200 text-xs">•</span>
+                              <span className="text-xs font-medium text-blue-100">
+                                {addrCheck.building_cluster_count || addrCheck.cluster_count} companii înregistrate în imobil (birouri/etaje separate)
+                              </span>
+                            </div>
+                            <p className="text-xs text-blue-100/80 mt-1 leading-relaxed max-w-3xl">
+                              Compania își desfășoară activitatea într-un centru de afaceri / clădire comercială alături de alte entități în spații sau birouri distincte. Densitate normală pentru facilități corporate.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="shrink-0 flex items-center sm:self-center">
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-blue-500/20 text-blue-300 border border-blue-500/30">
+                            Profil Sediu: Clădire Birouri
+                          </span>
+                        </div>
+                      </div>
+                    ) : (addrCheck.cluster_count >= 4 || addrCheck.building_cluster_count >= 4) ? (
+                      <div className="mt-5 p-4 rounded-2xl bg-gray-900 text-white dark:border dark:border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm">
+                        <div className="flex items-start gap-3.5">
+                          <div className="p-2 rounded-xl bg-white/10 text-white shrink-0 mt-0.5">
+                            <Building2 size={18} className="text-amber-400" />
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-bold uppercase tracking-wider text-amber-400">
+                                Imobil cu Activitate Mixtă
+                              </span>
+                              <span className="text-gray-400 text-xs">•</span>
+                              <span className="text-xs font-medium text-gray-200">
+                                {addrCheck.building_cluster_count || addrCheck.cluster_count} entități la acest număr poștal în spații distincte
+                              </span>
+                            </div>
+                            <p className="text-xs text-gray-300 mt-1 leading-relaxed max-w-3xl">
+                              Imobil cu multiple unități sau spații comerciale. Nu s-a detectat suprapunere pe aceeași încăpere sau cameră.
+                            </p>
+                          </div>
+                        </div>
+                        <div className="shrink-0 flex items-center sm:self-center">
+                          <span className="px-3 py-1 rounded-full text-xs font-semibold bg-gray-700 text-gray-200 border border-gray-600">
+                            Risc Sediu: Normal
+                          </span>
+                        </div>
+                      </div>
+                    ) : null}
 
                     {/* GOOGLE STREET VIEW (STÂNGA) ȘI GOOGLE MAPS (DREAPTA) - DIRECT DESCHISE SIMULTAN */}
                     <div className="mt-6 pt-5 border-t border-gray-100 dark:border-gray-700">
@@ -1778,8 +1941,21 @@ const ClientDetails = () => {
                                       {yearEstablished}
                                     </span>
                                   </td>
-                                  <td className="px-4 py-3 font-sans text-gray-500 dark:text-gray-400 text-[11px] max-w-xs truncate">
-                                    {c.adresa || c.detalii || 'La adresa selectată'}
+                                  <td className="px-4 py-3 font-sans text-gray-500 dark:text-gray-400 text-[11px]">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="max-w-[220px] truncate" title={c.adresa || c.detalii || ''}>
+                                        {c.adresa || c.detalii || 'La adresa selectată'}
+                                      </span>
+                                      {c.is_exact_match ? (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300 border border-rose-200 dark:border-rose-800 shrink-0">
+                                          Cameră Identică
+                                        </span>
+                                      ) : addrCheck.is_office_building ? (
+                                        <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 border border-blue-100 dark:border-blue-800 shrink-0">
+                                          Birou Separat
+                                        </span>
+                                      ) : null}
+                                    </div>
                                   </td>
                                   {/* Rule 4: Circular rounded-full action icons */}
                                   <td className="px-4 py-3 text-center">
@@ -2947,34 +3123,81 @@ const ClientDetails = () => {
               </div>
             </div>
 
-            {/* Quick Status Bar if Radiată / Faliment */}
+            {/* Quick Status Bar if Radiată / Insolvență / Suspendată */}
             {(() => {
               const activeData = enrichedRawData || rawDataObj || {};
               const fiscalStare = String(activeData?.anaf?.stare || activeData?.stare || client?.stare || '').toUpperCase();
               const hasLiquidators = (activeData?.administrators || []).some(a => 
                 String(a.functie || a.calitate || a.rol || '').toLowerCase().includes('lichidator')
               );
-              const isTerminated = fiscalStare.includes('RADIAT') || 
-                                   fiscalStare.includes('RADIER') || 
-                                   fiscalStare.includes('FALIMENT') || 
-                                   fiscalStare.includes('LICHID') || 
-                                   hasLiquidators;
-              if (!isTerminated) return null;
+              const allCases = liveCourtCases?.length ? liveCourtCases : (activeData?.court_cases || []);
+              const hasInsolvencyCases = allCases.some(c => 
+                /faliment|insolven|concordat|reorganizare|deschiderea procedurii|l85\/2014/i.test(`${c.obiect || ''} ${c.categorie || ''} ${c.stadiu || ''}`)
+              );
+              const isBpiInsolvency = Boolean(activeData?.bpi?.has_insolvency);
+
+              const isRadiated = fiscalStare.includes('RADIAT') || fiscalStare.includes('RADIER') || fiscalStare.includes('DIZOLV');
+              const isSuspended = fiscalStare.includes('SUSPEND');
+              const isInsolvent = fiscalStare.includes('FALIMENT') || fiscalStare.includes('LICHID') || fiscalStare.includes('INSOLVEN') || hasLiquidators || hasInsolvencyCases || isBpiInsolvency;
+
+              if (!isRadiated && !isSuspended && !isInsolvent) return null;
+
+              if (isSuspended) {
+                return (
+                  <div className="mt-4 p-4 rounded-2xl border border-amber-200 dark:border-amber-900/60 bg-amber-50/70 dark:bg-amber-950/20 flex items-start gap-3.5">
+                    <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400 shrink-0">
+                      <AlertTriangle size={20} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+                        Statut Juridic: Activitate Comercială Suspendată
+                      </div>
+                      <div className="text-sm font-bold text-amber-800 dark:text-amber-200 mt-0.5">
+                        {activeData?.anaf?.stare || activeData?.stare || 'Suspendare Activitate la Registrul Comerțului'}
+                      </div>
+                      <p className="text-xs text-amber-700/90 dark:text-amber-300 mt-1 leading-relaxed">
+                        Societatea figurează cu activitatea comercială temporar suspendată la ONRC / ANAF. Pe perioada suspendării nu pot fi derulate tranzacții comerciale active, iar mandatele administratorilor statutari sunt consemnate ca suspendate până la reluarea oficială a activității.
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
+
+              if (isInsolvent) {
+                return (
+                  <div className="mt-4 p-4 rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/20 flex items-start gap-3.5">
+                    <div className="p-2.5 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 shrink-0">
+                      <ShieldAlert size={20} />
+                    </div>
+                    <div className="flex-1">
+                      <div className="text-[11px] font-semibold text-red-500 uppercase tracking-wider">
+                        Statut Juridic: Procedură de Insolvență și Faliment Deschisă
+                      </div>
+                      <div className="text-sm font-bold text-red-700 dark:text-red-300 mt-0.5">
+                        {activeData?.anaf?.stare || activeData?.stare || 'Societate în Procedură de Insolvență / Lichidare'}
+                      </div>
+                      <p className="text-xs text-red-600/90 dark:text-red-400 mt-1 leading-relaxed">
+                        Conform procedurii judiciare de faliment/insolvență (Legea 85/2014), administrarea patrimoniului și reprezentarea legală revin <strong>Practicienilor în Insolvență / Lichidatorilor Judiciari desemnați de instanță</strong>. Mandatele asociaților statutari sunt ridicate sau sub supraveghere judiciară.
+                      </p>
+                    </div>
+                  </div>
+                );
+              }
 
               return (
-                <div className="mt-4 p-4 rounded-2xl border border-red-200 dark:border-red-900/60 bg-red-50/70 dark:bg-red-950/20 flex items-start gap-3.5">
-                  <div className="p-2.5 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400 shrink-0">
+                <div className="mt-4 p-4 rounded-2xl border border-rose-200 dark:border-rose-900/60 bg-rose-50/70 dark:bg-rose-950/20 flex items-start gap-3.5">
+                  <div className="p-2.5 rounded-xl bg-rose-500/10 text-rose-600 dark:text-rose-400 shrink-0">
                     <ShieldAlert size={20} />
                   </div>
                   <div className="flex-1">
-                    <div className="text-[11px] font-semibold text-red-500 uppercase tracking-wider">
-                      Statut Juridic: Radiere / Procedură de Insolvență și Faliment
+                    <div className="text-[11px] font-semibold text-rose-500 uppercase tracking-wider">
+                      Statut Juridic: Societate Radiată din Evidențele Oficiale
                     </div>
-                    <div className="text-sm font-bold text-red-700 dark:text-red-300 mt-0.5">
-                      {activeData?.anaf?.stare || activeData?.stare || 'Societate în Lichidare Judiciară'}
+                    <div className="text-sm font-bold text-rose-700 dark:text-rose-300 mt-0.5">
+                      {activeData?.anaf?.stare || activeData?.stare || 'Societate Radiată'}
                     </div>
-                    <p className="text-xs text-red-600/90 dark:text-red-400 mt-1 leading-relaxed">
-                      Conform procedurii judiciare de faliment, administrarea patrimoniului și reprezentarea legală revin exclusiv <strong>Lichidatorilor Judiciari desemnați de instanță</strong> (prezentați în secțiunea Conducere Oficială de mai jos). Mandatele asociaților statutari au încetat la deschiderea falimentului conform Legii 85/2014.
+                    <p className="text-xs text-rose-600/90 dark:text-rose-400 mt-1 leading-relaxed">
+                      Societatea a fost radiată definitiv din evidențele Registrului Comerțului și ANAF. Entitatea nu mai deține capacitate de exercițiu, iar toate contractele și mandatele au încetat la data radierii.
                     </p>
                   </div>
                 </div>
@@ -3429,15 +3652,58 @@ const ClientDetails = () => {
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between p-3 rounded-2xl bg-gray-50/70 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800">
-                  <div className="flex items-center gap-2.5 text-xs text-gray-700 dark:text-gray-300">
-                    <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
-                    <span>Buletinul Procedurilor de Insolvență (BPI)</span>
-                  </div>
-                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                    Insolvență zero
-                  </span>
-                </div>
+                {(() => {
+                  const activeData = enrichedRawData || rawDataObj || {};
+                  const allCases = liveCourtCases?.length ? liveCourtCases : (activeData?.court_cases || []);
+                  const insolvencyCases = allCases.filter(c => 
+                    /faliment|insolven|concordat|reorganizare|deschiderea procedurii|l85\/2014/i.test(`${c.obiect || ''} ${c.categorie || ''} ${c.stadiu || ''}`)
+                  );
+                  const fiscalStare = String(activeData?.stare || activeData?.fiscal_status || activeData?.anaf?.stare || client?.stare || '').toUpperCase();
+                  const hasLiquidators = (activeData?.administrators || []).some(a => 
+                    String(a.functie || a.calitate || a.rol || '').toLowerCase().includes('lichidator')
+                  );
+                  const isBpiInsolvency = Boolean(activeData?.bpi?.has_insolvency);
+                  const isInsolvency = isBpiInsolvency || insolvencyCases.length > 0 || fiscalStare.includes('FALIMENT') || fiscalStare.includes('INSOLVEN') || fiscalStare.includes('LICHID') || hasLiquidators;
+                  const count = activeData?.bpi?.count || insolvencyCases.length || (isInsolvency ? 1 : 0);
+
+                  if (isInsolvency) {
+                    return (
+                      <div className="flex items-center justify-between p-3 rounded-2xl bg-red-50/80 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50">
+                        <div className="flex items-center gap-2.5 text-xs text-red-700 dark:text-red-300">
+                          <ShieldAlert size={15} className="text-red-600 dark:text-red-400 shrink-0" />
+                          <span className="font-semibold">Buletinul Procedurilor de Insolvență (BPI)</span>
+                        </div>
+                        {client.type === 'PJ' ? (
+                          <button
+                            type="button"
+                            onClick={() => openCompanyIntel(client.cui_cnp, client.name, 'just')}
+                            className="text-xs font-bold text-red-600 dark:text-red-400 hover:underline cursor-pointer flex items-center gap-1"
+                            title="Deschide dosarele de insolvență"
+                          >
+                            <span>ALERTĂ: {count} Dosare Active</span>
+                            <ExternalLink size={11} />
+                          </button>
+                        ) : (
+                          <span className="text-xs font-bold text-red-600 dark:text-red-400">
+                            ALERTĂ: {count} Dosare Active
+                          </span>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="flex items-center justify-between p-3 rounded-2xl bg-gray-50/70 dark:bg-gray-900/40 border border-gray-100 dark:border-gray-800">
+                      <div className="flex items-center gap-2.5 text-xs text-gray-700 dark:text-gray-300">
+                        <CheckCircle2 size={15} className="text-emerald-500 shrink-0" />
+                        <span>Buletinul Procedurilor de Insolvență (BPI)</span>
+                      </div>
+                      <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                        Insolvență zero (Negativ)
+                      </span>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
@@ -4217,6 +4483,7 @@ const ClientDetails = () => {
         onClose={closeCompanyIntel}
         cui={companyIntelTarget.cui}
         initialName={companyIntelTarget.name}
+        initialTab={companyIntelTarget.initialTab || 'general'}
         onEvaluate={handleEvaluateCompany}
         onOpenPerson={(personName, ctxCui) => openPersonIntel(personName, ctxCui || companyIntelTarget.cui)}
         onOpenCompany={(compCui, compName) => openCompanyIntel(compCui, compName)}

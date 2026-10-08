@@ -43,8 +43,28 @@ class AnafScraper:
                             except Exception:
                                 pass
                         
-                        stare = company_info.get("stare_inregistrare", "")
-                        is_active = "INREGISTRAT" in stare and "RADIAT" not in stare.upper()
+                        stare_raw = company_info.get("stare_inregistrare", "") or ""
+                        stare_upper = stare_raw.upper()
+
+                        is_radiated = "RADIAT" in stare_upper or "RADIER" in stare_upper
+                        is_suspended = "SUSPEND" in stare_upper
+                        is_insolvent = any(w in stare_upper for w in ["INSOLVEN", "FALIMENT", "LICHID"])
+                        is_dissolved = "DIZOLV" in stare_upper and not is_radiated
+
+                        if is_radiated:
+                            status_label = "Radiata"
+                        elif is_suspended:
+                            status_label = "Suspendata"
+                        elif is_insolvent:
+                            status_label = "Insolventa"
+                        elif is_dissolved:
+                            status_label = "Dizolvata"
+                        elif "INREGISTRAT" in stare_upper or "RELUARE" in stare_upper:
+                            status_label = "Activa"
+                        else:
+                            status_label = "Activa" if stare_raw else "Necunoscut"
+
+                        is_active = status_label == "Activa"
 
                         return {
                             "nume": company_info.get("denumire", ""),
@@ -65,7 +85,13 @@ class AnafScraper:
                             "inactiv_fiscal": bool(inactiv_info.get("statusInactivi", False)),
                             "status_ro_efactura": bool(company_info.get("statusRO_e_Factura", False)),
                             "datorii_estimate": 0.0,
-                            "status": "Activa" if is_active else "Radiata"
+                            "stare": stare_raw,
+                            "stare_inregistrare": stare_raw,
+                            "status": status_label,
+                            "is_active": is_active,
+                            "is_suspended": is_suspended,
+                            "is_insolvent": is_insolvent,
+                            "is_radiated": is_radiated
                         }
             
             return {}

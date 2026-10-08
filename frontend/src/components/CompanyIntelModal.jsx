@@ -6,7 +6,7 @@ import {
   Sparkles, Award, Briefcase, Layers, Network, ArrowLeft, ChevronRight,
   Globe, Compass, Camera, Search
 } from 'lucide-react';
-import { fetchCompanyFullIntel, evaluateCompanyByCui } from '../services/api';
+import { fetchCompanyFullIntel, evaluateCompanyByCui, fetchPortalJustCases } from '../services/api';
 import { Link, useNavigate } from 'react-router-dom';
 import MofDocumentModal from './MofDocumentModal';
 import FinancialPerformanceCard from './FinancialPerformanceCard';
@@ -18,6 +18,7 @@ const CompanyIntelModal = ({
   onClose, 
   cui, 
   initialName, 
+  initialTab = 'general',
   onEvaluate, 
   onOpenPerson, 
   onOpenCompany, 
@@ -28,10 +29,22 @@ const CompanyIntelModal = ({
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [evaluating, setEvaluating] = useState(false);
-  const [activeTab, setActiveTab] = useState('general');
+  const [activeTab, setActiveTab] = useState(initialTab || 'general');
   const [expandedCase, setExpandedCase] = useState(null);
   const [selectedMofPub, setSelectedMofPub] = useState(null);
   const [mapViewMode, setMapViewMode] = useState('satellite');
+
+  // Just.ro Live Query state
+  const [justSearchTerm, setJustSearchTerm] = useState('');
+  const [customCourtCases, setCustomCourtCases] = useState(null);
+  const [justSearching, setJustSearching] = useState(false);
+  const [justSearchError, setJustSearchError] = useState(null);
+
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab, isOpen]);
 
   useEffect(() => {
     if (!isOpen || !cui) return;
@@ -39,12 +52,18 @@ const CompanyIntelModal = ({
     let isMounted = true;
     setLoading(true);
     setData(null);
-    setActiveTab('general');
     setExpandedCase(null);
+    setCustomCourtCases(null);
+    setJustSearchError(null);
+    setJustSearchTerm(initialName || `CUI ${cui}`);
 
     fetchCompanyFullIntel(cui, initialName || '')
       .then(res => {
-        if (isMounted) setData(res);
+        if (isMounted) {
+          setData(res);
+          const foundName = res?.denumire || res?.general?.denumire || initialName;
+          if (foundName) setJustSearchTerm(foundName);
+        }
       })
       .catch(err => {
         console.error('Eroare fetchCompanyFullIntel:', err);
@@ -120,6 +139,50 @@ const CompanyIntelModal = ({
   const bpi = data?.bpi || { has_insolvency: false, count: 0, records: [] };
 
   const companyName = data?.denumire || general.denumire || initialName || `CUI ${cui}`;
+  const displayCourtCases = customCourtCases !== null ? customCourtCases : courtCases;
+
+  const handleSearchJust = async (searchTerm) => {
+    const q = (searchTerm !== undefined ? searchTerm : justSearchTerm || '').trim();
+    if (!q || q.length < 2) return;
+    setJustSearching(true);
+    setJustSearchError(null);
+    setExpandedCase(null);
+    try {
+      const res = await fetchPortalJustCases(q);
+      setCustomCourtCases(res || []);
+    } catch (err) {
+      console.error('Eroare căutare Portal Just.ro:', err);
+      setJustSearchError('Eroare la conectarea cu portalquery.just.ro. Reîncercați.');
+    } finally {
+      setJustSearching(false);
+    }
+  };
+
+  const justSuggestions = (() => {
+    const list = [];
+    const rawName = companyName || '';
+    if (!rawName) return list;
+
+    // Clean suffix
+    const cleanBrand = rawName
+      .replace(/\b(S\.R\.L\.|SRL|S\.A\.|SA|S\.C\.S\.|SCS|S\.N\.C\.|SNC|S\.C\.|SC)\b/gi, '')
+      .replace(/["'„”«»]/g, '')
+      .trim();
+
+    if (cleanBrand && cleanBrand.toLowerCase() !== rawName.toLowerCase()) {
+      list.push({ label: `Fără SRL: "${cleanBrand}"`, value: cleanBrand });
+    }
+    list.push({ label: `Complet: "${rawName}"`, value: rawName });
+
+    // Key administrators / associates
+    (personnel || []).slice(0, 2).forEach(p => {
+      if (p.nume && !list.some(item => item.value.toLowerCase() === p.nume.toLowerCase())) {
+        list.push({ label: `Persoană: "${p.nume}"`, value: p.nume });
+      }
+    });
+    return list;
+  })();
+
   const isCompanyTerminated = (() => {
     const s = String(general.stare || data?.stare || '').toUpperCase();
     return s.includes('RADIER') || s.includes('RADIAT') || s.includes('LICHID') || s.includes('DIZOLV') || s.includes('FALIMENT');
@@ -209,15 +272,25 @@ const CompanyIntelModal = ({
                     <ExternalLink size={10} />
                   </a>
                 )}
-                {general.stare && (
-                  <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                    general.stare.includes('INREGISTRAT') || general.stare.includes('ACTIVA')
-                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300'
-                      : 'bg-rose-50 text-rose-700 border border-rose-200 dark:bg-rose-900/30 dark:text-rose-300'
-                  }`}>
-                    {general.stare}
-                  </span>
-                )}
+                {general.stare && (() => {
+                  const s = String(general.stare).toUpperCase();
+                  const isAct = s.includes('INREGISTRAT') || s.includes('ACTIVA') || s.includes('RELUARE');
+                  const isSusp = s.includes('SUSPEND');
+                  const isInsolv = s.includes('FALIMENT') || s.includes('INSOLVEN') || s.includes('LICHID');
+                  const badgeCls = isAct
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300'
+                    : isSusp
+                    ? 'bg-amber-50 text-amber-800 border-amber-300 dark:bg-amber-900/30 dark:text-amber-300'
+                    : isInsolv
+                    ? 'bg-red-50 text-red-700 border-red-300 dark:bg-red-900/30 dark:text-red-300'
+                    : 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/30 dark:text-rose-300';
+
+                  return (
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${badgeCls}`}>
+                      {general.stare}
+                    </span>
+                  );
+                })()}
               </div>
               <div className="flex items-center gap-3 text-xs text-gray-500 dark:text-gray-400 mt-1 flex-wrap">
                 <span>CUI: <strong className="text-gray-700 dark:text-gray-200">{cui}</strong></span>
@@ -335,9 +408,9 @@ const CompanyIntelModal = ({
             <Scale size={14} />
             <span>Dosare Instanță (Portal Just)</span>
             <span className={`px-1.5 py-0.2 rounded-md text-[10px] font-bold ${
-              courtCases.length > 0 ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
+              displayCourtCases.length > 0 ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300' : 'bg-gray-100 dark:bg-gray-700 text-gray-500'
             }`}>
-              {courtCases.length}
+              {displayCourtCases.length}
             </span>
           </button>
 
@@ -782,25 +855,121 @@ const CompanyIntelModal = ({
               {/* TAB 3: DOSARE ÎN INSTANȚĂ (PORTAL JUST.RO) */}
               {activeTab === 'just' && (
                 <div className="space-y-4">
-                  <div className="p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-lg flex items-center justify-between text-xs text-blue-800 dark:text-blue-300">
+                  {/* Informational Banner */}
+                  <div className="p-3 bg-blue-50/80 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800/40 rounded-xl flex items-center justify-between text-xs text-blue-800 dark:text-blue-300">
                     <div className="flex items-center gap-2">
                       <Scale size={16} className="text-blue-600 shrink-0" />
-                      <span>Verificare oficială în timp real via <strong>portalquery.just.ro</strong> (Ministerul Justiției).</span>
+                      <span>Verificare live prin SOAP <strong>portalquery.just.ro</strong> (Ministerul Justiției) • 0 credite consumate.</span>
                     </div>
-                    <span className="font-bold whitespace-nowrap">{courtCases.length} Dosare Găsite</span>
+                    <span className="font-bold whitespace-nowrap px-2.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-200">
+                      {displayCourtCases.length} {displayCourtCases.length === 1 ? 'Dosar Găsit' : 'Dosare Găsite'}
+                    </span>
                   </div>
 
-                  {courtCases.length === 0 ? (
-                    <div className="p-8 text-center rounded-lg bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700">
+                  {/* Interactive Live Search Bar */}
+                  <div className="p-3.5 bg-gray-50/80 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 rounded-xl space-y-3">
+                    <form 
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        handleSearchJust();
+                      }}
+                      className="flex items-center gap-2"
+                    >
+                      <div className="relative flex-1">
+                        <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                        <input
+                          type="text"
+                          value={justSearchTerm}
+                          onChange={(e) => setJustSearchTerm(e.target.value)}
+                          placeholder="Caută după nume firmă, brand (fără SRL), număr dosar sau asociat..."
+                          className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+
+                      <button
+                        type="submit"
+                        disabled={justSearching || !justSearchTerm.trim()}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer shrink-0"
+                      >
+                        {justSearching ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin" />
+                            <span>Interogare Just.ro...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Search size={13} />
+                            <span>Caută pe Just.ro</span>
+                          </>
+                        )}
+                      </button>
+
+                      {customCourtCases !== null && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCustomCourtCases(null);
+                            setJustSearchTerm(companyName);
+                          }}
+                          className="px-3 py-2 border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300 rounded-xl text-xs font-semibold flex items-center gap-1 transition-colors cursor-pointer shrink-0"
+                          title="Resetează la dosarele inițiale"
+                        >
+                          <RefreshCw size={12} />
+                          <span>Reset</span>
+                        </button>
+                      )}
+                    </form>
+
+                    {/* Quick Suggestion Chips */}
+                    {justSuggestions.length > 0 && (
+                      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                        <span className="text-gray-400 font-medium mr-1">Sugestii rapide:</span>
+                        {justSuggestions.map((sug, sIdx) => {
+                          const isCurrent = justSearchTerm.trim().toLowerCase() === sug.value.trim().toLowerCase();
+                          return (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => {
+                                setJustSearchTerm(sug.value);
+                                handleSearchJust(sug.value);
+                              }}
+                              className={`px-2 py-0.5 rounded-md border text-[11px] font-medium transition-colors cursor-pointer ${
+                                isCurrent
+                                  ? 'bg-blue-100 dark:bg-blue-900/40 border-blue-300 dark:border-blue-700 text-blue-800 dark:text-blue-200'
+                                  : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-750'
+                              }`}
+                            >
+                              {sug.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {justSearchError && (
+                      <p className="text-[11px] text-red-600 dark:text-red-400 font-medium">
+                        {justSearchError}
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Results Display */}
+                  {displayCourtCases.length === 0 ? (
+                    <div className="p-8 text-center rounded-2xl bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700">
                       <CheckCircle2 size={32} className="mx-auto text-emerald-500 mb-2" />
-                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">Nu au fost găsite litigii pe rol</p>
-                      <p className="text-xs text-gray-500 mt-1">Compania nu are dosare active sau insolvențe înregistrate pe portal.just.ro.</p>
+                      <p className="text-sm font-semibold text-gray-800 dark:text-gray-200">
+                        Niciun dosar identificat pe rol pentru "{justSearchTerm || companyName}"
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
+                        Pe Portal Just.ro grefierii înregistrează adesea denumirile fără acronimul „SRL” sau invers. Folosiți sugestiile de căutare de mai sus sau încercați după numele administratorului.
+                      </p>
                     </div>
                   ) : (
-                    <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
+                    <div className="rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800 shadow-2xs">
                       <div className="overflow-x-auto">
                         <table className="w-full text-left text-xs">
-                          <thead className="bg-gray-50/70 dark:bg-gray-900/40 text-gray-500 uppercase font-medium border-b border-gray-200 dark:border-gray-700">
+                          <thead className="bg-gray-50/80 dark:bg-gray-900/50 text-gray-500 uppercase font-medium border-b border-gray-200 dark:border-gray-700">
                             <tr>
                               <th className="px-3.5 py-2.5 whitespace-nowrap">Nr. Crt.</th>
                               <th className="px-3.5 py-2.5 whitespace-nowrap">Număr Dosar</th>
@@ -812,77 +981,91 @@ const CompanyIntelModal = ({
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                            {courtCases.map((c, idx) => (
-                              <tr key={idx} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/40 transition-colors">
-                                <td className="px-3.5 py-2.5 text-gray-400 whitespace-nowrap">{idx + 1}</td>
-                                <td className="px-3.5 py-2.5 font-semibold text-primary whitespace-nowrap">
-                                  <a
-                                    href={c.url_portal}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="hover:underline inline-flex items-center gap-1 text-xs"
-                                    title="Deschide dosarul pe portal.just.ro"
-                                  >
-                                    <span>{c.numar}</span>
-                                    <ExternalLink size={10} />
-                                  </a>
-                                </td>
-                                <td className="px-3.5 py-2.5 text-gray-500 whitespace-nowrap">{c.data || '-'}</td>
-                                <td className="px-3.5 py-2.5 font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{c.institutie}</td>
-                                <td className="px-3.5 py-2.5 whitespace-nowrap">
-                                  <span className="text-gray-900 dark:text-white font-medium">{c.obiect}</span>
-                                  {c.categorie && (
-                                    <span className="text-[10px] text-gray-400 ml-1">({c.categorie})</span>
-                                  )}
-                                </td>
-                                <td className="px-3.5 py-2.5 whitespace-nowrap">
-                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
-                                    {c.stadiu || 'Fond'}
-                                  </span>
-                                </td>
-                                <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
-                                  <button
-                                    type="button"
-                                    onClick={() => setExpandedCase(expandedCase === idx ? null : idx)}
-                                    className="px-2.5 py-1 text-[11px] rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 font-medium text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
-                                  >
-                                    {expandedCase === idx ? 'Ascunde' : 'Vezi Părți & Soluție'}
-                                  </button>
-                                </td>
-                              </tr>
-                            ))}
+                            {displayCourtCases.map((c, idx) => {
+                              const portalUrl = c.url_portal || `https://portal.just.ro/SitePages/cautare.aspx?k=${encodeURIComponent(c.numar)}`;
+                              const isExpanded = expandedCase === idx;
+                              return (
+                                <tr key={idx} className="hover:bg-gray-50/60 dark:hover:bg-gray-700/30 transition-colors">
+                                  <td className="px-3.5 py-2.5 text-gray-400 whitespace-nowrap font-medium">{idx + 1}</td>
+                                  <td className="px-3.5 py-2.5 font-bold text-primary whitespace-nowrap">
+                                    <a
+                                      href={portalUrl}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="hover:underline inline-flex items-center gap-1 text-xs"
+                                      title="Deschide dosarul direct pe portal.just.ro"
+                                    >
+                                      <span>{c.numar}</span>
+                                      <ExternalLink size={10} />
+                                    </a>
+                                  </td>
+                                  <td className="px-3.5 py-2.5 text-gray-500 whitespace-nowrap">{c.data || '-'}</td>
+                                  <td className="px-3.5 py-2.5 font-medium text-gray-700 dark:text-gray-300 whitespace-nowrap">{c.institutie}</td>
+                                  <td className="px-3.5 py-2.5 whitespace-nowrap">
+                                    <span className="text-gray-900 dark:text-white font-medium">{c.obiect}</span>
+                                    {c.categorie && (
+                                      <span className="text-[10px] text-gray-400 ml-1">({c.categorie})</span>
+                                    )}
+                                  </td>
+                                  <td className="px-3.5 py-2.5 whitespace-nowrap">
+                                    <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                                      {c.stadiu || 'Fond'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3.5 py-2.5 text-right whitespace-nowrap">
+                                    <button
+                                      type="button"
+                                      onClick={() => setExpandedCase(isExpanded ? null : idx)}
+                                      className="px-2.5 py-1 text-[11px] rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 font-semibold text-gray-700 dark:text-gray-200 transition-colors cursor-pointer"
+                                    >
+                                      {isExpanded ? 'Ascunde' : 'Vezi Părți & Soluție'}
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
                           </tbody>
                         </table>
                       </div>
 
+                      {/* Table Footer */}
+                      <div className="px-4 py-2.5 bg-gray-50/60 dark:bg-gray-900/40 border-t border-gray-200 dark:border-gray-700 flex items-center justify-between text-xs text-gray-500">
+                        <span className="font-semibold">Total: {displayCourtCases.length} {displayCourtCases.length === 1 ? 'dosar înregistrat' : 'dosare înregistrate'}</span>
+                        <span className="text-[11px]">Sursă: Ministerul Justiției ECRIS SOAP</span>
+                      </div>
+
                       {/* Expandable Case Drawer/Details */}
-                      {expandedCase !== null && courtCases[expandedCase] && (
-                        <div className="p-4 bg-gray-50 dark:bg-gray-900/70 border-t border-gray-200 dark:border-gray-700 text-xs space-y-3 animate-in fade-in rounded-lg">
+                      {expandedCase !== null && displayCourtCases[expandedCase] && (
+                        <div className="p-4 bg-gray-50 dark:bg-gray-900/80 border-t border-gray-200 dark:border-gray-700 text-xs space-y-3 animate-in fade-in">
                           <div className="flex items-center justify-between">
                             <h5 className="font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
-                              <span>Părți în dosarul {courtCases[expandedCase].numar}</span>
+                              <span>Părți în dosarul {displayCourtCases[expandedCase].numar}</span>
                             </h5>
-                            <button onClick={() => setExpandedCase(null)} className="text-gray-400 hover:text-gray-600 text-xs cursor-pointer flex items-center gap-1">
+                            <button 
+                              type="button"
+                              onClick={() => setExpandedCase(null)} 
+                              className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 text-xs cursor-pointer flex items-center gap-1"
+                            >
                               <X size={14} /> Închide
                             </button>
                           </div>
 
                           <div className="flex flex-wrap gap-2">
-                            {courtCases[expandedCase].parti?.map((p, pIdx) => (
+                            {displayCourtCases[expandedCase].parti?.map((p, pIdx) => (
                               <div key={pIdx} className="px-2.5 py-1 rounded-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center gap-1.5 text-[11px]">
                                 <span className="font-medium text-gray-800 dark:text-gray-200">{p.nume}</span>
-                                <span className="px-1.5 py-0.2 rounded text-[9px] bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-semibold">
+                                <span className="px-1.5 py-0.2 rounded-md text-[9px] bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-semibold">
                                   {p.calitate}
                                 </span>
                               </div>
                             ))}
                           </div>
 
-                          {courtCases[expandedCase].sedinte?.length > 0 && (
+                          {displayCourtCases[expandedCase].sedinte?.length > 0 && (
                             <div className="pt-2 border-t border-gray-200 dark:border-gray-700">
-                              <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">Soluție Ședință ({courtCases[expandedCase].sedinte[0].data}):</span>
-                              <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 p-2.5 rounded-lg border border-gray-200 dark:border-gray-700 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
-                                {courtCases[expandedCase].sedinte[0].sumar || courtCases[expandedCase].sedinte[0].solutie || 'Fără sumar publicat.'}
+                              <span className="text-[11px] font-bold text-gray-700 dark:text-gray-300">Soluție Ședință ({displayCourtCases[expandedCase].sedinte[0].data}):</span>
+                              <p className="mt-1 text-[11px] text-gray-600 dark:text-gray-300 bg-white dark:bg-gray-800 p-2.5 rounded-xl border border-gray-200 dark:border-gray-700 leading-relaxed whitespace-pre-wrap max-h-40 overflow-y-auto">
+                                {displayCourtCases[expandedCase].sedinte[0].sumar || displayCourtCases[expandedCase].sedinte[0].solutie || 'Fără sumar publicat.'}
                               </p>
                             </div>
                           )}
@@ -1112,27 +1295,62 @@ const CompanyIntelModal = ({
               {activeTab === 'bpi_mof' && (
                 <div className="space-y-4">
                   {/* BPI Section */}
-                  <div className="p-4 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40">
-                    <h5 className="font-bold text-xs text-gray-900 dark:text-white mb-2 uppercase tracking-wider flex items-center gap-1.5">
-                      <AlertTriangle size={14} className={bpi.has_insolvency ? 'text-rose-500' : 'text-emerald-500'} />
-                      Buletinul Procedurilor de Insolvență (BPI)
-                    </h5>
-                    {bpi.has_insolvency ? (
-                      <div className="space-y-2">
-                        <span className="px-2.5 py-1 rounded-md text-xs font-bold bg-rose-100 text-rose-800">
-                          {bpi.count} Publicații de Insolvență Detectate
-                        </span>
-                        <div className="text-xs text-gray-600 dark:text-gray-300 mt-2">
-                          Compania figurează în BPI cu proceduri de concordat, insolvență sau faliment.
+                  {(() => {
+                    const insolvencyCases = (displayCourtCases || []).filter(c => 
+                      /faliment|insolven|concordat|reorganizare|deschiderea procedurii|l85\/2014/i.test(`${c.obiect || ''} ${c.categorie || ''} ${c.stadiu || ''}`)
+                    );
+                    const fiscalStare = String(general.stare || '').toUpperCase();
+                    const hasInsolv = bpi.has_insolvency || insolvencyCases.length > 0 || fiscalStare.includes('FALIMENT') || fiscalStare.includes('INSOLVEN');
+                    const totalCount = bpi.count || insolvencyCases.length || (hasInsolv ? 1 : 0);
+
+                    return (
+                      <div className={`p-4 rounded-xl border ${hasInsolv ? 'border-red-200 dark:border-red-900/60 bg-red-50/40 dark:bg-red-950/20' : 'border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40'}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <h5 className="font-bold text-xs text-gray-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                            <AlertTriangle size={14} className={hasInsolv ? 'text-red-500' : 'text-emerald-500'} />
+                            <span>Buletinul Procedurilor de Insolvență (BPI) &amp; Dosare Faliment</span>
+                          </h5>
+                          {hasInsolv ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800">
+                              {totalCount} {totalCount === 1 ? 'Procedură Activă' : 'Proceduri Active'}
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800">
+                              Solvabil (0 Dosare)
+                            </span>
+                          )}
                         </div>
+
+                        {hasInsolv ? (
+                          <div className="space-y-2 mt-2">
+                            <p className="text-xs text-red-700 dark:text-red-300 font-medium">
+                              Compania figurează în evidențele judiciare cu proceduri deschise de insolvență, concordat sau faliment conform Legii 85/2014.
+                            </p>
+                            {insolvencyCases.length > 0 && (
+                              <div className="mt-2 pt-2 border-t border-red-200/60 dark:border-red-900/40 flex items-center justify-between">
+                                <span className="text-[11px] text-red-600 dark:text-red-400">
+                                  {insolvencyCases.length} {insolvencyCases.length === 1 ? 'dosar de insolvență identificat' : 'dosare de insolvență identificate'} pe rolul instanțelor Just.ro.
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setActiveTab('just')}
+                                  className="text-xs font-bold text-red-700 dark:text-red-300 hover:underline inline-flex items-center gap-1 cursor-pointer"
+                                >
+                                  <span>Vezi dosarele</span>
+                                  <ExternalLink size={11} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-semibold mt-1">
+                            <CheckCircle2 size={16} />
+                            <span>Fără dosare de faliment sau proceduri de insolvență înregistrate în buletinele oficiale.</span>
+                          </div>
+                        )}
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-2 text-xs text-emerald-600 dark:text-emerald-400 font-semibold">
-                        <CheckCircle2 size={16} />
-                        <span>Fără înregistrări de insolvență sau faliment în BPI.</span>
-                      </div>
-                    )}
-                  </div>
+                    );
+                  })()}
 
                   {/* MOF Publications Section */}
                   <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">

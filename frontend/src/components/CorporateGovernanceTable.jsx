@@ -38,8 +38,13 @@ export default function CorporateGovernanceTable({
     ''
   ).toUpperCase();
 
-  const isCompanyRadiated = companyStare.includes('RADIAT') || companyStare.includes('RADIER');
-  const isCompanyInsolvencyOrBankruptcy = companyStare.includes('FALIMENT') || companyStare.includes('LICHID') || companyStare.includes('INSOLVEN');
+  const isCompanyRadiated = companyStare.includes('RADIAT') || companyStare.includes('RADIER') || companyStare.includes('DIZOLV');
+  const isCompanySuspended = companyStare.includes('SUSPEND');
+  const courtCases = rawData?.court_cases || [];
+  const hasInsolvencyCourtCases = courtCases.some(c => 
+    /faliment|insolven|concordat|reorganizare|deschiderea procedurii|l85\/2014/i.test(`${c.obiect || ''} ${c.categorie || ''} ${c.stadiu || ''}`)
+  );
+  const isCompanyInsolvencyOrBankruptcy = companyStare.includes('FALIMENT') || companyStare.includes('LICHID') || companyStare.includes('INSOLVEN') || Boolean(rawData?.bpi?.has_insolvency) || hasInsolvencyCourtCases;
 
   const isLiquidatorRole = (person) => {
     const name = String(person?.nume || '').toUpperCase();
@@ -258,21 +263,41 @@ export default function CorporateGovernanceTable({
         </div>
       )}
 
-      {/* BPI Insolvency Alert if active */}
-      {bpi?.has_insolvency && (
+      {/* Suspended Activity Alert if active */}
+      {isCompanySuspended && (
+        <div className="p-4 rounded-2xl border border-amber-200 dark:border-amber-900 bg-amber-50/70 dark:bg-amber-950/20 flex items-start gap-3.5 shadow-sm mb-6">
+          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-600 dark:text-amber-400">
+            <AlertTriangle size={20} />
+          </div>
+          <div className="flex-1">
+            <div className="text-[11px] font-semibold text-amber-600 dark:text-amber-400 uppercase tracking-wider">
+              Activitate Comercială Suspendată
+            </div>
+            <div className="text-sm font-bold text-amber-800 dark:text-amber-200 mt-0.5">
+              Companie cu activitatea temporar suspendată la Registrul Comerțului
+            </div>
+            <p className="text-xs text-amber-700/80 dark:text-amber-400 mt-1">
+              Mandatele de reprezentare sunt consemnate ca suspendate pe perioada inactivității temporare a societății.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* BPI & Just.ro Insolvency Alert if active */}
+      {isCompanyInsolvencyOrBankruptcy && (
         <div className="p-4 rounded-2xl border border-red-200 dark:border-red-900 bg-red-50/70 dark:bg-red-950/20 flex items-start gap-3.5 shadow-sm mb-6">
           <div className="p-2.5 rounded-xl bg-red-500/10 text-red-600 dark:text-red-400">
             <ShieldAlert size={20} />
           </div>
           <div className="flex-1">
             <div className="text-[11px] font-semibold text-red-500 uppercase tracking-wider">
-              Buletinul Procedurilor de Insolvență (BPI)
+              Procedură de Insolvență / Faliment (BPI &amp; Just.ro)
             </div>
             <div className="text-sm font-bold text-red-700 dark:text-red-300 mt-0.5">
-              ALERTĂ CRITICĂ: {bpi.count} Dosare / Publicații Active
+              ALERTĂ CRITICĂ: Proceduri Judiciare Active Descrise la Rol
             </div>
             <p className="text-xs text-red-600/80 dark:text-red-400 mt-1">
-              Compania figurează cu proceduri de insolvență sau faliment deschise în BPI.
+              Compania figurează în procedura de insolvență sau faliment. Atribuțiile statutare ale asociaților și administratorilor sunt supuse Legii 85/2014.
             </p>
           </div>
         </div>
@@ -413,12 +438,15 @@ export default function CorporateGovernanceTable({
               if (isCompanyRadiated) {
                 displayStare = person.data_sfarsit ? "Mandat Expirat" : "Stins (Firmă Radiată)";
                 stareBadgeClass = "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700";
+              } else if (isCompanySuspended) {
+                displayStare = "Mandat Suspendat";
+                stareBadgeClass = "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800";
               } else if (isCompanyInsolvencyOrBankruptcy) {
                 if (isLiquidator) {
                   displayStare = "Desemnat Judiciar";
                   stareBadgeClass = "bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800";
                 } else if (person.este_administrator) {
-                  displayStare = "Mandat Suspendat";
+                  displayStare = "Mandat Ridicat (Insolvență)";
                   stareBadgeClass = "bg-rose-50 dark:bg-rose-900/20 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-800";
                 } else if (displayStare === 'Activ') {
                   stareBadgeClass = "bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 border border-emerald-200/60 dark:border-emerald-800/60";

@@ -149,7 +149,221 @@ class AddressChecker:
             else:
                 return False
 
-        return True
+    def _extract_subunits(self, address: str) -> Dict[str, Any]:
+        """
+        Extrage componentele specifice ale adresei pentru diferențierea precisă între:
+        - Turnuri / clădiri de birouri / parcuri de afaceri / hub-uri comerciale
+        - Birouri / încăperi / apartamente distincte
+        - Sedii căsuță poștală / incubatoare fictive (aceeași cameră/birou partajat)
+        """
+        if not address:
+            return {
+                "is_office_building": False,
+                "corp": None,
+                "bloc": None,
+                "scara": None,
+                "etaj": None,
+                "ap": None,
+                "room": None,
+                "is_lawyer": False,
+                "subunit_signature": ""
+            }
+
+        norm = self._normalize_text(address)
+
+        # 1. Detecție Turn de Birouri / Business Park / Complex Comercial
+        office_keywords = [
+            "BUSINESS PARK", "BUSINESS CENTER", "BUSINESS PLAZA", "TOWER", "TURN",
+            "OFFICE", "CENTRU DE AFACERI", "PARC INDUSTRIAL", "PARC TEHNOLOGIC",
+            "CLADIRE DE BIROURI", "CLADIREA DE BIROURI", "CITY GATE", "SKY TOWER",
+            "THE OFFICE", "THE BRIDGE", "EQUILIBRIUM", "GLOBALWORTH", "AFI PARK",
+            "OREGON PARK", "EXPO BUSINESS", "VICTORIEI CENTER", "AMERICA HOUSE",
+            "EUROPE HOUSE", "CHARLES DE GAULLE", "METROPOLITAN", "IRIDE", "HERASTRAU",
+            "WEST GATE", "NORTH GATE", "CAMPUS 6", "TIMPURI NOI", "MALL", "PLAZA",
+            "HALA", "PARC LOGISTIC", "COMPLEX", "INCUBATOR", "BIROURI"
+        ]
+        
+        is_office_building = any(kw in norm for kw in office_keywords)
+        if re.search(r'\b(?:CLADIR(?:EA|E)|IMOBIL(?:UL)?|PAVILION(?:UL)?)\b', norm):
+            is_office_building = True
+
+        # 2. Extragere Corp / Pavilion
+        corp = None
+        m_corp = re.search(r'\b(?:CORP(?:UL)?|CORP\.|PAVILION)\s*([0-9A-Z]+)', norm)
+        if m_corp:
+            corp = m_corp.group(1).strip()
+
+        # 3. Extragere Bloc
+        bloc = None
+        m_bl = re.search(r'\b(?:BLOC(?:UL)?|BL\.)\s*([0-9A-Z]+)', norm)
+        if m_bl:
+            bloc = m_bl.group(1).strip()
+
+        # 4. Extragere Scară
+        scara = None
+        m_sc = re.search(r'\b(?:SCARA|SC\.)\s*([0-9A-Z]+)', norm)
+        if m_sc:
+            scara = m_sc.group(1).strip()
+
+        # 5. Extragere Etaj
+        etaj = None
+        m_et = re.search(r'\b(?:ETAJ(?:UL)?|ET\.)\s*([0-9]+|DEMISOL|PARTER|MANSARDA|SUBSOL|MEZANIN)', norm)
+        if m_et:
+            etaj = m_et.group(1).strip()
+        elif "DEMISOL" in norm:
+            etaj = "DEMISOL"
+        elif "PARTER" in norm:
+            etaj = "PARTER"
+        elif "MANSARDA" in norm:
+            etaj = "MANSARDA"
+
+        # 6. Extragere Apartament
+        ap = None
+        m_ap = re.search(r'\b(?:APARTAMENT(?:UL)?|AP\.)\s*([0-9A-Z]+)', norm)
+        if m_ap:
+            ap = m_ap.group(1).strip()
+
+        # 7. Extragere Cameră / Birou / Spațiu / Modul
+        room = None
+        m_room = re.search(r'\b(?:CAMERA|CAM\.|CAM|BIROU(?:L)?|BIROURI|SPATIU(?:L)?|MODUL(?:UL)?|STAND(?:UL)?)\s*([0-9A-Z]+(?:\s*[0-9A-Z]+)?)', norm)
+        if m_room:
+            room = m_room.group(1).strip()
+
+        # 8. Verificare Găzduire Avocat
+        is_lawyer = bool(re.search(r'CABINET\s+(?:DE\s+)?AVOCAT|LEGEA\s+51\/1995|SEDIU\s+PROFESIONAL\s+GAZDUIT', norm))
+
+        sig_parts = []
+        if corp: sig_parts.append(f"CORP:{corp}")
+        if bloc: sig_parts.append(f"BL:{bloc}")
+        if scara: sig_parts.append(f"SC:{scara}")
+        if etaj: sig_parts.append(f"ET:{etaj}")
+        if ap: sig_parts.append(f"AP:{ap}")
+        if room: sig_parts.append(f"ROOM:{room}")
+        subunit_signature = "_".join(sig_parts)
+
+        return {
+            "is_office_building": is_office_building,
+            "corp": corp,
+            "bloc": bloc,
+            "scara": scara,
+            "etaj": etaj,
+            "ap": ap,
+            "room": room,
+            "is_lawyer": is_lawyer,
+            "subunit_signature": subunit_signature
+        }
+
+    def _is_exact_match(self, client_subunits: Dict[str, Any], cand_subunits: Dict[str, Any], client_raw: str, cand_raw: str) -> bool:
+        """
+        Determină determinist dacă două adrese din aceeași clădire sunt la EXACT aceeași unitate
+        (aceeași cameră / birou / apartament) sau dacă sunt la birouri / etaje diferite în cadrul turnului.
+        """
+        # Dacă ambele sunt găzduite la același cabinet de avocat
+        if client_subunits.get("is_lawyer") and cand_subunits.get("is_lawyer"):
+            return True
+
+        # Dacă ambele au semnătură de sub-unitate definită
+        c_sig = client_subunits.get("subunit_signature")
+        k_sig = cand_subunits.get("subunit_signature")
+
+        if c_sig and k_sig:
+            # Dacă semnăturile sunt identice (ex: ambele sunt CORP:A_ET:4_ROOM:401 sau AP:4_ROOM:2)
+            if c_sig == k_sig:
+                return True
+            # Dacă diferă camera, biroul, etajul, apartamentul sau corpul -> NU este aceeași adresă
+            return False
+
+        # Dacă ambele specifică birou/cameră
+        c_room = client_subunits.get("room")
+        k_room = cand_subunits.get("room")
+        if c_room and k_room:
+            return c_room == k_room
+
+        # Dacă ambele specifică apartament
+        c_ap = client_subunits.get("ap")
+        k_ap = cand_subunits.get("ap")
+        if c_ap and k_ap:
+            if c_ap != k_ap:
+                return False
+            # Același apartament: dacă unul specifică camera 1 și altul camera 2
+            if (c_room and not k_room) or (k_room and not c_room):
+                return False
+            return True
+
+        # Dacă diferă etajele (ex: etaj 1 vs etaj 8 într-o clădire de birouri)
+        c_et = client_subunits.get("etaj")
+        k_et = cand_subunits.get("etaj")
+        if c_et and k_et and c_et != k_et:
+            return False
+
+        # Dacă diferă corpurile (ex: Corp A vs Corp B)
+        c_corp = client_subunits.get("corp")
+        k_corp = cand_subunits.get("corp")
+        if c_corp and k_corp and c_corp != k_corp:
+            return False
+
+        # Dacă unul are specificat birou/cameră (ex: Etaj 4, Birou 402), iar celălalt are altceva sau lipsă
+        if c_room or k_room:
+            # Nu considerăm aceeași cameră dacă nu este explicit potrivită
+            return False
+
+        # Dacă este turn de birouri / business park și nu au aceeași cameră specificată
+        if client_subunits.get("is_office_building") or cand_subunits.get("is_office_building"):
+            return False
+
+        # Dacă ambele adrese brute normalizate sunt identice cap-coadă
+        c_norm = self._normalize_text(client_raw).strip()
+        k_norm = self._normalize_text(cand_raw).strip()
+        if c_norm and k_norm and c_norm == k_norm:
+            return True
+
+        return False
+
+    def _enrich_cached_address(self, cached_addr: Dict[str, Any], address: str):
+        """
+        Re-evaluează în memorie un obiect de adresă din cache-ul bazei de date
+        pentru a include clasificarea modernă de turn de birouri vs adresă exactă identică.
+        """
+        try:
+            subunits = self._extract_subunits(address or cached_addr.get("address", ""))
+            cached_addr["is_office_building"] = subunits["is_office_building"]
+            cached_addr["subunits"] = subunits
+
+            companies = cached_addr.get("companies", [])
+            exact_count = 0
+
+            for comp in companies:
+                c_addr = comp.get("adresa", "")
+                c_subs = self._extract_subunits(c_addr)
+                is_exact = self._is_exact_match(subunits, c_subs, address, c_addr)
+                comp["is_exact_match"] = is_exact
+                comp["subunit_info"] = c_subs.get("subunit_signature") or c_subs.get("room") or c_subs.get("ap") or ""
+                if is_exact and not comp.get("is_current"):
+                    exact_count += 1
+
+            bld_count = len(companies)
+            cached_addr["building_cluster_count"] = bld_count
+            cached_addr["exact_match_count"] = exact_count
+            is_mailbox = (exact_count >= 5) or (subunits["is_lawyer"] and exact_count >= 3)
+            cached_addr["is_mailbox"] = is_mailbox
+
+            if is_mailbox:
+                cached_addr["risk_level"] = "Ridicat"
+                cached_addr["risk_message"] = f"Cluster căsuță poștală detectat: {exact_count} firme înregistrate la aceeași cameră/unitate identică."
+            elif subunits["is_office_building"]:
+                cached_addr["risk_level"] = "Normal"
+                cached_addr["risk_message"] = f"Clădire de birouri / Centru de afaceri ({bld_count} companii la această adresă în spații/birouri separate). Densitate normală pentru spații corporate."
+            elif exact_count >= 2:
+                cached_addr["risk_level"] = "Scăzut"
+                cached_addr["risk_message"] = f"Unitate comună: {exact_count} firme identificate la aceeași încăpere/apartament."
+            elif bld_count >= 4:
+                cached_addr["risk_level"] = "Normal"
+                cached_addr["risk_message"] = f"Imobil mixt / comercial cu {bld_count} companii înregistrate în spații distincte."
+            else:
+                cached_addr["risk_level"] = "Normal"
+                cached_addr["risk_message"] = "Sediu individual: nicio altă firmă identificată la această adresă exactă."
+        except Exception as e:
+            print(f"[ENRICH CACHED ADDR ERR] {e}")
 
     async def verify_address(self, address: str, current_cui: str = None) -> Dict[str, Any]:
         """
@@ -157,12 +371,17 @@ class AddressChecker:
         1. Extrage structurat orașul, sectorul, strada și numărul.
         2. Geocodifică adresa la nivel de număr poștal prin OSM Nominatim.
         3. Caută firme la aceeași adresă și aplică filtru STRICT de oraș/sector/număr.
-        4. Generează unghiurile Street View și Satelit clădire.
+        4. Diferențiază între turnuri de birouri (spații separate) și adrese exacte identice (căsuțe poștale).
+        5. Generează unghiurile Street View și Satelit clădire.
         """
         if not address:
             return {
                 "address": "",
                 "cluster_count": 0,
+                "building_cluster_count": 0,
+                "exact_match_count": 0,
+                "is_office_building": False,
+                "is_mailbox": False,
                 "risk_level": "Nedeterminat",
                 "risk_message": "Adresa lipsește.",
                 "companies": [],
@@ -192,12 +411,14 @@ class AddressChecker:
                         cached_addr = raw.get("address_check")
                         if cached_addr and (cached_addr.get("photos") or cached_addr.get("coordinates") or cached_addr.get("companies")):
                             print(f"[DB CACHE HIT] Verificare adresa si poze pentru CUI {clean_cui} incarcate direct din baza de date (0 apeluri Google API).")
+                            self._enrich_cached_address(cached_addr, address)
                             return cached_addr
             except Exception as cache_err:
                 print(f"[CACHE CHECK ERR]: {cache_err}")
 
-        # 1. Extragere informații structurate
+        # 1. Extragere informații structurate și sub-unități
         loc_info = self._extract_location_info(address)
+        client_subunits = self._extract_subunits(address)
 
         # 2. Geocodificare GPS pentru Google Maps & Street View
         coords = await self._geocode_address(loc_info)
@@ -215,18 +436,36 @@ class AddressChecker:
 
         # 3. Căutare companii la aceeași adresă cu filtru strict de oraș/sector
         companies = await self._fetch_companies_at_address(loc_info, current_cui)
-        cluster_count = len(companies)
+        building_cluster_count = len(companies)
 
-        # 4. Evaluare Nivel de Risc Cluster (după filtrare strictă)
-        if cluster_count >= 10:
+        # 4. Diferențiere precisă între firme în turn de birouri vs aceeași cameră / adresă identică
+        exact_match_count = 0
+        for comp in companies:
+            cand_addr = comp.get("adresa", "")
+            cand_subunits = self._extract_subunits(cand_addr)
+            is_exact = self._is_exact_match(client_subunits, cand_subunits, address, cand_addr)
+            comp["is_exact_match"] = is_exact
+            comp["subunit_info"] = cand_subunits.get("subunit_signature") or cand_subunits.get("room") or cand_subunits.get("ap") or ""
+            if is_exact and not comp.get("is_current"):
+                exact_match_count += 1
+
+        is_office_building = client_subunits.get("is_office_building", False)
+        is_mailbox = (exact_match_count >= 5) or (client_subunits.get("is_lawyer") and exact_match_count >= 3)
+
+        # 5. Evaluare Nivel de Risc Determinist:
+        # NU penalizăm clădirile de birouri sau adresele cu birouri/etaje separate!
+        if is_mailbox:
             risk_level = "Ridicat"
-            risk_message = f"Cluster masiv detectat: {cluster_count}+ firme înregistrate la aceeași clădire/adresă (Posibil sediu virtual / căsuță poștală)."
-        elif cluster_count >= 4:
-            risk_level = "Mediu"
-            risk_message = f"Densitate medie: {cluster_count} firme identificate la această clădire/adresă."
-        elif cluster_count >= 1:
+            risk_message = f"Cluster căsuță poștală detectat: {exact_match_count} firme înregistrate la aceeași cameră/unitate identică."
+        elif is_office_building:
+            risk_level = "Normal"
+            risk_message = f"Clădire de birouri / Centru de afaceri ({building_cluster_count} companii la această adresă în diverse spații/birouri). Densitate normală pentru facilități corporate."
+        elif exact_match_count >= 2:
             risk_level = "Scăzut"
-            risk_message = f"Densitate normală: {cluster_count} firmă(e) identificată(e) la acest număr."
+            risk_message = f"Unitate partajată: {exact_match_count} firme identificate la aceeași încăpere/apartament."
+        elif building_cluster_count >= 4:
+            risk_level = "Normal"
+            risk_message = f"Imobil mixt / comercial cu {building_cluster_count} companii înregistrate în spații distincte."
         else:
             risk_level = "Normal"
             risk_message = "Sediu individual: nicio altă firmă identificată la această adresă exactă."
@@ -310,7 +549,11 @@ class AddressChecker:
         return {
             "address": address,
             "search_query": loc_info["search_query"],
-            "cluster_count": cluster_count,
+            "cluster_count": exact_match_count if is_mailbox else building_cluster_count,
+            "building_cluster_count": building_cluster_count,
+            "exact_match_count": exact_match_count,
+            "is_office_building": is_office_building,
+            "is_mailbox": is_mailbox,
             "risk_level": risk_level,
             "risk_message": risk_message,
             "coordinates": coords,
@@ -318,7 +561,7 @@ class AddressChecker:
             "street_view_url": street_view_url,
             "streetview_metadata": streetview_meta,
             "photos": photos,
-            "companies": companies[:10]
+            "companies": companies[:15]
         }
 
     async def _fetch_streetview_metadata(self, lat: float, lon: float, api_key: str) -> Optional[Dict[str, Any]]:
